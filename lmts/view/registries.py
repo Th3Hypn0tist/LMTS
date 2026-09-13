@@ -37,6 +37,7 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("run.selected", ("r",), "Run", "Benchmark", scope="benchmark", order=140),
     ShortcutDefinition("run.all", ("a",), "Run all", "Benchmark", scope="benchmark", order=150),
     ShortcutDefinition("results", ("v",), "Results", "Benchmark", scope="benchmark", order=160),
+    ShortcutDefinition("benchmark.compare", ("b",), "Compare targets", "Benchmark", scope="benchmark", order=165),
     ShortcutDefinition("benchmark.publish", ("u",), "Publish report", "Benchmark", scope="benchmark", order=170),
     ShortcutDefinition("cancel", ("c",), "Cancel", "Benchmark", scope="benchmark", order=180),
     ShortcutDefinition("errors", ("e",), "Errors", "Benchmark", scope="benchmark", order=190),
@@ -52,36 +53,22 @@ DEFAULT_SHORTCUTS = (
 )
 
 
-def build_shortcut_registry(
-    overrides: dict[str, tuple[str, ...]] | None = None,
-) -> ShortcutRegistry:
+def build_shortcut_registry(overrides: dict[str, tuple[str, ...]] | None = None) -> ShortcutRegistry:
     overrides = overrides or {}
     known_actions = {definition.action for definition in DEFAULT_SHORTCUTS}
     unknown = sorted(set(overrides) - known_actions)
     if unknown:
         raise ValueError(f"unknown shortcut action override(s): {', '.join(unknown)}")
 
-    definitions = [
-        replace(definition, sequence=overrides.get(definition.action, definition.sequence))
-        for definition in DEFAULT_SHORTCUTS
-    ]
-
+    definitions = [replace(definition, sequence=overrides.get(definition.action, definition.sequence)) for definition in DEFAULT_SHORTCUTS]
     for index, left in enumerate(definitions):
         for right in definitions[index + 1 :]:
-            scopes_overlap = (
-                left.scope == right.scope
-                or left.scope == "global"
-                or right.scope == "global"
-            )
+            scopes_overlap = left.scope == right.scope or left.scope == "global" or right.scope == "global"
             if not scopes_overlap:
                 continue
             common = min(len(left.sequence), len(right.sequence))
             if left.sequence[:common] == right.sequence[:common]:
-                raise ValueError(
-                    f"ambiguous shortcuts: {left.action}={left.sequence_label} / "
-                    f"{right.action}={right.sequence_label}"
-                )
-
+                raise ValueError(f"ambiguous shortcuts: {left.action}={left.sequence_label} / {right.action}={right.sequence_label}")
     return ShortcutRegistry(definitions)
 
 

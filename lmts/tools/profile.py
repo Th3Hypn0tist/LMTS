@@ -6,7 +6,10 @@ import platform
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
+
+DEFAULT_PROFILE_PATH = Path(".lmts/system-profile.json")
 
 
 @dataclass(slots=True)
@@ -41,9 +44,18 @@ def _memory_total_bytes() -> int | None:
 def _nvidia_gpus() -> list[GPUProfile]:
     if shutil.which("nvidia-smi") is None:
         return []
-    command = ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"]
+    command = [
+        "nvidia-smi",
+        "--query-gpu=name,memory.total,driver_version",
+        "--format=csv,noheader,nounits",
+    ]
     try:
-        output = subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL, timeout=5)
+        output = subprocess.check_output(
+            command,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
     except (OSError, subprocess.SubprocessError):
         return []
     gpus: list[GPUProfile] = []
@@ -58,12 +70,71 @@ def _nvidia_gpus() -> list[GPUProfile]:
             vram = int(memory_mib) * 1024 * 1024
         except ValueError:
             vram = None
-        gpus.append(GPUProfile(vendor="NVIDIA", model=name, vram_bytes=vram, driver_version=driver))
+        gpus.append(
+            GPUProfile(
+                vendor="NVIDIA",
+                model=name,
+                vram_bytes=vram,
+                driver_version=driver,
+            )
+        )
     return gpus
 
 
 def scan_system_profile() -> SystemProfile:
-    return SystemProfile(cpu={"architecture": platform.machine() or None, "model": platform.processor() or None, "logical_cores": os.cpu_count()}, memory={"total_bytes": _memory_total_bytes()}, gpu=_nvidia_gpus(), software={"os": platform.system() or None, "os_release": platform.release() or None, "python": platform.python_version()})
+    return SystemProfile(
+        cpu={
+            "architecture": platform.machine() or None,
+            "model": platform.processor() or None,
+            "logical_cores": os.cpu_count(),
+        },
+        memory={"total_bytes": _memory_total_bytes()},
+        gpu=_nvidia_gpus(),
+        software={
+            "os": platform.system() or None,
+            "os_release": platform.release() or None,
+            "python": platform.python_version(),
+        },
+    )
+
+
+def save_system_profile(
+    profile: SystemProfile,
+    path: Path = DEFAULT_PROFILE_PATH,
+) -> Path:
+    target = path.expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "profiled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "profile": profile.to_dict(),
+    }
+    target.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return target
+
+
+def load_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object] | None:
+    target = path.expanduser()
+    if not target.is_file():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get("profile"), dict):
+        return None
+    return payload
+
+
+def ensure_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object]:
+    payload = load_system_profile(path)
+    if payload is not None:
+        return payload
+    profile = scan_system_profile()
+    save_system_profile(profile, path)
+    return load_system_profile(path) or {"profile": profile.to_dict()}
 
 
 def profile_json() -> str:

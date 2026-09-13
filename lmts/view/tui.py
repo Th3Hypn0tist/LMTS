@@ -62,17 +62,41 @@ def _single_line(host, stdscr, title: str, *, initial: str = '', allow_empty: bo
         host.message = f"{title}: enter one {'line' if allow_empty else 'non-empty line'}"
 
 
-def _reference_line(label: str, result: object) -> str:
-    if not isinstance(result, dict):
-        return f'{label} ref: not measured'
-    method = str(result.get('method') or '?')
-    version = result.get('method_version')
-    metrics = result.get('metrics') if isinstance(result.get('metrics'), dict) else {}
+def _format_reference_metric(test: object) -> str:
+    if not isinstance(test, dict):
+        return '-'
+    metrics = test.get('metrics') if isinstance(test.get('metrics'), dict) else {}
     throughput = metrics.get('throughput_gib_per_second')
-    suffix = f'{method} v{version}' if isinstance(version, int) else method
     if isinstance(throughput, (int, float)):
-        return f'{label} ref: {float(throughput):.2f} GiB/s ({suffix})'
-    return f'{label} ref: measured ({suffix})'
+        return f'{float(throughput):.2f} GiB/s'
+    median_seconds = metrics.get('median_seconds')
+    if isinstance(median_seconds, (int, float)):
+        return f'{float(median_seconds):.4f} s median'
+    return 'measured'
+
+
+def _reference_suite_lines(label: str, suite: object) -> list[str]:
+    if not isinstance(suite, dict):
+        return [f'{label}: not measured']
+    tests = suite.get('tests') if isinstance(suite.get('tests'), list) else []
+    suite_version = suite.get('suite_version')
+    suffix = f' v{suite_version}' if isinstance(suite_version, int) else ''
+    lines = [f'{label}:{suffix}']
+    for test in tests:
+        if not isinstance(test, dict):
+            continue
+        test_label = str(test.get('label') or test.get('benchmark_id') or 'test')
+        method_version = test.get('method_version')
+        method = str(test.get('method') or '')
+        method_suffix = f' [{method} v{method_version}]' if method and isinstance(method_version, int) else ''
+        lines.append(f'  {test_label}: {_format_reference_metric(test)}{method_suffix}')
+    summary = suite.get('summary') if isinstance(suite.get('summary'), dict) else {}
+    scaling = summary.get('parallel_scaling_factor')
+    if isinstance(scaling, (int, float)):
+        lines.append(f'  Parallel scaling: {float(scaling):.2f}x')
+    if len(lines) == 1:
+        lines.append('  no test results')
+    return lines
 
 
 def _profile_lines(controller: LMTSViewController) -> tuple[str, ...]:
@@ -105,14 +129,9 @@ def _profile_lines(controller: LMTSViewController) -> tuple[str, ...]:
         f"NPU : {', '.join(npu_labels) if npu_labels else '-'}",
     ])
     references = payload.get('reference_benchmarks') if isinstance(payload.get('reference_benchmarks'), dict) else {}
-    lines.extend([
-        '',
-        'Reference performance:',
-        _reference_line('CPU', references.get('cpu')),
-        _reference_line('MEM', references.get('memory')),
-        _reference_line('GPU', references.get('gpu')),
-        _reference_line('NPU', references.get('npu')),
-    ])
+    lines.extend(['', 'Reference performance:'])
+    for label, domain in [('CPU', 'cpu'), ('MEM', 'memory'), ('GPU', 'gpu'), ('NPU', 'npu')]:
+        lines.extend(_reference_suite_lines(label, references.get(domain)))
     profiled_at = str(payload.get('profiled_at') or '')
     if profiled_at:
         lines.append(f'Profiled: {profiled_at}')
@@ -370,12 +389,8 @@ def run() -> None:
             except (OSError, ValueError) as exc:
                 set_message(f'{domain.upper()} reference benchmark failed: {exc}')
                 return
-            metrics = result.get('metrics') if isinstance(result.get('metrics'), dict) else {}
-            throughput = metrics.get('throughput_gib_per_second')
-            if isinstance(throughput, (int, float)):
-                set_message(f'{domain.upper()} reference: {float(throughput):.2f} GiB/s')
-            else:
-                set_message(f'{domain.upper()} reference benchmark completed')
+            tests = result.get('tests') if isinstance(result.get('tests'), list) else []
+            set_message(f'{domain.upper()} reference suite completed: {len(tests)} test(s)')
 
         def edit_output_folder(_stdscr: curses.window) -> None:
             nonlocal settings

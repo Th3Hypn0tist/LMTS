@@ -28,6 +28,7 @@ class ModelDescriptor:
     available: bool = True
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
     metadata: dict[str, Any] = field(default_factory=dict)
+    runtime_configuration: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

@@ -20,7 +20,11 @@ class FakeProvider:
 
 def test_benchmark_runner_runs_same_test_for_multiple_models(tmp_path: Path) -> None:
     provider = FakeProvider()
-    runner = TestRunner(ProviderRegistry([provider]), RunStore(tmp_path / "results"), profile_scan=lambda: type("P", (), {"to_dict": lambda self: {}})())
+    runner = TestRunner(
+        ProviderRegistry([provider]),
+        RunStore(tmp_path / "results"),
+        system_context_loader=lambda: {"schema_version": 5, "fingerprint": "test-system"},
+    )
     benchmark = BenchmarkRunner(runner)
     models = [
         ModelDescriptor(id="fake:a", provider_ref="fake", model_ref="a", location="local"),

@@ -10,8 +10,8 @@ from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
 from lmts.lib.errorlog import export_error_log
-from lmts.tests.base import TestModule
-from lmts.tests.registry import TestRegistry
+from lmts.tests.base import TestModule, test_ref
+from lmts.tests.types import ConfiguredTest, TestMatrix, TestTypeRegistry
 from lmts.tools.profile import (
     DEFAULT_PROFILE_PATH,
     load_system_profile,
@@ -22,15 +22,12 @@ from lmts.tools.profile import (
 from .projector import LMTSViewState
 
 
-def _test_ref(test: TestModule) -> str:
-    return f"{test.id}@{test.version}"
-
-
 class LMTSViewController:
     def __init__(
         self,
         providers: ProviderRegistry,
-        tests: TestRegistry,
+        test_types: TestTypeRegistry,
+        matrix: TestMatrix,
         *,
         results_root: Path = Path("results"),
         workspace_root: Path = Path(".lmts/workspaces"),
@@ -38,12 +35,13 @@ class LMTSViewController:
         profile_path: Path = DEFAULT_PROFILE_PATH,
     ) -> None:
         self.providers = providers
-        self.tests = tests
+        self.test_types = test_types
+        self.matrix = matrix
         self.results_root = results_root
         self.workspace_root = workspace_root
         self.logs_root = logs_root
         self.profile_path = profile_path
-        self.state = LMTSViewState(tests=list(tests.tests()))
+        self.state = LMTSViewState(tests=list(matrix.tests()))
         self.last_errors: list[dict[str, object]] = []
         self._run_thread: threading.Thread | None = None
         self._run_control: RunControl | None = None
@@ -56,33 +54,70 @@ class LMTSViewController:
             str(payload.get("profiled_at") or "") if payload is not None else ""
         )
 
+    def _sync_matrix_state(self) -> None:
+        previous = set(self.state.selected_test_refs)
+        self.state.tests = list(self.matrix.tests())
+        available = {test_ref(test) for test in self.state.tests}
+        self.state.selected_test_refs = previous & available
+        if not self.state.selected_test_refs and self.state.tests:
+            self.state.selected_test_refs = set(available)
+
     def refresh(self) -> None:
         if self.state.running:
             self.state.message = "cannot refresh while test matrix is running"
             return
         previous_models = set(self.state.selected_model_ids)
-        previous_tests = set(self.state.selected_test_refs)
-
         self.state.models = self.providers.discover_models()
-        self.state.tests = list(self.tests.tests())
-
         available_model_ids = {model.id for model in self.state.models}
-        available_test_refs = {_test_ref(test) for test in self.state.tests}
         self.state.selected_model_ids = previous_models & available_model_ids
-        self.state.selected_test_refs = previous_tests & available_test_refs
-
         if not self.state.selected_model_ids and self.state.models:
             self.state.selected_model_ids = {self.state.models[0].id}
-        if not self.state.selected_test_refs and self.state.tests:
-            self.state.selected_test_refs = set(available_test_refs)
 
+        self._sync_matrix_state()
         self._sync_profile_state()
         self.state.message = (
             f"discovered {len(self.state.models)} model(s), "
-            f"{len(self.state.tests)} test(s)"
+            f"matrix has {len(self.state.tests)} configured test(s), "
+            f"registry has {len(self.test_types.definitions())} test type(s)"
         )
         if self.state.profile_required:
             self.state.message += "; system profile required before testing"
+
+    def test_type_refs(self) -> tuple[str, ...]:
+        return tuple(definition.ref for definition in self.test_types.definitions())
+
+    def add_test(
+        self,
+        type_ref: str,
+        instance_id: str,
+        params: dict[str, object] | None = None,
+    ) -> ConfiguredTest | None:
+        if self.state.running:
+            self.state.message = "cannot change matrix while test matrix is running"
+            return None
+        try:
+            configured = self.test_types.get(type_ref).configure(instance_id, params)
+            self.matrix.add(configured)
+        except (KeyError, ValueError) as exc:
+            self.state.message = f"cannot add test: {exc}"
+            return None
+        self._sync_matrix_state()
+        self.state.selected_test_refs.add(configured.ref)
+        self.state.message = f"added configured test: {configured.ref}"
+        return configured
+
+    def remove_test(self, instance_id: str) -> bool:
+        if self.state.running:
+            self.state.message = "cannot change matrix while test matrix is running"
+            return False
+        try:
+            removed = self.matrix.remove(instance_id)
+        except KeyError as exc:
+            self.state.message = str(exc)
+            return False
+        self._sync_matrix_state()
+        self.state.message = f"removed configured test: {removed.ref}"
+        return True
 
     def select_models(self, indices: set[int]) -> None:
         if self.state.running:
@@ -108,27 +143,21 @@ class LMTSViewController:
         if self.state.running:
             return
         self.state.selected_test_refs = {
-            _test_ref(self.state.tests[index])
+            test_ref(self.state.tests[index])
             for index in sorted(indices)
             if 0 <= index < len(self.state.tests)
         }
 
-    def select_test_refs(self, test_refs: set[str]) -> None:
+    def select_test_refs(self, refs: set[str]) -> None:
         if self.state.running:
             return
-        available = {_test_ref(test) for test in self.state.tests}
-        self.state.selected_test_refs = set(test_refs) & available
+        available = {test_ref(test) for test in self.state.tests}
+        self.state.selected_test_refs = set(refs) & available
 
     def select_all_tests(self) -> None:
         if self.state.running:
             return
-        self.state.selected_test_refs = {_test_ref(test) for test in self.state.tests}
-
-    def select_model(self, index: int) -> None:
-        self.select_models({index})
-
-    def select_test(self, index: int) -> None:
-        self.select_tests({index})
+        self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
 
     def run_selected(self) -> bool:
         if self.state.running:
@@ -141,7 +170,7 @@ class LMTSViewController:
         models = list(self.state.selected_models)
         tests = list(self.state.selected_tests)
         if not models or not tests:
-            self.state.message = "select at least one model and one test"
+            self.state.message = "select at least one model and one configured test"
             return False
 
         self._run_control = RunControl()
@@ -158,7 +187,7 @@ class LMTSViewController:
         self.state.progress_phase = "starting"
         self.state.last_result = None
         self.state.message = (
-            f"test matrix started: {len(models)} model(s) x {len(tests)} test(s)"
+            f"test matrix started: {len(models)} model(s) x {len(tests)} configured test(s)"
         )
         self.last_errors = []
 
@@ -226,7 +255,7 @@ class LMTSViewController:
                             )
                     elif run.passed is True:
                         self.state.progress_passed += 1
-                    else:
+                    elif run.passed is False:
                         self.state.progress_failed += 1
 
                 batch = benchmark_runner.run(
@@ -243,7 +272,7 @@ class LMTSViewController:
                     completed_before += len(batch.run_ids)
 
             self.state.last_result = {
-                "matrix": f"{len(models)} model(s) x {len(tests)} test(s)",
+                "matrix": f"{len(models)} model(s) x {len(tests)} configured test(s)",
                 "runs": self.state.progress_completed,
                 "passed": self.state.progress_passed,
                 "failed": self.state.progress_failed,
@@ -291,14 +320,6 @@ class LMTSViewController:
             return False
         self.select_all_models()
         self.select_all_tests()
-        return self.run_selected()
-
-    def benchmark_all_local(self) -> bool:
-        if self.state.running:
-            self.state.message = "test matrix already running"
-            return False
-        local_ids = {model.id for model in self.state.models if model.location == "local"}
-        self.select_model_ids(local_ids)
         return self.run_selected()
 
     def profile(self) -> Path | None:

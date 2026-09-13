@@ -5,6 +5,8 @@ from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
 from lmts.core.subject import EvaluationSubject, SubjectMember
 from lmts.tests.modules.text_generation import TextGenerationTest
+from lmts.tools.profile import PROFILE_SCHEMA_VERSION
+from lmts.tools.reference_benchmark import REFERENCE_BENCHMARK_SCHEMA_VERSION
 
 
 class FakeProvider:
@@ -23,12 +25,26 @@ class FakeProvider:
         )
 
 
+class FakeTelemetry:
+    def start(self):
+        pass
+
+    def stop(self):
+        return {"samples": [{"fake": True}], "summary": {"sample_count": 1}}
+
+
 def _system_context():
     return {
-        "schema_version": 5,
+        "schema_version": PROFILE_SCHEMA_VERSION,
         "fingerprint": "system-fingerprint",
         "profile": {"cpu": {"model_name": "Test CPU"}},
-        "reference_benchmarks": {"schema_version": 2, "cpu": None, "memory": None, "gpu": None, "npu": None},
+        "reference_benchmarks": {
+            "schema_version": REFERENCE_BENCHMARK_SCHEMA_VERSION,
+            "cpu": None,
+            "memory": None,
+            "gpu": None,
+            "npu": None,
+        },
     }
 
 
@@ -42,14 +58,19 @@ def _runtime_response(prompt, sink):
     )
 
 
+def _runner(providers, root):
+    return TestRunner(
+        providers,
+        RunStore(root),
+        system_context_loader=_system_context,
+        telemetry_factory=FakeTelemetry,
+    )
+
+
 def test_runner_executes_and_persists_canonical_run(tmp_path):
     providers = ProviderRegistry([FakeProvider()])
     model = providers.discover_models()[0]
-    runner = TestRunner(
-        providers,
-        RunStore(tmp_path / "results"),
-        system_context_loader=_system_context,
-    )
+    runner = _runner(providers, tmp_path / "results")
     run, path = runner.run(TextGenerationTest(), model, tmp_path / "workspaces")
     assert run.status == "completed"
     assert run.passed is True
@@ -57,6 +78,8 @@ def test_runner_executes_and_persists_canonical_run(tmp_path):
     assert run.system_context["fingerprint"] == "system-fingerprint"
     assert run.executor_kind == "model"
     assert run.executor_id == "fake:model"
+    assert run.execution_metadata["runtime_configuration_fingerprint"]
+    assert run.telemetry["summary"]["sample_count"] == 1
     assert run.evaluation_subject["kind"] == "model"
     assert run.evaluation_subject["id"] == "fake:model"
     assert path.exists()
@@ -64,7 +87,7 @@ def test_runner_executes_and_persists_canonical_run(tmp_path):
 
 
 def test_runner_executes_standalone_bot_subject(tmp_path):
-    runner = TestRunner(ProviderRegistry([]), RunStore(tmp_path / "results"), system_context_loader=_system_context)
+    runner = _runner(ProviderRegistry([]), tmp_path / "results")
     subject = EvaluationSubject.for_bot("bot.writer", configuration={"runtime": "fake"})
     executor = RuntimeExecutor(
         executor_id="bot.writer",
@@ -85,7 +108,7 @@ def test_runner_executes_standalone_bot_subject(tmp_path):
 
 
 def test_runner_executes_composition_subject(tmp_path):
-    runner = TestRunner(ProviderRegistry([]), RunStore(tmp_path / "results"), system_context_loader=_system_context)
+    runner = _runner(ProviderRegistry([]), tmp_path / "results")
     subject = EvaluationSubject.for_composition(
         "composition.writer-reviewer",
         (

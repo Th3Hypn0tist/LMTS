@@ -46,13 +46,18 @@ def run() -> None:
             footer=FOOTER,
         )
 
+        # The split view is the first visible frame. Startup work must never bypass it.
+        host.message = (
+            "system profile required before testing"
+            if controller.state.profile_required
+            else controller.state.message
+        )
+        host.draw(stdscr)
+
         if controller.state.profile_required:
-            host.message = "system profile required; profiling before tests can run"
-            stdscr.erase()
-            stdscr.addnstr(0, 0, host.message, max(0, stdscr.getmaxyx()[1] - 1))
-            stdscr.refresh()
             controller.profile()
             host.message = controller.state.message
+            host.draw(stdscr)
 
         def show_progress() -> None:
             host.progress_dialog(

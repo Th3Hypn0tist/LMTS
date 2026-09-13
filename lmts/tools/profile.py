@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -10,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 DEFAULT_PROFILE_PATH = Path(".lmts/system-profile.json")
+PROFILE_SCHEMA_VERSION = 2
 
 
 @dataclass(slots=True)
@@ -70,14 +72,7 @@ def _nvidia_gpus() -> list[GPUProfile]:
             vram = int(memory_mib) * 1024 * 1024
         except ValueError:
             vram = None
-        gpus.append(
-            GPUProfile(
-                vendor="NVIDIA",
-                model=name,
-                vram_bytes=vram,
-                driver_version=driver,
-            )
-        )
+        gpus.append(GPUProfile(vendor="NVIDIA", model=name, vram_bytes=vram, driver_version=driver))
     return gpus
 
 
@@ -98,20 +93,30 @@ def scan_system_profile() -> SystemProfile:
     )
 
 
-def save_system_profile(
-    profile: SystemProfile,
-    path: Path = DEFAULT_PROFILE_PATH,
-) -> Path:
+def system_fingerprint(profile: SystemProfile) -> str:
+    data = profile.to_dict()
+    software = data.get("software") if isinstance(data.get("software"), dict) else {}
+    identity = {
+        "cpu": data.get("cpu"),
+        "memory": data.get("memory"),
+        "gpu": data.get("gpu"),
+        "npu": data.get("npu"),
+        "os": software.get("os"),
+    }
+    canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def save_system_profile(profile: SystemProfile, path: Path = DEFAULT_PROFILE_PATH) -> Path:
     target = path.expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
+        "schema_version": PROFILE_SCHEMA_VERSION,
         "profiled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "fingerprint": system_fingerprint(profile),
         "profile": profile.to_dict(),
     }
-    target.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return target
 
 
@@ -123,7 +128,16 @@ def load_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object] 
         payload = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(payload, dict) or not isinstance(payload.get("profile"), dict):
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema_version") != PROFILE_SCHEMA_VERSION:
+        return None
+    if not isinstance(payload.get("profile"), dict):
+        return None
+    fingerprint = payload.get("fingerprint")
+    if not isinstance(fingerprint, str) or not fingerprint:
+        return None
+    if fingerprint != system_fingerprint(scan_system_profile()):
         return None
     return payload
 

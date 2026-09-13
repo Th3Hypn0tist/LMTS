@@ -9,6 +9,7 @@ from lmts.lib.workspace import Workspace
 from lmts.tests.base import TestContext, TestModule, test_ref
 from lmts.tests.requirements import validate_requirements
 from lmts.tools.profile import DEFAULT_PROFILE_PATH, load_system_profile
+from lmts.tools.telemetry import TelemetrySampler
 
 from .control import RunCancelled, RunControl
 from .executor import ModelExecutor, TestExecutor
@@ -37,11 +38,13 @@ class TestRunner:
         *,
         system_context_loader: Callable[[], dict[str, object]] = _default_system_context,
         response_sink: Callable[[ResponseStreamChunk], None] | None = None,
+        telemetry_factory: Callable[[], TelemetrySampler] = TelemetrySampler,
     ) -> None:
         self.providers = providers
         self.store = store
         self.system_context_loader = system_context_loader
         self.response_sink = response_sink
+        self.telemetry_factory = telemetry_factory
 
     def run(
         self,
@@ -116,11 +119,14 @@ class TestRunner:
                 }
             )
 
+        sampler = self.telemetry_factory()
+        sampler.start()
         try:
             validate_requirements(test.requirements, executor.capabilities)
             context.checkpoint()
             result = test.run(context)
             context.checkpoint()
+            telemetry = sampler.stop()
             run = RunResult(
                 **common,
                 completed_at=utc_now(),
@@ -131,8 +137,10 @@ class TestRunner:
                 artifacts=result.artifacts,
                 responses=list(context.responses),
                 workspace_trace=list(workspace.trace.operations),
+                telemetry=telemetry,
             )
         except RunCancelled:
+            telemetry = sampler.stop()
             run = RunResult(
                 **common,
                 completed_at=utc_now(),
@@ -140,8 +148,10 @@ class TestRunner:
                 passed=None,
                 responses=list(context.responses),
                 workspace_trace=list(workspace.trace.operations),
+                telemetry=telemetry,
             )
         except Exception as exc:
+            telemetry = sampler.stop()
             run = RunResult(
                 **common,
                 completed_at=utc_now(),
@@ -149,6 +159,7 @@ class TestRunner:
                 passed=False,
                 responses=list(context.responses),
                 workspace_trace=list(workspace.trace.operations),
+                telemetry=telemetry,
                 error={
                     "type": type(exc).__name__,
                     "message": str(exc),

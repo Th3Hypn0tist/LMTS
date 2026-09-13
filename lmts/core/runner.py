@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Callable
 
 from lmts.lib.workspace import Workspace
-from lmts.tests.base import TestContext, TestModule
+from lmts.tests.base import TestContext, TestModule, test_ref
 from lmts.tools.profile import SystemProfile, scan_system_profile
 
 from .control import RunCancelled, RunControl
@@ -48,7 +48,7 @@ class TestRunner:
             workspace=workspace,
             control=control,
         )
-        test_ref = f"{test.id}@{test.version}"
+        resolved_test_ref = test_ref(test)
 
         try:
             context.checkpoint()
@@ -56,7 +56,7 @@ class TestRunner:
             context.checkpoint()
             run = RunResult(
                 run_id=run_id,
-                test_ref=test_ref,
+                test_ref=resolved_test_ref,
                 model_id=model.id,
                 model_ref=model.model_ref,
                 provider_ref=model.provider_ref,
@@ -74,7 +74,7 @@ class TestRunner:
         except RunCancelled:
             run = RunResult(
                 run_id=run_id,
-                test_ref=test_ref,
+                test_ref=resolved_test_ref,
                 model_id=model.id,
                 model_ref=model.model_ref,
                 provider_ref=model.provider_ref,
@@ -90,7 +90,7 @@ class TestRunner:
         except Exception as exc:
             run = RunResult(
                 run_id=run_id,
-                test_ref=test_ref,
+                test_ref=resolved_test_ref,
                 model_id=model.id,
                 model_ref=model.model_ref,
                 provider_ref=model.provider_ref,

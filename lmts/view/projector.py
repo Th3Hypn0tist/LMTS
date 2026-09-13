@@ -20,6 +20,16 @@ class LMTSViewState:
     message: str = ""
     last_result: dict[str, object] | None = None
 
+    running: bool = False
+    progress_completed: int = 0
+    progress_total: int = 0
+    progress_passed: int = 0
+    progress_failed: int = 0
+    progress_errors: int = 0
+    progress_model_id: str = ""
+    progress_test_ref: str = ""
+    progress_phase: str = "idle"
+
     @property
     def selected_models(self) -> list[ModelDescriptor]:
         return [model for model in self.models if model.id in self.selected_model_ids]
@@ -45,6 +55,23 @@ class LMTSViewState:
     @property
     def tests_are_all(self) -> bool:
         return bool(self.tests) and len(self.selected_tests) == len(self.tests)
+
+    def progress_lines(self) -> tuple[str, ...]:
+        if not self.running and self.progress_phase == "idle":
+            return ()
+        current = (
+            f"{self.progress_model_id} x {self.progress_test_ref}"
+            if self.progress_model_id or self.progress_test_ref
+            else "-"
+        )
+        return (
+            f"state   : {'RUNNING' if self.running else self.progress_phase.upper()}",
+            f"progress: {self.progress_completed} / {self.progress_total}",
+            f"current : {current}",
+            f"passed  : {self.progress_passed}",
+            f"failed  : {self.progress_failed}",
+            f"errors  : {self.progress_errors}",
+        )
 
 
 class LMTSViewProjector:
@@ -79,6 +106,11 @@ class LMTSViewProjector:
             f"tests={len(selected_tests)}/{len(self.state.tests)}  "
             f"runs={run_count}"
         )
+        if self.state.running:
+            status += (
+                f"  RUNNING {self.state.progress_completed}/{self.state.progress_total}"
+            )
+
         lines = [
             "LMTS model laboratory",
             "",
@@ -86,6 +118,9 @@ class LMTSViewProjector:
             f"Tests  : {test_text}",
             f"Matrix : {len(selected_models)} x {len(selected_tests)} = {run_count} run(s)",
         ]
+
+        if self.state.progress_lines():
+            lines.extend(["", "Test progress", *self.state.progress_lines()])
 
         if selected_models:
             lines.extend(["", "Selected models"])
@@ -124,5 +159,11 @@ class LMTSViewProjector:
                 ViewItem("models", "Models", model_text),
                 ViewItem("tests", "Tests", test_text),
                 ViewItem("runs", "Runs", str(run_count)),
+                ViewItem("running", "Running", str(self.state.running).lower()),
+                ViewItem(
+                    "progress",
+                    "Progress",
+                    f"{self.state.progress_completed}/{self.state.progress_total}",
+                ),
             ),
         )

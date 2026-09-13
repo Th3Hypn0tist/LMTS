@@ -4,6 +4,7 @@ from lmts.tests.base import TestRequirements
 from lmts.tests.modules.bot_core import BOT_CORE_CASES, bot_core_test
 from lmts.tests.modules.capability_cases import ALL_CAPABILITY_CASES, capability_test
 from lmts.tests.modules.free_prompt import FreePromptConsistencyTest
+from lmts.tests.modules.performance import ColdWarmPerformanceTest, RepeatVarianceTest
 from lmts.tests.modules.text_generation import TextGenerationTest
 from lmts.tests.modules.workspace_multifile import WorkspaceMultiFileTest
 from lmts.tests.types import TestMatrix, TestParameter, TestTypeDefinition, TestTypeRegistry
@@ -59,6 +60,36 @@ def default_test_type_registry() -> TestTypeRegistry:
                 ),
             ),
             factory=lambda values: FreePromptConsistencyTest(
+                prompt=str(values["prompt"]),
+                repeats=int(values["repeats"]),
+            ),
+        ),
+        TestTypeDefinition(
+            id="performance.cold_warm",
+            version="1.0.0",
+            title="Cold and warm inference",
+            description="Measure first-call behavior separately from repeated warm inference.",
+            requirements=TestRequirements(text_generation=True),
+            parameters=(
+                TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly PERF_OK", multiline=True),
+                TestParameter(name="warm_repeats", label="Warm repeats", kind="integer", required=True, default=5, minimum=1, maximum=100),
+            ),
+            factory=lambda values: ColdWarmPerformanceTest(
+                prompt=str(values["prompt"]),
+                warm_repeats=int(values["warm_repeats"]),
+            ),
+        ),
+        TestTypeDefinition(
+            id="performance.repeat_variance",
+            version="1.0.0",
+            title="Repeat variance",
+            description="Measure latency and generation-throughput variance across repeated identical calls.",
+            requirements=TestRequirements(text_generation=True),
+            parameters=(
+                TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly VAR_OK", multiline=True),
+                TestParameter(name="repeats", label="Repeats", kind="integer", required=True, default=10, minimum=2, maximum=100),
+            ),
+            factory=lambda values: RepeatVarianceTest(
                 prompt=str(values["prompt"]),
                 repeats=int(values["repeats"]),
             ),

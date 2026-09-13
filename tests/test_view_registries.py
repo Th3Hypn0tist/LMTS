@@ -19,9 +19,9 @@ def test_tab_registry_is_recursive() -> None:
 
 def test_lmts_top_level_tab_order() -> None:
     assert [(item.shortcut, item.id) for item in TAB_REGISTRY.children('root')] == [
-        ('1', 'profiler'),
-        ('2', 'server'),
-        ('3', 'benchmark'),
+        ('1', 'profile'),
+        ('2', 'benchmark'),
+        ('3', 'settings'),
     ]
 
 
@@ -41,10 +41,13 @@ def test_shortcut_registry_matches_sequences() -> None:
 
 def test_shortcuts_are_scoped_by_topic_area() -> None:
     benchmark_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('benchmark',))}
-    profiler_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('profiler',))}
+    profile_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('profile',))}
+    settings_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('settings',))}
     assert 'models' in benchmark_actions
-    assert 'models' not in profiler_actions
-    assert 'profile.run' in profiler_actions
+    assert 'models' not in profile_actions
+    assert 'profile.cpu' in profile_actions
+    assert 'settings.mysql' in settings_actions
+    assert 'settings.mysql' not in benchmark_actions
 
 
 def test_duplicate_shortcut_sequence_is_rejected_within_scope() -> None:
@@ -55,3 +58,23 @@ def test_duplicate_shortcut_sequence_is_rejected_within_scope() -> None:
         pass
     else:
         raise AssertionError('duplicate shortcut sequence was accepted')
+
+
+def test_global_shortcut_cannot_collide_with_scoped_shortcut() -> None:
+    registry = ShortcutRegistry([ShortcutDefinition('global', ('x',), 'Global', 'Test')])
+    try:
+        registry.register(ShortcutDefinition('local', ('x',), 'Local', 'Test', scope='a'))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('global/scoped shortcut collision was accepted')
+
+
+def test_overlapping_prefix_shortcuts_are_rejected() -> None:
+    registry = ShortcutRegistry([ShortcutDefinition('quit', ('q', 'q', 'q'), 'Quit', 'System')])
+    try:
+        registry.register(ShortcutDefinition('quick', ('q',), 'Quick', 'Test', scope='a'))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('prefix shortcut collision was accepted')

@@ -59,7 +59,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         if key == " ":
             return "space"
         if isinstance(key, str) and len(key) == 1:
-            return key
+            return key.casefold()
         return None
 
     def bind(self, action: str, handler: Callable[[curses.window], None]) -> None:
@@ -68,12 +68,8 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
     def _scopes(self) -> tuple[str, ...]:
         return tuple(self.shortcut_scopes())
 
-    def _footer(self) -> str:
-        return self.shortcuts.footer(self._scopes())
-
-    def _sequence_hint(self) -> str:
-        if not self._sequence:
-            return ""
+    @staticmethod
+    def _sequence_label(sequence: tuple[str, ...]) -> str:
         labels = {
             "esc": "Esc",
             "up": "Up",
@@ -85,8 +81,24 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             "enter": "Enter",
             "space": "Space",
         }
-        text = " ".join(labels.get(token, token) for token in self._sequence)
-        return f"keys: {text} ..."
+        return " ".join(labels.get(token, token) for token in sequence)
+
+    def _footer(self) -> str:
+        definitions = [
+            item
+            for item in self.shortcuts.definitions(self._scopes())
+            if item.topic != "Tabs"
+        ]
+        if not definitions:
+            return "Actions: -"
+        return "Actions: " + " | ".join(
+            f"{item.sequence_label}. {item.label}" for item in definitions
+        )
+
+    def _sequence_hint(self) -> str:
+        if not self._sequence:
+            return ""
+        return f"keys: {self._sequence_label(self._sequence)} ..."
 
     def _dispatch(self, stdscr: curses.window, action: str) -> None:
         if action == "scroll.up":

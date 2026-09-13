@@ -61,13 +61,24 @@ class ShortcutRegistry:
 
     def register(self, definition: ShortcutDefinition) -> ShortcutDefinition:
         for current in self._definitions:
-            if current.scope == definition.scope and current.sequence == definition.sequence:
-                raise ValueError(
-                    f'duplicate shortcut sequence in scope {definition.scope}: '
-                    f'{definition.sequence_label}'
-                )
+            scopes_overlap = (
+                current.scope == definition.scope
+                or current.scope == 'global'
+                or definition.scope == 'global'
+            )
+            if scopes_overlap:
+                common = min(len(current.sequence), len(definition.sequence))
+                prefix_collision = current.sequence[:common] == definition.sequence[:common]
+                if prefix_collision:
+                    raise ValueError(
+                        f'ambiguous shortcut sequences in overlapping scopes '
+                        f'{current.scope}/{definition.scope}: '
+                        f'{current.sequence_label} / {definition.sequence_label}'
+                    )
             if current.action == definition.action and current.scope == definition.scope:
-                raise ValueError(f'duplicate shortcut action in scope {definition.scope}: {definition.action}')
+                raise ValueError(
+                    f'duplicate shortcut action in scope {definition.scope}: {definition.action}'
+                )
         self._definitions.append(definition)
         return definition
 

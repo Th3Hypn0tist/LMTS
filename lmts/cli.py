@@ -2,36 +2,118 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from lmts.core.registry import ProviderRegistry
+from lmts.core.runner import TestRunner
+from lmts.core.store import RunStore
 from lmts.providers.ollama import OllamaProvider
+from lmts.tests.modules.text_generation import TextGenerationTest
+from lmts.tests.registry import TestRegistry
 from lmts.tools.profile import profile_json
 
 
+def default_provider_registry() -> ProviderRegistry:
+    return ProviderRegistry([OllamaProvider()])
+
+
+def default_test_registry() -> TestRegistry:
+    return TestRegistry([TextGenerationTest()])
+
+
 def _models() -> int:
-    registry = ProviderRegistry([OllamaProvider()])
+    registry = default_provider_registry()
     try:
         models = registry.discover_models()
     except Exception as exc:
         print(f"model discovery failed: {exc}")
         return 2
-    print(json.dumps([{"id": model.id, "provider_ref": model.provider_ref, "model_ref": model.model_ref, "location": model.location, "metadata": model.metadata} for model in models], indent=2, ensure_ascii=False))
+    print(json.dumps([
+        {
+            "id": model.id,
+            "provider_ref": model.provider_ref,
+            "model_ref": model.model_ref,
+            "location": model.location,
+            "metadata": model.metadata,
+        }
+        for model in models
+    ], indent=2, ensure_ascii=False))
     return 0
+
+
+def _tests() -> int:
+    registry = default_test_registry()
+    print(json.dumps([
+        {
+            "ref": registry.ref(test),
+            "id": test.id,
+            "version": test.version,
+            "requirements": {
+                "text_generation": test.requirements.text_generation,
+                "workspace_read": test.requirements.workspace_read,
+                "workspace_write": test.requirements.workspace_write,
+                "multi_file_output": test.requirements.multi_file_output,
+            },
+        }
+        for test in registry.tests()
+    ], indent=2, ensure_ascii=False))
+    return 0
+
+
+def _run(test_ref: str, model_id: str, results: Path, workspaces: Path) -> int:
+    providers = default_provider_registry()
+    tests = default_test_registry()
+    try:
+        test = tests.get(test_ref)
+        models = providers.discover_models()
+    except Exception as exc:
+        print(f"run setup failed: {exc}")
+        return 2
+
+    model = next((item for item in models if item.id == model_id), None)
+    if model is None:
+        print(f"unknown model: {model_id}")
+        return 2
+
+    runner = TestRunner(providers, RunStore(results))
+    run, path = runner.run(test, model, workspaces)
+    print(json.dumps({
+        "run_id": run.run_id,
+        "test_ref": run.test_ref,
+        "model_id": run.model_id,
+        "status": run.status,
+        "passed": run.passed,
+        "result_path": str(path),
+    }, indent=2, ensure_ascii=False))
+    return 0 if run.status == "completed" else 1
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="lmts")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("models", help="Discover local models")
+    sub.add_parser("tests", help="List registered test modules")
+
     profile = sub.add_parser("profile", help="System profile tools")
     profile_sub = profile.add_subparsers(dest="profile_command", required=True)
     profile_sub.add_parser("scan", help="Scan current system")
+
+    run = sub.add_parser("run", help="Run one test module against one model")
+    run.add_argument("test_ref", help="Versioned test ref, for example core.text_generation@1.0.0")
+    run.add_argument("model_id", help="Discovered model id, for example ollama-local:qwen3:4b")
+    run.add_argument("--results", type=Path, default=Path("results"))
+    run.add_argument("--workspaces", type=Path, default=Path(".lmts/workspaces"))
+
     args = parser.parse_args()
     if args.command == "models":
         return _models()
+    if args.command == "tests":
+        return _tests()
     if args.command == "profile" and args.profile_command == "scan":
         print(profile_json())
         return 0
+    if args.command == "run":
+        return _run(args.test_ref, args.model_id, args.results, args.workspaces)
     return 2
 
 

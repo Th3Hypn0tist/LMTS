@@ -3,7 +3,7 @@ from __future__ import annotations
 import curses
 from collections.abc import Callable, Iterable, Sequence
 
-from .shortcut_registry import ShortcutDefinition, ShortcutRegistry
+from .shortcut_registry import ShortcutRegistry
 from .split_host import POLL_MS, SplitCursesViewHost
 
 
@@ -74,8 +74,19 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
     def _sequence_hint(self) -> str:
         if not self._sequence:
             return ""
-        labels = ShortcutDefinition("hint", self._sequence, "", "hint").sequence_label
-        return f"keys: {labels} ..."
+        labels = {
+            "esc": "Esc",
+            "up": "Up",
+            "down": "Down",
+            "left": "Left",
+            "right": "Right",
+            "pgup": "PgUp",
+            "pgdn": "PgDn",
+            "enter": "Enter",
+            "space": "Space",
+        }
+        text = " ".join(labels.get(token, token) for token in self._sequence)
+        return f"keys: {text} ..."
 
     def _dispatch(self, stdscr: curses.window, action: str) -> None:
         if action == "scroll.up":

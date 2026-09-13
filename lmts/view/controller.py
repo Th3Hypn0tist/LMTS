@@ -7,6 +7,7 @@ from lmts.core.benchmark_store import BenchmarkStore
 from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
+from lmts.lib.errorlog import export_error_log
 from lmts.tests.base import TestModule
 from lmts.tests.registry import TestRegistry
 from lmts.tools.profile import scan_system_profile
@@ -26,12 +27,15 @@ class LMTSViewController:
         *,
         results_root: Path = Path("results"),
         workspace_root: Path = Path(".lmts/workspaces"),
+        logs_root: Path = Path("logs"),
     ) -> None:
         self.providers = providers
         self.tests = tests
         self.results_root = results_root
         self.workspace_root = workspace_root
+        self.logs_root = logs_root
         self.state = LMTSViewState(tests=list(tests.tests()))
+        self.last_errors: list[dict[str, object]] = []
 
     def refresh(self) -> None:
         previous_models = set(self.state.selected_model_ids)
@@ -106,6 +110,7 @@ class LMTSViewController:
         failed = 0
         errors = 0
         total_runs = 0
+        self.last_errors = []
 
         for test in tests:
             batch = benchmark_runner.run(test, models, self.workspace_root)
@@ -117,6 +122,23 @@ class LMTSViewController:
             errors += batch.errors
             total_runs += len(batch.run_ids)
 
+            if batch.errors:
+                for result_path in runner.store.iter_run_paths():
+                    data = runner.store.load(result_path)
+                    if data.get("run_id") not in batch.run_ids:
+                        continue
+                    if data.get("status") != "failed":
+                        continue
+                    self.last_errors.append(
+                        {
+                            "run_id": data.get("run_id"),
+                            "model_id": data.get("model_id"),
+                            "test_ref": data.get("test_ref"),
+                            "result_path": str(result_path),
+                            "error": data.get("error"),
+                        }
+                    )
+
         self.state.last_result = {
             "matrix": f"{len(models)} model(s) x {len(tests)} test(s)",
             "runs": total_runs,
@@ -126,9 +148,19 @@ class LMTSViewController:
             "batch_ids": ", ".join(batch_ids),
             "batch_paths": ", ".join(batch_paths),
         }
+        if self.last_errors:
+            self.state.last_result["error_log"] = "press e to export"
         self.state.message = (
             f"test matrix finished: {passed} passed, {failed} failed, {errors} error(s)"
         )
+
+    def export_errors(self, task: str = "task") -> Path | None:
+        if not self.last_errors:
+            self.state.message = "no errors to export"
+            return None
+        path = export_error_log(task, self.last_errors, root=self.logs_root)
+        self.state.message = f"error log exported: {path}"
+        return path
 
     def test_all(self) -> None:
         self.select_all_models()

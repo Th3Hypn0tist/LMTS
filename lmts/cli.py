@@ -10,6 +10,7 @@ from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
 from lmts.providers.ollama import OllamaProvider
+from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tests.modules import TextGenerationTest, WorkspaceMultiFileTest
 from lmts.tests.registry import TestRegistry
 from lmts.tools.profile import profile_json
@@ -20,6 +21,7 @@ def default_provider_registry() -> ProviderRegistry:
 
 
 def default_test_registry() -> TestRegistry:
+    """Compatibility registry for direct one-test CLI execution."""
     return TestRegistry([TextGenerationTest(), WorkspaceMultiFileTest()])
 
 
@@ -44,20 +46,52 @@ def _models() -> int:
 
 
 def _tests() -> int:
-    registry = default_test_registry()
+    registry = default_test_type_registry()
     print(json.dumps([
         {
-            "ref": registry.ref(test),
-            "id": test.id,
-            "version": test.version,
+            "ref": definition.ref,
+            "id": definition.id,
+            "version": definition.version,
+            "title": definition.title,
+            "description": definition.description,
             "requirements": {
-                "text_generation": test.requirements.text_generation,
-                "workspace_read": test.requirements.workspace_read,
-                "workspace_write": test.requirements.workspace_write,
-                "multi_file_output": test.requirements.multi_file_output,
+                "text_generation": definition.requirements.text_generation,
+                "workspace_read": definition.requirements.workspace_read,
+                "workspace_write": definition.requirements.workspace_write,
+                "multi_file_output": definition.requirements.multi_file_output,
             },
+            "parameters": [
+                {
+                    "name": parameter.name,
+                    "label": parameter.label,
+                    "kind": parameter.kind,
+                    "required": parameter.required,
+                    "default": parameter.default,
+                    "multiline": parameter.multiline,
+                    "minimum": parameter.minimum,
+                    "maximum": parameter.maximum,
+                    "choices": list(parameter.choices),
+                }
+                for parameter in definition.parameters
+            ],
         }
-        for test in registry.tests()
+        for definition in registry.definitions()
+    ], indent=2, ensure_ascii=False))
+    return 0
+
+
+def _matrix() -> int:
+    registry = default_test_type_registry()
+    matrix = default_test_matrix(registry)
+    print(json.dumps([
+        {
+            "ref": test.ref,
+            "instance_id": test.instance_id,
+            "type_ref": test.type_ref,
+            "title": test.title,
+            "params": test.params,
+        }
+        for test in matrix.tests()
     ], indent=2, ensure_ascii=False))
     return 0
 
@@ -126,19 +160,20 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("tui", help="Open the interactive LMTS View")
     sub.add_parser("models", help="Discover local models")
-    sub.add_parser("tests", help="List registered test modules")
+    sub.add_parser("tests", help="List registered test types")
+    sub.add_parser("matrix", help="List default configured test matrix")
 
     profile = sub.add_parser("profile", help="System profile tools")
     profile_sub = profile.add_subparsers(dest="profile_command", required=True)
     profile_sub.add_parser("scan", help="Scan current system")
 
-    run = sub.add_parser("run", help="Run one test module against one model")
+    run = sub.add_parser("run", help="Run one compatibility test module against one model")
     run.add_argument("test_ref", help="Versioned test ref, for example core.text_generation@1.0.0")
     run.add_argument("model_id", help="Discovered model id, for example ollama-local:qwen3:4b")
     run.add_argument("--results", type=Path, default=Path("results"))
     run.add_argument("--workspaces", type=Path, default=Path(".lmts/workspaces"))
 
-    benchmark = sub.add_parser("benchmark", help="Run one test module against multiple models")
+    benchmark = sub.add_parser("benchmark", help="Run one compatibility test module against multiple models")
     benchmark.add_argument("test_ref", help="Versioned test ref")
     benchmark.add_argument("model_ids", nargs="*", help="Model ids; omit to run all discovered local models")
     benchmark.add_argument("--results", type=Path, default=Path("results"))
@@ -151,6 +186,8 @@ def main() -> int:
         return _models()
     if args.command == "tests":
         return _tests()
+    if args.command == "matrix":
+        return _matrix()
     if args.command == "profile" and args.profile_command == "scan":
         print(profile_json())
         return 0

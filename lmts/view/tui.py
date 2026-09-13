@@ -3,10 +3,16 @@ from __future__ import annotations
 import curses
 
 from lmts.cli import default_provider_registry, default_test_registry
+from lmts.lib.view import CursesViewHost
 
 from .controller import LMTSViewController
-from .curses_host import CursesViewHost
 from .projector import LMTSViewProjector
+
+
+FOOTER = (
+    "m models  t tests  r run matrix  a test all  "
+    "p profile  x refresh  q q q quit"
+)
 
 
 def run() -> None:
@@ -19,6 +25,7 @@ def run() -> None:
             "LMTS",
             lambda: projector.project().lines,
             lambda: projector.project().status,
+            footer=FOOTER,
         )
 
         def select_models(_stdscr: curses.window) -> None:

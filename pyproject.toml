@@ -7,11 +7,15 @@ name = "lmts"
 version = "0.1.0"
 description = "LLM research and testing system"
 requires-python = ">=3.11"
+dependencies = []
 
 [project.scripts]
 lmts = "lmts.cli:main"
 lmts-tui = "lmts.view.tui:main"
 lmts-view = "lmts.view.shell:main"
+
+[tool.setuptools.packages.find]
+include = ["lmts*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

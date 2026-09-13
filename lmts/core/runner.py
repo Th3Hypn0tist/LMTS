@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
+from lmts.lib.workspace import Workspace
 from lmts.tests.base import TestContext, TestModule
 from lmts.tools.profile import SystemProfile, scan_system_profile
 
@@ -12,7 +13,6 @@ from .models import ModelDescriptor
 from .registry import ProviderRegistry
 from .run import RunResult, utc_now
 from .store import RunStore
-from .workspace import Workspace
 
 
 class TestRunner:
@@ -29,7 +29,12 @@ class TestRunner:
         self.store = store
         self.profile_scan = profile_scan
 
-    def run(self, test: TestModule, model: ModelDescriptor, workspace_root: Path) -> tuple[RunResult, Path]:
+    def run(
+        self,
+        test: TestModule,
+        model: ModelDescriptor,
+        workspace_root: Path,
+    ) -> tuple[RunResult, Path]:
         provider = self.providers.provider(model.provider_ref)
         run_id = uuid.uuid4().hex
         started_at = utc_now()

@@ -3,9 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from lmts.core.models import ModelDescriptor
+from lmts.lib.view import ViewFrame, ViewItem
 from lmts.tests.base import TestModule
-
-from .model import ViewFrame, ViewItem
 
 
 def _test_ref(test: TestModule) -> str:

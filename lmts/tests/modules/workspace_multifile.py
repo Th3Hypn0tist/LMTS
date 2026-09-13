@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lmts.core.workspace_protocol import WorkspaceProtocolSession
+from lmts.lib.workspace import WorkspaceProtocolSession
 from lmts.tests.base import TestContext, TestRequirements, TestResult
 
 

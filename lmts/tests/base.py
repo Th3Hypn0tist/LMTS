@@ -5,7 +5,7 @@ from typing import Any, Protocol
 
 from lmts.core.models import ModelDescriptor, NormalizedResponse
 from lmts.core.provider import ModelProvider
-from lmts.core.workspace import Workspace
+from lmts.lib.workspace import Workspace
 
 
 @dataclass(frozen=True, slots=True)

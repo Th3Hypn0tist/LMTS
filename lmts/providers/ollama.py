@@ -7,6 +7,7 @@ from urllib import request
 
 from lmts.core.models import (
     ModelDescriptor,
+    NormalizedPerformance,
     NormalizedResponse,
     NormalizedTiming,
     NormalizedUsage,
@@ -68,16 +69,26 @@ class OllamaProvider:
         return sorted(descriptors, key=lambda item: item.model_ref)
 
     @staticmethod
-    def _normalized_response(raw: dict, text: str, total_ms: float, ttft_ms: float | None) -> NormalizedResponse:
+    def _duration_ms(raw: dict, key: str) -> float | None:
+        value = raw.get(key)
+        if isinstance(value, int) and value >= 0:
+            return value / 1_000_000.0
+        return None
+
+    @staticmethod
+    def _rate(count: object, duration_ns: object) -> float | None:
+        if isinstance(count, int) and isinstance(duration_ns, int) and duration_ns > 0:
+            return count / (duration_ns / 1_000_000_000.0)
+        return None
+
+    @classmethod
+    def _normalized_response(cls, raw: dict, text: str, total_ms: float, ttft_ms: float | None) -> NormalizedResponse:
         eval_count = raw.get("eval_count")
         prompt_eval_count = raw.get("prompt_eval_count")
         eval_duration = raw.get("eval_duration")
-        tokens_per_second = None
-        if isinstance(eval_count, int) and isinstance(eval_duration, int) and eval_duration > 0:
-            tokens_per_second = eval_count / (eval_duration / 1_000_000_000)
-        normalized_raw = dict(raw)
-        if tokens_per_second is not None:
-            normalized_raw["lmts_tokens_per_second"] = tokens_per_second
+        prompt_eval_duration = raw.get("prompt_eval_duration")
+        generation_rate = cls._rate(eval_count, eval_duration)
+        prompt_rate = cls._rate(prompt_eval_count, prompt_eval_duration)
         return NormalizedResponse(
             text=text,
             finish_reason=raw.get("done_reason"),
@@ -85,8 +96,18 @@ class OllamaProvider:
                 input_tokens=prompt_eval_count if isinstance(prompt_eval_count, int) else None,
                 output_tokens=eval_count if isinstance(eval_count, int) else None,
             ),
-            timing=NormalizedTiming(ttft_ms=ttft_ms, total_ms=total_ms),
-            raw=normalized_raw,
+            timing=NormalizedTiming(
+                ttft_ms=ttft_ms,
+                total_ms=total_ms,
+                load_ms=cls._duration_ms(raw, "load_duration"),
+                prompt_eval_ms=cls._duration_ms(raw, "prompt_eval_duration"),
+                generation_ms=cls._duration_ms(raw, "eval_duration"),
+            ),
+            performance=NormalizedPerformance(
+                prompt_tokens_per_second=prompt_rate,
+                generation_tokens_per_second=generation_rate,
+            ),
+            raw=dict(raw),
         )
 
     def generate(self, model: ModelDescriptor, prompt: str) -> NormalizedResponse:
@@ -156,8 +177,13 @@ class OllamaProvider:
                     "finish_reason": normalized.finish_reason,
                     "input_tokens": normalized.usage.input_tokens,
                     "output_tokens": normalized.usage.output_tokens,
-                    "ttft_ms": round(ttft_ms, 1) if ttft_ms is not None else None,
-                    "total_ms": round(total_ms, 1),
+                    "ttft_ms": normalized.timing.ttft_ms,
+                    "total_ms": normalized.timing.total_ms,
+                    "load_ms": normalized.timing.load_ms,
+                    "prompt_eval_ms": normalized.timing.prompt_eval_ms,
+                    "generation_ms": normalized.timing.generation_ms,
+                    "prompt_tokens_per_second": normalized.performance.prompt_tokens_per_second,
+                    "generation_tokens_per_second": normalized.performance.generation_tokens_per_second,
                 },
             )
         )

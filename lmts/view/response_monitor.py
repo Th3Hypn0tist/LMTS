@@ -7,19 +7,19 @@ from lmts.core.models import ResponseStreamChunk
 
 
 class ResponseMonitor:
-    """Read-only projection buffer for the currently active bot response stream."""
+    """Read-only projection buffer for the currently active response stream."""
 
     def __init__(self, *, max_lines: int = 400) -> None:
         self._lock = threading.Lock()
         self._max_lines = max_lines
-        self._model_id = ""
+        self._source_id = ""
         self._channel = ""
         self._lines: deque[str] = deque(maxlen=max_lines)
         self._partial: dict[str, str] = {"thinking": "", "text": "", "tool": "", "meta": ""}
 
-    def reset(self, model_id: str = "") -> None:
+    def reset(self, source_id: str = "") -> None:
         with self._lock:
-            self._model_id = model_id
+            self._source_id = source_id
             self._channel = ""
             self._lines.clear()
             for key in self._partial:
@@ -27,8 +27,8 @@ class ResponseMonitor:
 
     def accept(self, chunk: ResponseStreamChunk) -> None:
         with self._lock:
-            if chunk.model_id and chunk.model_id != self._model_id:
-                self._model_id = chunk.model_id
+            if chunk.source_id and chunk.source_id != self._source_id:
+                self._source_id = chunk.source_id
                 self._channel = ""
                 self._lines.clear()
                 for key in self._partial:
@@ -56,8 +56,8 @@ class ResponseMonitor:
     def lines(self) -> tuple[str, ...]:
         with self._lock:
             output: list[str] = []
-            if self._model_id:
-                output.append(self._model_id)
+            if self._source_id:
+                output.append(self._source_id)
                 output.append("")
             output.extend(self._lines)
             partial = self._partial.get(self._channel, "")

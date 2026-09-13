@@ -74,8 +74,12 @@ class SplitCursesViewHost(CursesViewHost):
             elif key == curses.KEY_END:
                 scroll = max(0, len(lines) - content_h)
 
-    def draw(self, stdscr: curses.window) -> None:
-        """Render the complete split layout once without reading input."""
+    def draw(self, stdscr: curses.window, *, commit: bool = True) -> None:
+        """Render the split layout into curses' virtual screen.
+
+        When commit=False the caller may compose additional windows before one
+        atomic doupdate(), avoiding visible erase/redraw cycles between panes.
+        """
         lines = list(self.render())
         monitor_lines = list(self.monitor_render())
         height, width = stdscr.getmaxyx()
@@ -116,7 +120,10 @@ class SplitCursesViewHost(CursesViewHost):
             quit_hint = f"quit: {self._quit}{'_' * remaining}"
         self._safe_addnstr(stdscr, height - 2, 0, self.message or quit_hint, width - 1)
         self._safe_addnstr(stdscr, height - 1, 0, self.footer, width - 1, curses.A_DIM)
-        stdscr.refresh()
+
+        stdscr.noutrefresh()
+        if commit:
+            curses.doupdate()
 
     def progress_dialog(
         self,
@@ -128,9 +135,11 @@ class SplitCursesViewHost(CursesViewHost):
         poll_ms: int = 200,
         cancel: Callable[[], None] | None = None,
     ) -> None:
-        """Keep the split view, including passive monitor, live behind the modal."""
+        """Keep split view and modal live in one atomic curses update."""
         while True:
-            self.draw(stdscr)
+            # Stage background first, but do not touch the physical terminal yet.
+            self.draw(stdscr, commit=False)
+
             lines = list(render_lines())
             height, width = stdscr.getmaxyx()
             visible = max(1, min(len(lines), height - 7, 20))
@@ -154,7 +163,11 @@ class SplitCursesViewHost(CursesViewHost):
                 "c cancel  Esc hide" if cancel else "Esc hide; test continues"
             )
             self._safe_addnstr(win, win_h - 2, 2, footer, win_w - 4, curses.A_DIM)
-            win.refresh()
+
+            # Stage modal over the background and commit the full frame once.
+            win.noutrefresh()
+            curses.doupdate()
+
             key = win.getch()
             if is_done() and key in (curses.KEY_ENTER, 10, 13, 27, -1):
                 return

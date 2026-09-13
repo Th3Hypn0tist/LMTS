@@ -4,11 +4,7 @@ from dataclasses import dataclass, field
 
 from lmts.core.models import ModelDescriptor
 from lmts.lib.view import ViewFrame, ViewItem
-from lmts.tests.base import TestModule
-
-
-def _test_ref(test: TestModule) -> str:
-    return f"{test.id}@{test.version}"
+from lmts.tests.base import TestModule, test_ref
 
 
 @dataclass(slots=True)
@@ -20,12 +16,16 @@ class LMTSViewState:
     message: str = ""
     last_result: dict[str, object] | None = None
 
+    profile_required: bool = False
+    profiled_at: str = ""
     running: bool = False
+    cancel_requested: bool = False
     progress_completed: int = 0
     progress_total: int = 0
     progress_passed: int = 0
     progress_failed: int = 0
     progress_errors: int = 0
+    progress_cancelled: int = 0
     progress_model_id: str = ""
     progress_test_ref: str = ""
     progress_phase: str = "idle"
@@ -36,17 +36,7 @@ class LMTSViewState:
 
     @property
     def selected_tests(self) -> list[TestModule]:
-        return [test for test in self.tests if _test_ref(test) in self.selected_test_refs]
-
-    @property
-    def model(self) -> ModelDescriptor | None:
-        selected = self.selected_models
-        return selected[0] if len(selected) == 1 else None
-
-    @property
-    def test(self) -> TestModule | None:
-        selected = self.selected_tests
-        return selected[0] if len(selected) == 1 else None
+        return [test for test in self.tests if test_ref(test) in self.selected_test_refs]
 
     @property
     def models_are_all(self) -> bool:
@@ -64,13 +54,17 @@ class LMTSViewState:
             if self.progress_model_id or self.progress_test_ref
             else "-"
         )
+        state = "CANCEL REQUESTED" if self.cancel_requested and self.running else (
+            "RUNNING" if self.running else self.progress_phase.upper()
+        )
         return (
-            f"state   : {'RUNNING' if self.running else self.progress_phase.upper()}",
-            f"progress: {self.progress_completed} / {self.progress_total}",
-            f"current : {current}",
-            f"passed  : {self.progress_passed}",
-            f"failed  : {self.progress_failed}",
-            f"errors  : {self.progress_errors}",
+            f"state    : {state}",
+            f"progress : {self.progress_completed} / {self.progress_total}",
+            f"current  : {current}",
+            f"passed   : {self.progress_passed}",
+            f"failed   : {self.progress_failed}",
+            f"errors   : {self.progress_errors}",
+            f"cancelled: {self.progress_cancelled}",
         )
 
 
@@ -94,26 +88,25 @@ class LMTSViewProjector:
         if not selected_tests:
             test_text = "<none>"
         elif self.state.tests_are_all:
-            test_text = f"all ({len(selected_tests)})"
+            test_text = f"all configured ({len(selected_tests)})"
         elif len(selected_tests) == 1:
-            test_text = _test_ref(selected_tests[0])
+            test_text = test_ref(selected_tests[0])
         else:
-            test_text = f"{len(selected_tests)} selected"
+            test_text = f"{len(selected_tests)} configured selected"
 
         run_count = len(selected_models) * len(selected_tests)
+        profile_text = "REQUIRED" if self.state.profile_required else "ready"
         status = (
-            f"models={len(selected_models)}/{len(self.state.models)}  "
-            f"tests={len(selected_tests)}/{len(self.state.tests)}  "
-            f"runs={run_count}"
+            f"profile={profile_text}  models={len(selected_models)}/{len(self.state.models)}  "
+            f"tests={len(selected_tests)}/{len(self.state.tests)}  runs={run_count}"
         )
         if self.state.running:
-            status += (
-                f"  RUNNING {self.state.progress_completed}/{self.state.progress_total}"
-            )
+            status += f"  RUNNING {self.state.progress_completed}/{self.state.progress_total}"
 
         lines = [
             "LMTS model laboratory",
             "",
+            f"Profile: {profile_text}",
             f"Models : {model_text}",
             f"Tests  : {test_text}",
             f"Matrix : {len(selected_models)} x {len(selected_tests)} = {run_count} run(s)",
@@ -127,10 +120,14 @@ class LMTSViewProjector:
             for model in selected_models:
                 lines.append(f"  {model.id}")
 
-        if selected_tests:
-            lines.extend(["", "Selected tests"])
-            for test in selected_tests:
-                lines.append(f"  {_test_ref(test)}")
+        if self.state.tests:
+            lines.extend(["", "Configured test matrix"])
+            for test in self.state.tests:
+                marker = "x" if test_ref(test) in self.state.selected_test_refs else " "
+                title = getattr(test, "title", test.id)
+                params = getattr(test, "params", {})
+                suffix = f"  params={params}" if params else ""
+                lines.append(f"  [{marker}] {test_ref(test)}  {title}{suffix}")
 
         if len(selected_models) == 1:
             model = selected_models[0]
@@ -156,8 +153,9 @@ class LMTSViewProjector:
             status=status,
             lines=tuple(lines),
             items=(
+                ViewItem("profile", "Profile", profile_text),
                 ViewItem("models", "Models", model_text),
-                ViewItem("tests", "Tests", test_text),
+                ViewItem("tests", "Configured tests", test_text),
                 ViewItem("runs", "Runs", str(run_count)),
                 ViewItem("running", "Running", str(self.state.running).lower()),
                 ViewItem(

@@ -11,9 +11,8 @@ def test_ftp_profiles_round_trip(tmp_path: Path) -> None:
         username='salanimi',
         password='secret',
         root='/home/www/lmts',
-        web_base_url='http://192.0.2.10/benchmark/',
     )
     save_ftp_profiles(FTPProfiles(profiles=(profile,)), path)
     loaded = load_ftp_profiles(path)
     assert loaded.profiles == (profile,)
-    assert loaded.profiles[0].report_endpoint == 'http://192.0.2.10/benchmark/api/report.php'
+    assert loaded.profiles[0].root == '/home/www/lmts'

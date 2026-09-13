@@ -34,11 +34,13 @@ class RunResult:
     completed_at: str
     status: RunStatus
     passed: bool | None
+    evaluation_subject: dict[str, Any] = field(default_factory=dict)
+    score: dict[str, Any] | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     artifacts: dict[str, Any] = field(default_factory=dict)
     responses: list[NormalizedResponse] = field(default_factory=list)
     workspace_trace: list[dict[str, object]] = field(default_factory=list)
-    system_profile: dict[str, Any] = field(default_factory=dict)
+    system_context: dict[str, Any] = field(default_factory=dict)
     model_metadata: dict[str, Any] = field(default_factory=dict)
     error: dict[str, str] | None = None
 

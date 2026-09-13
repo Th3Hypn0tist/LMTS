@@ -1,25 +1,22 @@
-from lmts.core.models import ModelDescriptor, NormalizedResponse
+from lmts.core.executor import RuntimeExecutor
+from lmts.core.models import NormalizedResponse
+from lmts.core.subject import EvaluationSubject
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tests.modules.bot_core import BOT_CORE_CASES, bot_core_test
 from lmts.tests.base import TestContext
 from lmts.lib.workspace import Workspace
 
 
-class EchoExpectedProvider:
-    id = "fake"
-
-    def __init__(self, text: str) -> None:
-        self.text = text
-
-    def generate(self, model, prompt):
-        return NormalizedResponse(text=self.text)
-
-
 def _context(tmp_path, text: str) -> TestContext:
-    model = ModelDescriptor(id="fake:model", provider_ref="fake", model_ref="model", location="local")
+    subject = EvaluationSubject.for_bot("bot.test")
+    executor = RuntimeExecutor(
+        executor_id="bot.test",
+        executor_kind="bot",
+        evaluation_subject=subject,
+        generate_handler=lambda prompt, sink: NormalizedResponse(text=text),
+    )
     return TestContext(
-        provider=EchoExpectedProvider(text),
-        model=model,
+        executor=executor,
         workspace=Workspace(tmp_path / "workspace"),
     )
 

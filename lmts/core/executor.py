@@ -62,7 +62,16 @@ class ModelExecutor:
 
     @property
     def capabilities(self) -> ModelCapabilities:
-        return self.model.capabilities
+        base = self.model.capabilities
+        return ModelCapabilities(
+            text=base.text,
+            vision=base.vision,
+            tools=base.tools,
+            structured_output=base.structured_output,
+            workspace_read=True if base.text else False,
+            workspace_write=True if base.text else False,
+            multi_file_output=True if base.text else False,
+        )
 
     @property
     def metadata(self) -> dict[str, Any]:

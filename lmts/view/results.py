@@ -49,6 +49,7 @@ def cell_verdict(cell: dict[str, Any] | None) -> str:
 
 
 def format_matrix(data: dict[str, Any]) -> tuple[str, ...]:
+    """Compact results dashboard: only what ran and how it went."""
     models = [str(value) for value in (data.get("model_ids") or [])]
     tests = [str(value) for value in (data.get("test_refs") or [])]
     cells = [cell for cell in (data.get("cells") or []) if isinstance(cell, dict)]
@@ -57,7 +58,7 @@ def format_matrix(data: dict[str, Any]) -> tuple[str, ...]:
         for cell in cells
     }
 
-    short_tests = []
+    short_tests: list[str] = []
     for ref in tests:
         instance = ref.split("#", 1)[-1] if "#" in ref else ref.rsplit(".", 1)[-1]
         short_tests.append(instance[:18])
@@ -65,9 +66,10 @@ def format_matrix(data: dict[str, Any]) -> tuple[str, ...]:
     model_width = max([5, *(len(model) for model in models)]) if models else 5
     col_width = max(8, *(len(label) for label in short_tests)) if short_tests else 8
 
+    started = str(data.get("started_at") or "")
+    stamp = started.replace("T", " ")[:19] if started else "?"
     lines = [
-        f"Matrix: {data.get('matrix_id', '?')}",
-        f"Started: {data.get('started_at', '?')}",
+        f"Run: {stamp}",
         f"Status: {str(data.get('status') or '?').upper()}",
         "",
     ]
@@ -81,8 +83,7 @@ def format_matrix(data: dict[str, Any]) -> tuple[str, ...]:
     for model in models:
         row = f"{model:<{model_width}}"
         for test_ref in tests:
-            verdict = cell_verdict(by_key.get((model, test_ref)))
-            row += f"  {verdict:^{col_width}}"
+            row += f"  {cell_verdict(by_key.get((model, test_ref))):^{col_width}}"
         lines.append(row)
 
     lines.extend(

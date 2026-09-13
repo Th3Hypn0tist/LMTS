@@ -6,6 +6,9 @@ from collections.abc import Callable, Sequence
 from .curses_host import CursesViewHost
 
 
+POLL_MS = 200
+
+
 class SplitCursesViewHost(CursesViewHost):
     """Curses host with a passive read-only monitor occupying the lower pane."""
 
@@ -58,7 +61,11 @@ class SplitCursesViewHost(CursesViewHost):
                 curses.A_DIM,
             )
             stdscr.refresh()
-            key = stdscr.get_wch()
+            stdscr.timeout(-1)
+            try:
+                key = stdscr.get_wch()
+            finally:
+                stdscr.timeout(POLL_MS)
             if key in ("\x1b", "\n", "\r") or key == curses.KEY_ENTER:
                 return
             if key == curses.KEY_UP:
@@ -139,7 +146,11 @@ class SplitCursesViewHost(CursesViewHost):
             )
             stdscr.refresh()
 
-            key = stdscr.get_wch()
+            stdscr.timeout(-1)
+            try:
+                key = stdscr.get_wch()
+            finally:
+                stdscr.timeout(POLL_MS)
             if key == "\x1b":
                 return None
             if key in ("\n", "\r") or key == curses.KEY_ENTER:
@@ -256,7 +267,7 @@ class SplitCursesViewHost(CursesViewHost):
     def run(self, stdscr: curses.window) -> None:
         curses.curs_set(0)
         stdscr.keypad(True)
-        stdscr.timeout(200)
+        stdscr.timeout(POLL_MS)
 
         while True:
             self.draw(stdscr)

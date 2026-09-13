@@ -27,6 +27,7 @@ class WorkspaceProtocolResult:
     summary: str | None = None
     steps: int = 0
     responses: list[Any] = field(default_factory=list)
+    action_errors: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _parse_action(text: str) -> dict[str, Any]:
@@ -112,6 +113,23 @@ def execute_workspace_action(
     raise WorkspaceProtocolError(f"unsupported workspace action: {operation}")
 
 
+def _error_outcome(action: dict[str, Any] | None, exc: Exception) -> dict[str, Any]:
+    operation = None
+    if isinstance(action, dict):
+        value = action.get("action")
+        if isinstance(value, str):
+            operation = value
+    return {
+        "ok": False,
+        "action": operation,
+        "error": {
+            "type": type(exc).__name__,
+            "message": str(exc),
+        },
+        "recoverable": True,
+    }
+
+
 class WorkspaceProtocolSession:
     """Text-mediated bounded protocol for models without native tools."""
 
@@ -125,6 +143,7 @@ Available actions:
 {"action":"write","mount":"work|output","path":"relative/path","content":"text"}
 {"action":"finish","summary":"optional summary"}
 The input mount is read-only. Do not use absolute paths or parent traversal.
+If an action returns ok=false, inspect the error and correct the next action.
 """
 
     def __init__(self, *, max_steps: int = 64) -> None:
@@ -145,12 +164,22 @@ The input mount is read-only. Do not use absolute paths or parent traversal.
             )
             response = context.generate(prompt)
             result.responses.append(response)
-            action = _parse_action(response.text)
-            outcome = execute_workspace_action(context.workspace, action)
             result.steps = step
-            transcript.append(
-                f"MODEL_ACTION_{step}:\n{json.dumps(action, ensure_ascii=False)}"
-            )
+
+            action: dict[str, Any] | None = None
+            try:
+                action = _parse_action(response.text)
+                outcome = execute_workspace_action(context.workspace, action)
+            except (OSError, ValueError, PermissionError) as exc:
+                outcome = _error_outcome(action, exc)
+                result.action_errors.append(dict(outcome))
+
+            if action is not None:
+                transcript.append(
+                    f"MODEL_ACTION_{step}:\n{json.dumps(action, ensure_ascii=False)}"
+                )
+            else:
+                transcript.append(f"MODEL_ACTION_{step}:\n{response.text.strip()}")
             transcript.append(
                 f"LMTS_RESULT_{step}:\n{json.dumps(outcome, ensure_ascii=False)}"
             )

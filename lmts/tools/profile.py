@@ -10,8 +10,15 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from .reference_benchmark import (
+    REFERENCE_BENCHMARK_DOMAINS,
+    empty_reference_benchmarks,
+    run_reference_benchmark,
+    validate_reference_benchmarks,
+)
+
 DEFAULT_PROFILE_PATH = Path(".lmts/system-profile.json")
-PROFILE_SCHEMA_VERSION = 3
+PROFILE_SCHEMA_VERSION = 4
 
 
 @dataclass(slots=True)
@@ -203,14 +210,41 @@ def system_fingerprint(profile: SystemProfile) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def save_system_profile(profile: SystemProfile, path: Path = DEFAULT_PROFILE_PATH) -> Path:
+def _existing_reference_benchmarks(target: Path, fingerprint: str) -> dict[str, object] | None:
+    if not target.is_file():
+        return None
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("schema_version") != PROFILE_SCHEMA_VERSION or payload.get("fingerprint") != fingerprint:
+        return None
+    references = payload.get("reference_benchmarks")
+    return references if validate_reference_benchmarks(references) else None
+
+
+def save_system_profile(
+    profile: SystemProfile,
+    path: Path = DEFAULT_PROFILE_PATH,
+    *,
+    reference_benchmarks: dict[str, object] | None = None,
+) -> Path:
     target = path.expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
+    fingerprint = system_fingerprint(profile)
+    references = reference_benchmarks
+    if references is None:
+        references = _existing_reference_benchmarks(target, fingerprint) or empty_reference_benchmarks()
+    if not validate_reference_benchmarks(references):
+        raise ValueError("invalid reference benchmark payload")
     payload = {
         "schema_version": PROFILE_SCHEMA_VERSION,
         "profiled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "fingerprint": system_fingerprint(profile),
+        "fingerprint": fingerprint,
         "profile": profile.to_dict(),
+        "reference_benchmarks": references,
     }
     target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return target
@@ -230,12 +264,46 @@ def load_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object] 
         return None
     if not isinstance(payload.get("profile"), dict):
         return None
+    if not validate_reference_benchmarks(payload.get("reference_benchmarks")):
+        return None
     fingerprint = payload.get("fingerprint")
     if not isinstance(fingerprint, str) or not fingerprint:
         return None
     if fingerprint != system_fingerprint(scan_system_profile()):
         return None
     return payload
+
+
+def save_reference_benchmark(
+    domain: str,
+    result: dict[str, object],
+    path: Path = DEFAULT_PROFILE_PATH,
+) -> Path:
+    normalized = domain.strip().casefold()
+    if normalized not in REFERENCE_BENCHMARK_DOMAINS:
+        raise ValueError(f"unknown reference benchmark domain: {domain}")
+    if result.get("domain") != normalized:
+        raise ValueError("reference benchmark domain mismatch")
+    payload = load_system_profile(path)
+    if payload is None:
+        raise ValueError("valid system profile required before reference benchmarking")
+    references = dict(payload["reference_benchmarks"])
+    references[normalized] = result
+    if not validate_reference_benchmarks(references):
+        raise ValueError("invalid reference benchmark result")
+    payload["reference_benchmarks"] = references
+    target = path.expanduser()
+    target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return target
+
+
+def benchmark_system_reference(
+    domain: str,
+    path: Path = DEFAULT_PROFILE_PATH,
+) -> dict[str, object]:
+    result = run_reference_benchmark(domain).to_dict()
+    save_reference_benchmark(domain, result, path)
+    return result
 
 
 def ensure_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object]:
@@ -248,6 +316,7 @@ def ensure_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object
         "schema_version": PROFILE_SCHEMA_VERSION,
         "fingerprint": system_fingerprint(profile),
         "profile": profile.to_dict(),
+        "reference_benchmarks": empty_reference_benchmarks(),
     }
 
 

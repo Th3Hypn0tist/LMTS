@@ -1,3 +1,4 @@
+from lmts.core.executor import RuntimeExecutor
 from lmts.core.models import ModelDescriptor, NormalizedResponse, NormalizedTiming, NormalizedUsage
 from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
@@ -31,6 +32,16 @@ def _system_context():
     }
 
 
+def _runtime_response(prompt, sink):
+    return NormalizedResponse(
+        text="LMTS_OK",
+        finish_reason="stop",
+        usage=NormalizedUsage(input_tokens=4, output_tokens=2),
+        timing=NormalizedTiming(total_ms=10.0),
+        raw={"runtime": True},
+    )
+
+
 def test_runner_executes_and_persists_canonical_run(tmp_path):
     providers = ProviderRegistry([FakeProvider()])
     model = providers.discover_models()[0]
@@ -44,30 +55,54 @@ def test_runner_executes_and_persists_canonical_run(tmp_path):
     assert run.passed is True
     assert run.metrics["output_tokens"] == 2
     assert run.system_context["fingerprint"] == "system-fingerprint"
+    assert run.executor_kind == "model"
+    assert run.executor_id == "fake:model"
     assert run.evaluation_subject["kind"] == "model"
     assert run.evaluation_subject["id"] == "fake:model"
     assert path.exists()
     assert len(run.responses) == 1
 
 
-def test_runner_can_score_bot_and_composition_subjects(tmp_path):
-    providers = ProviderRegistry([FakeProvider()])
-    model = providers.discover_models()[0]
-    runner = TestRunner(providers, RunStore(tmp_path / "results"), system_context_loader=_system_context)
+def test_runner_executes_standalone_bot_subject(tmp_path):
+    runner = TestRunner(ProviderRegistry([]), RunStore(tmp_path / "results"), system_context_loader=_system_context)
+    subject = EvaluationSubject.for_bot("bot.writer", configuration={"runtime": "fake"})
+    executor = RuntimeExecutor(
+        executor_id="bot.writer",
+        executor_kind="bot",
+        evaluation_subject=subject,
+        generate_handler=_runtime_response,
+        executor_metadata={"runtime": "fake"},
+    )
 
-    bot = EvaluationSubject.for_bot("bot.writer", configuration={"model": model.id})
-    bot_run, _ = runner.run(TextGenerationTest(), model, tmp_path / "workspaces", subject=bot)
-    assert bot_run.evaluation_subject["kind"] == "bot"
-    assert bot_run.evaluation_subject["id"] == "bot.writer"
+    run, path = runner.run_executor(TextGenerationTest(), executor, tmp_path / "workspaces")
 
-    composition = EvaluationSubject.for_composition(
+    assert run.status == "completed"
+    assert run.passed is True
+    assert run.executor_kind == "bot"
+    assert run.model_id is None
+    assert run.evaluation_subject["id"] == "bot.writer"
+    assert "bot" in path.parts
+
+
+def test_runner_executes_composition_subject(tmp_path):
+    runner = TestRunner(ProviderRegistry([]), RunStore(tmp_path / "results"), system_context_loader=_system_context)
+    subject = EvaluationSubject.for_composition(
         "composition.writer-reviewer",
         (
             SubjectMember("bot.writer", role="writer"),
             SubjectMember("bot.reviewer", role="reviewer"),
         ),
     )
-    composition_run, _ = runner.run(TextGenerationTest(), model, tmp_path / "workspaces", subject=composition)
-    assert composition_run.evaluation_subject["kind"] == "composition"
-    assert len(composition_run.evaluation_subject["members"]) == 2
-    assert composition_run.evaluation_subject["fingerprint"] != bot_run.evaluation_subject["fingerprint"]
+    executor = RuntimeExecutor(
+        executor_id="composition.writer-reviewer",
+        executor_kind="composition",
+        evaluation_subject=subject,
+        generate_handler=_runtime_response,
+    )
+
+    run, path = runner.run_executor(TextGenerationTest(), executor, tmp_path / "workspaces")
+
+    assert run.status == "completed"
+    assert run.executor_kind == "composition"
+    assert len(run.evaluation_subject["members"]) == 2
+    assert "composition" in path.parts

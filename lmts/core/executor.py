@@ -14,12 +14,7 @@ GenerateHandler = Callable[[str, ResponseSink | None], NormalizedResponse]
 
 
 class TestExecutor(Protocol):
-    """Execution boundary consumed by LMTS tests.
-
-    The executor owns how a prompt reaches the evaluated runtime. Tests only
-    observe normalized responses and never need to know whether the target is
-    a raw model, a standalone bot, or a composition.
-    """
+    """Execution boundary consumed by LMTS tests."""
 
     @property
     def id(self) -> str: ...
@@ -36,11 +31,7 @@ class TestExecutor(Protocol):
     @property
     def metadata(self) -> dict[str, Any]: ...
 
-    def generate(
-        self,
-        prompt: str,
-        sink: ResponseSink | None = None,
-    ) -> NormalizedResponse: ...
+    def generate(self, prompt: str, sink: ResponseSink | None = None) -> NormalizedResponse: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,26 +71,17 @@ class ModelExecutor:
             "model_ref": self.model.model_ref,
             "location": self.model.location,
             "model_metadata": dict(self.model.metadata),
+            "runtime_configuration": dict(self.model.runtime_configuration),
         }
 
-    def generate(
-        self,
-        prompt: str,
-        sink: ResponseSink | None = None,
-    ) -> NormalizedResponse:
+    def generate(self, prompt: str, sink: ResponseSink | None = None) -> NormalizedResponse:
         generate_stream = getattr(self.provider, "generate_stream", None)
         if sink is not None and callable(generate_stream):
             return generate_stream(self.model, prompt, sink)
 
         response = self.provider.generate(self.model, prompt)
         if sink is not None:
-            sink(
-                ResponseStreamChunk(
-                    source_id=self.id,
-                    channel="text",
-                    text=response.text,
-                )
-            )
+            sink(ResponseStreamChunk(source_id=self.id, channel="text", text=response.text))
             sink(
                 ResponseStreamChunk(
                     source_id=self.id,
@@ -110,6 +92,11 @@ class ModelExecutor:
                         "output_tokens": response.usage.output_tokens,
                         "ttft_ms": response.timing.ttft_ms,
                         "total_ms": response.timing.total_ms,
+                        "load_ms": response.timing.load_ms,
+                        "prompt_eval_ms": response.timing.prompt_eval_ms,
+                        "generation_ms": response.timing.generation_ms,
+                        "prompt_tokens_per_second": response.performance.prompt_tokens_per_second,
+                        "generation_tokens_per_second": response.performance.generation_tokens_per_second,
                     },
                 )
             )
@@ -153,9 +140,5 @@ class RuntimeExecutor:
     def metadata(self) -> dict[str, Any]:
         return dict(self.executor_metadata)
 
-    def generate(
-        self,
-        prompt: str,
-        sink: ResponseSink | None = None,
-    ) -> NormalizedResponse:
+    def generate(self, prompt: str, sink: ResponseSink | None = None) -> NormalizedResponse:
         return self.generate_handler(prompt, sink)

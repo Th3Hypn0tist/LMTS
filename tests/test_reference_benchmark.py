@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from lmts.tools import reference_benchmark as reference
 
 
@@ -43,7 +41,9 @@ def test_memory_reference_benchmark_records_raw_metrics() -> None:
 
 
 def test_gpu_and_npu_do_not_fabricate_results() -> None:
-    with pytest.raises(NotImplementedError):
-        reference.run_reference_benchmark("gpu")
-    with pytest.raises(NotImplementedError):
-        reference.run_reference_benchmark("npu")
+    for domain in ("gpu", "npu"):
+        try:
+            reference.run_reference_benchmark(domain)
+        except NotImplementedError:
+            continue
+        raise AssertionError(f"{domain} benchmark fabricated a result")

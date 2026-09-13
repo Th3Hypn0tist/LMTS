@@ -22,10 +22,16 @@ class RunStore:
         self.root = root.expanduser().resolve()
 
     def path_for(self, run: RunResult) -> Path:
+        subject = run.evaluation_subject
+        subject_id = str(subject.get("id") or "unknown-subject")
+        subject_kind = str(subject.get("kind") or "unknown")
+        fingerprint = str(subject.get("fingerprint") or "unfingerprinted")
         return (
             self.root
-            / "models"
-            / safe_component(run.model_id)
+            / "subjects"
+            / safe_component(subject_kind)
+            / safe_component(subject_id)
+            / safe_component(fingerprint)
             / "tests"
             / safe_component(run.test_ref)
             / "runs"
@@ -54,4 +60,4 @@ class RunStore:
     def iter_run_paths(self) -> list[Path]:
         if not self.root.exists():
             return []
-        return sorted(self.root.glob("models/*/tests/*/runs/*.json"))
+        return sorted(self.root.glob("subjects/*/*/*/tests/*/runs/*.json"))

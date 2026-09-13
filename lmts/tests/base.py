@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from lmts.core.control import RunControl
-from lmts.core.models import ModelDescriptor, NormalizedResponse
+from lmts.core.models import ModelDescriptor, NormalizedResponse, ResponseStreamChunk
 from lmts.core.provider import ModelProvider
 from lmts.lib.workspace import Workspace
 
@@ -33,6 +34,7 @@ class TestContext:
     model: ModelDescriptor
     workspace: Workspace
     control: RunControl | None = None
+    response_sink: Callable[[ResponseStreamChunk], None] | None = None
     responses: list[NormalizedResponse] = field(default_factory=list)
 
     def checkpoint(self) -> None:
@@ -41,7 +43,31 @@ class TestContext:
 
     def generate(self, prompt: str) -> NormalizedResponse:
         self.checkpoint()
-        response = self.provider.generate(self.model, prompt)
+        generate_stream = getattr(self.provider, "generate_stream", None)
+        if callable(generate_stream) and self.response_sink is not None:
+            response = generate_stream(self.model, prompt, self.response_sink)
+        else:
+            response = self.provider.generate(self.model, prompt)
+            if self.response_sink is not None:
+                self.response_sink(
+                    ResponseStreamChunk(
+                        model_id=self.model.id,
+                        channel="text",
+                        text=response.text,
+                    )
+                )
+                self.response_sink(
+                    ResponseStreamChunk(
+                        model_id=self.model.id,
+                        channel="meta",
+                        data={
+                            "finish_reason": response.finish_reason,
+                            "input_tokens": response.usage.input_tokens,
+                            "output_tokens": response.usage.output_tokens,
+                            "total_ms": response.timing.total_ms,
+                        },
+                    )
+                )
         self.responses.append(response)
         self.checkpoint()
         return response

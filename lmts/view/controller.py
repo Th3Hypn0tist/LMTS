@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import threading
+import uuid
 from pathlib import Path
 
 from lmts.core.benchmark_runner import BenchmarkProgress, BenchmarkRunner
 from lmts.core.benchmark_store import BenchmarkStore
 from lmts.core.control import RunControl
+from lmts.core.matrix_store import MatrixCell, MatrixRunRecord, MatrixRunStore
 from lmts.core.registry import ProviderRegistry
+from lmts.core.run import utc_now
 from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
 from lmts.lib.errorlog import export_error_log
@@ -66,6 +69,18 @@ class LMTSViewController:
     def recent_results(self, *, limit: int = 200) -> list[tuple[Path, dict]]:
         store = RunStore(self.results_root)
         paths = store.iter_run_paths()
+        paths.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0.0, reverse=True)
+        output: list[tuple[Path, dict]] = []
+        for path in paths[:limit]:
+            try:
+                output.append((path, store.load(path)))
+            except (OSError, ValueError):
+                continue
+        return output
+
+    def recent_matrices(self, *, limit: int = 100) -> list[tuple[Path, dict]]:
+        store = MatrixRunStore(self.results_root)
+        paths = store.iter_paths()
         paths.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0.0, reverse=True)
         output: list[tuple[Path, dict]] = []
         for path in paths[:limit]:
@@ -176,13 +191,19 @@ class LMTSViewController:
         runner = TestRunner(self.providers, RunStore(self.results_root), response_sink=self.response_monitor.accept)
         benchmark_runner = BenchmarkRunner(runner)
         benchmark_store = BenchmarkStore(self.results_root)
+        matrix_store = MatrixRunStore(self.results_root)
+        matrix_id = uuid.uuid4().hex
+        matrix_started_at = utc_now()
+        matrix_cells: list[MatrixCell] = []
         batch_ids: list[str] = []
         batch_paths: list[str] = []
         completed_before = 0
+        matrix_path: Path | None = None
         try:
             for test in tests:
                 if control.cancelled:
                     break
+
                 def on_progress(event: BenchmarkProgress, *, offset: int = completed_before) -> None:
                     self.state.progress_model_id = event.model_id
                     self.state.progress_test_ref = event.test_ref
@@ -197,6 +218,17 @@ class LMTSViewController:
                     run = event.run
                     if run is None:
                         return
+                    if event.result_path is not None:
+                        matrix_cells.append(
+                            MatrixCell(
+                                model_id=run.model_id,
+                                test_ref=run.test_ref,
+                                run_id=run.run_id,
+                                status=run.status,
+                                passed=run.passed,
+                                result_path=str(event.result_path),
+                            )
+                        )
                     if run.status == "cancelled":
                         self.state.progress_cancelled += 1
                     elif run.status != "completed":
@@ -207,13 +239,41 @@ class LMTSViewController:
                         self.state.progress_passed += 1
                     elif run.passed is False:
                         self.state.progress_failed += 1
+
                 batch = benchmark_runner.run(test, models, self.workspace_root, progress=on_progress, control=control)
                 if batch.run_ids:
                     path = benchmark_store.append(batch)
                     batch_ids.append(batch.batch_id)
                     batch_paths.append(str(path))
                     completed_before += len(batch.run_ids)
-            self.state.last_result = {"matrix": f"{len(models)} model(s) x {len(tests)} configured test(s)", "runs": self.state.progress_completed, "passed": self.state.progress_passed, "failed": self.state.progress_failed, "errors": self.state.progress_errors, "cancelled": self.state.progress_cancelled, "batch_ids": ", ".join(batch_ids), "batch_paths": ", ".join(batch_paths)}
+
+            matrix_status = "cancelled" if control.cancelled else "completed"
+            record = MatrixRunRecord(
+                matrix_id=matrix_id,
+                started_at=matrix_started_at,
+                completed_at=utc_now(),
+                status=matrix_status,
+                model_ids=[model.id for model in models],
+                test_refs=[test_ref(test) for test in tests],
+                cells=matrix_cells,
+                passed=self.state.progress_passed,
+                failed=self.state.progress_failed,
+                errors=self.state.progress_errors,
+                cancelled=self.state.progress_cancelled,
+            )
+            matrix_path = matrix_store.append(record)
+            self.state.last_result = {
+                "matrix": f"{len(models)} model(s) x {len(tests)} configured test(s)",
+                "matrix_id": matrix_id,
+                "matrix_path": str(matrix_path),
+                "runs": self.state.progress_completed,
+                "passed": self.state.progress_passed,
+                "failed": self.state.progress_failed,
+                "errors": self.state.progress_errors,
+                "cancelled": self.state.progress_cancelled,
+                "batch_ids": ", ".join(batch_ids),
+                "batch_paths": ", ".join(batch_paths),
+            }
             if self.last_errors:
                 self.state.last_result["error_log"] = "press e to export"
             if control.cancelled:

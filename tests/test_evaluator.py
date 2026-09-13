@@ -9,23 +9,36 @@ from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
 from lmts.core.subject import EvaluationSubject
 from lmts.tests.modules.bot_core import BotCoreTextTest
+from lmts.tools.profile import PROFILE_SCHEMA_VERSION
+from lmts.tools.reference_benchmark import REFERENCE_BENCHMARK_SCHEMA_VERSION
+
+
+class FakeTelemetry:
+    def start(self):
+        pass
+
+    def stop(self):
+        return {"samples": [], "summary": {"sample_count": 0}}
 
 
 def _system_context():
     return {
-        "schema_version": 5,
+        "schema_version": PROFILE_SCHEMA_VERSION,
         "fingerprint": "system-fingerprint",
         "profile": {},
-        "reference_benchmarks": {"schema_version": 2, "cpu": None, "memory": None, "gpu": None, "npu": None},
+        "reference_benchmarks": {
+            "schema_version": REFERENCE_BENCHMARK_SCHEMA_VERSION,
+            "cpu": None,
+            "memory": None,
+            "gpu": None,
+            "npu": None,
+        },
     }
 
 
 def test_subject_evaluator_persists_bot_scorecard(tmp_path: Path) -> None:
     subject = EvaluationSubject.for_bot("bot.demo", configuration={"version": 1})
-    answers = {
-        "first": "ONE",
-        "second": "WRONG",
-    }
+    answers = {"first": "ONE", "second": "WRONG"}
 
     def generate(prompt, sink):
         return NormalizedResponse(text=answers[prompt])
@@ -45,6 +58,7 @@ def test_subject_evaluator_persists_bot_scorecard(tmp_path: Path) -> None:
         ProviderRegistry([]),
         RunStore(tmp_path / "results"),
         system_context_loader=_system_context,
+        telemetry_factory=FakeTelemetry,
     )
     evaluator = SubjectEvaluator(runner, EvaluationStore(tmp_path / "results"))
 

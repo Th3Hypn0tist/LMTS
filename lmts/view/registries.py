@@ -47,7 +47,8 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("settings.mysql", ("m",), "MySQL", "Settings", scope="settings", order=120),
     ShortcutDefinition("settings.ftp", ("f",), "FTP", "Settings", scope="settings", order=130),
     ShortcutDefinition("settings.report", ("r",), "Report API", "Settings", scope="settings", order=140),
-    ShortcutDefinition("settings.shortcuts", ("k",), "Shortcut editor", "Settings", scope="settings", order=150),
+    ShortcutDefinition("settings.targets", ("t",), "Runtime targets", "Settings", scope="settings", order=150),
+    ShortcutDefinition("settings.shortcuts", ("k",), "Shortcut editor", "Settings", scope="settings", order=160),
 )
 
 

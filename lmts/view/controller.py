@@ -7,10 +7,15 @@ from lmts.core.benchmark_store import BenchmarkStore
 from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
+from lmts.tests.base import TestModule
 from lmts.tests.registry import TestRegistry
 from lmts.tools.profile import scan_system_profile
 
 from .projector import LMTSViewState
+
+
+def _test_ref(test: TestModule) -> str:
+    return f"{test.id}@{test.version}"
 
 
 class LMTSViewController:
@@ -29,56 +34,111 @@ class LMTSViewController:
         self.state = LMTSViewState(tests=list(tests.tests()))
 
     def refresh(self) -> None:
+        previous_models = set(self.state.selected_model_ids)
+        previous_tests = set(self.state.selected_test_refs)
+
         self.state.models = self.providers.discover_models()
         self.state.tests = list(self.tests.tests())
-        self.state.selected_model = min(self.state.selected_model, max(0, len(self.state.models) - 1))
-        self.state.selected_test = min(self.state.selected_test, max(0, len(self.state.tests) - 1))
-        self.state.message = f"discovered {len(self.state.models)} model(s)"
+
+        available_model_ids = {model.id for model in self.state.models}
+        available_test_refs = {_test_ref(test) for test in self.state.tests}
+        self.state.selected_model_ids = previous_models & available_model_ids
+        self.state.selected_test_refs = previous_tests & available_test_refs
+
+        if not self.state.selected_model_ids and self.state.models:
+            self.state.selected_model_ids = {self.state.models[0].id}
+        if not self.state.selected_test_refs and self.state.tests:
+            self.state.selected_test_refs = set(available_test_refs)
+
+        self.state.message = (
+            f"discovered {len(self.state.models)} model(s), "
+            f"{len(self.state.tests)} test(s)"
+        )
+
+    def select_models(self, indices: set[int]) -> None:
+        self.state.selected_model_ids = {
+            self.state.models[index].id
+            for index in sorted(indices)
+            if 0 <= index < len(self.state.models)
+        }
+
+    def select_model_ids(self, model_ids: set[str]) -> None:
+        available = {model.id for model in self.state.models}
+        self.state.selected_model_ids = set(model_ids) & available
+
+    def select_all_models(self) -> None:
+        self.state.selected_model_ids = {model.id for model in self.state.models}
+
+    def select_tests(self, indices: set[int]) -> None:
+        self.state.selected_test_refs = {
+            _test_ref(self.state.tests[index])
+            for index in sorted(indices)
+            if 0 <= index < len(self.state.tests)
+        }
+
+    def select_test_refs(self, test_refs: set[str]) -> None:
+        available = {_test_ref(test) for test in self.state.tests}
+        self.state.selected_test_refs = set(test_refs) & available
+
+    def select_all_tests(self) -> None:
+        self.state.selected_test_refs = {_test_ref(test) for test in self.state.tests}
 
     def select_model(self, index: int) -> None:
-        if not self.state.models:
-            return
-        self.state.selected_model = min(max(0, index), len(self.state.models) - 1)
+        self.select_models({index})
 
     def select_test(self, index: int) -> None:
-        if not self.state.tests:
-            return
-        self.state.selected_test = min(max(0, index), len(self.state.tests) - 1)
+        self.select_tests({index})
 
     def run_selected(self) -> None:
-        model = self.state.model
-        test = self.state.test
-        if model is None or test is None:
-            self.state.message = "select a model and test first"
+        models = self.state.selected_models
+        tests = self.state.selected_tests
+        if not models or not tests:
+            self.state.message = "select at least one model and one test"
             return
+
         runner = TestRunner(self.providers, RunStore(self.results_root))
-        run, path = runner.run(test, model, self.workspace_root)
+        benchmark_runner = BenchmarkRunner(runner)
+        benchmark_store = BenchmarkStore(self.results_root)
+
+        batch_ids: list[str] = []
+        batch_paths: list[str] = []
+        passed = 0
+        failed = 0
+        errors = 0
+        total_runs = 0
+
+        for test in tests:
+            batch = benchmark_runner.run(test, models, self.workspace_root)
+            path = benchmark_store.append(batch)
+            batch_ids.append(batch.batch_id)
+            batch_paths.append(str(path))
+            passed += batch.passed
+            failed += batch.failed
+            errors += batch.errors
+            total_runs += len(batch.run_ids)
+
         self.state.last_result = {
-            "run_id": run.run_id,
-            "status": run.status,
-            "passed": run.passed,
-            "path": str(path),
+            "matrix": f"{len(models)} model(s) x {len(tests)} test(s)",
+            "runs": total_runs,
+            "passed": passed,
+            "failed": failed,
+            "errors": errors,
+            "batch_ids": ", ".join(batch_ids),
+            "batch_paths": ", ".join(batch_paths),
         }
-        self.state.message = f"run finished: {run.status}"
+        self.state.message = (
+            f"test matrix finished: {passed} passed, {failed} failed, {errors} error(s)"
+        )
+
+    def test_all(self) -> None:
+        self.select_all_models()
+        self.select_all_tests()
+        self.run_selected()
 
     def benchmark_all_local(self) -> None:
-        test = self.state.test
-        models = [model for model in self.state.models if model.location == "local"]
-        if test is None or not models:
-            self.state.message = "no selected test or local models"
-            return
-        batch = BenchmarkRunner(TestRunner(self.providers, RunStore(self.results_root))).run(
-            test, models, self.workspace_root
-        )
-        path = BenchmarkStore(self.results_root).append(batch)
-        self.state.last_result = {
-            "batch_id": batch.batch_id,
-            "passed": batch.passed,
-            "failed": batch.failed,
-            "errors": batch.errors,
-            "path": str(path),
-        }
-        self.state.message = "benchmark finished"
+        local_ids = {model.id for model in self.state.models if model.location == "local"}
+        self.select_model_ids(local_ids)
+        self.run_selected()
 
     def profile(self) -> None:
         profile = scan_system_profile().to_dict()

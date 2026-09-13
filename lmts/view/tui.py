@@ -21,28 +21,54 @@ def run() -> None:
             lambda: projector.project().status,
         )
 
-        def select_model(_stdscr: curses.window) -> None:
+        def select_models(_stdscr: curses.window) -> None:
             options = [model.id for model in controller.state.models]
-            index = host.choose(stdscr, "Model", options, controller.state.selected_model)
-            if index is not None:
-                controller.select_model(index)
+            selected = {
+                index
+                for index, model in enumerate(controller.state.models)
+                if model.id in controller.state.selected_model_ids
+            }
+            chosen = host.choose_many(
+                stdscr,
+                "Models",
+                options,
+                selected,
+                include_all=True,
+                all_label="All models",
+            )
+            if chosen is not None:
+                controller.select_models(chosen)
+                host.message = f"selected {len(chosen)} model(s)"
 
-        def select_test(_stdscr: curses.window) -> None:
+        def select_tests(_stdscr: curses.window) -> None:
             options = [f"{test.id}@{test.version}" for test in controller.state.tests]
-            index = host.choose(stdscr, "Test", options, controller.state.selected_test)
-            if index is not None:
-                controller.select_test(index)
+            selected = {
+                index
+                for index, test in enumerate(controller.state.tests)
+                if f"{test.id}@{test.version}" in controller.state.selected_test_refs
+            }
+            chosen = host.choose_many(
+                stdscr,
+                "Tests",
+                options,
+                selected,
+                include_all=True,
+                all_label="Test all",
+            )
+            if chosen is not None:
+                controller.select_tests(chosen)
+                host.message = f"selected {len(chosen)} test(s)"
 
         def run_selected(_stdscr: curses.window) -> None:
-            host.message = "running selected test..."
+            host.message = "running selected test matrix..."
             stdscr.refresh()
             controller.run_selected()
             host.message = controller.state.message
 
-        def benchmark(_stdscr: curses.window) -> None:
-            host.message = "running benchmark on all local models..."
+        def test_all(_stdscr: curses.window) -> None:
+            host.message = "running all tests on all models..."
             stdscr.refresh()
-            controller.benchmark_all_local()
+            controller.test_all()
             host.message = controller.state.message
 
         def profile(_stdscr: curses.window) -> None:
@@ -54,10 +80,10 @@ def run() -> None:
             host.message = controller.state.message
 
         host.handlers.update({
-            "m": select_model,
-            "t": select_test,
+            "m": select_models,
+            "t": select_tests,
             "r": run_selected,
-            "b": benchmark,
+            "a": test_all,
             "p": profile,
             "x": refresh,
         })

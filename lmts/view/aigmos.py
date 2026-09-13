@@ -8,15 +8,8 @@ from .projector import LMTSViewProjector
 
 @dataclass(slots=True)
 class AIGMosViewAdapter:
-    """AIGMos View-compatible LMTS adapter.
-
-    LMTS does not own AIGMos rendering. It exposes a VIEW_TARGET payload and
-    host-neutral actions. AIGMos remains the centralized layout renderer.
-    """
-
     controller: LMTSViewController
     view_target: str = "|lmts:view"
-
     module_type: str = "view"
 
     @property
@@ -38,17 +31,23 @@ class AIGMosViewAdapter:
         if name == "refresh":
             self.controller.refresh()
             return True
-        if name == "select_model" and isinstance(value, int):
-            self.controller.select_model(value)
+        if name == "select_models" and isinstance(value, (list, tuple, set)):
+            self.controller.select_model_ids({str(item) for item in value})
             return True
-        if name == "select_test" and isinstance(value, int):
-            self.controller.select_test(value)
+        if name == "select_all_models":
+            self.controller.select_all_models()
+            return True
+        if name == "select_tests" and isinstance(value, (list, tuple, set)):
+            self.controller.select_test_refs({str(item) for item in value})
+            return True
+        if name == "select_all_tests":
+            self.controller.select_all_tests()
             return True
         if name == "run":
             self.controller.run_selected()
             return True
-        if name == "benchmark":
-            self.controller.benchmark_all_local()
+        if name == "test_all":
+            self.controller.test_all()
             return True
         if name == "profile":
             self.controller.profile()

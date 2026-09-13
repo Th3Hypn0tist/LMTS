@@ -46,6 +46,77 @@ class CursesViewHost:
             elif key == "\x1b":
                 return None
 
+    def choose_many(
+        self,
+        stdscr: curses.window,
+        title: str,
+        options: Sequence[str],
+        selected: set[int] | None = None,
+        *,
+        include_all: bool = True,
+        all_label: str = "Test all",
+    ) -> set[int] | None:
+        if not options:
+            self.message = "no choices available"
+            return None
+
+        selected_indices = set(selected or set())
+        index = 0
+        row_count = len(options) + (1 if include_all else 0)
+
+        def is_all_selected() -> bool:
+            return len(selected_indices) == len(options)
+
+        while True:
+            labels: list[str] = []
+            if include_all:
+                mark = "x" if is_all_selected() else " "
+                labels.append(f"[{mark}] {all_label}")
+            for option_index, option in enumerate(options):
+                mark = "x" if option_index in selected_indices else " "
+                labels.append(f"[{mark}] {option}")
+
+            height, width = stdscr.getmaxyx()
+            visible = max(1, min(row_count, height - 7, 20))
+            offset = min(max(0, index - visible + 1), max(0, row_count - visible))
+            win_h = visible + 3
+            win_w = max(36, min(width - 4, max(len(title) + 4, *(len(x) + 4 for x in labels))))
+            win = curses.newwin(win_h, win_w, max(0, (height - win_h) // 2), max(0, (width - win_w) // 2))
+            win.keypad(True)
+            win.erase()
+            win.box()
+            win.addnstr(0, 2, f" {title} ", max(0, win_w - 4))
+            for row, option_row in enumerate(range(offset, min(row_count, offset + visible)), start=1):
+                attr = curses.A_REVERSE if option_row == index else curses.A_NORMAL
+                win.addnstr(row, 2, labels[option_row], max(0, win_w - 4), attr)
+            win.addnstr(win_h - 2, 2, "Space toggle  Enter accept  Esc cancel", max(0, win_w - 4), curses.A_DIM)
+            win.refresh()
+
+            key = win.get_wch()
+            if key == curses.KEY_UP:
+                index = max(0, index - 1)
+                continue
+            if key == curses.KEY_DOWN:
+                index = min(row_count - 1, index + 1)
+                continue
+            if key == " ":
+                if include_all and index == 0:
+                    if is_all_selected():
+                        selected_indices.clear()
+                    else:
+                        selected_indices = set(range(len(options)))
+                else:
+                    option_index = index - 1 if include_all else index
+                    if option_index in selected_indices:
+                        selected_indices.remove(option_index)
+                    else:
+                        selected_indices.add(option_index)
+                continue
+            if key in ("\n", "\r") or key == curses.KEY_ENTER:
+                return selected_indices
+            if key == "\x1b":
+                return None
+
     def run(self, stdscr: curses.window) -> None:
         curses.curs_set(0)
         stdscr.keypad(True)
@@ -61,7 +132,7 @@ class CursesViewHost:
                 if row >= height - 2:
                     break
                 stdscr.addnstr(row, 0, str(line), max(0, width - 1))
-            footer = "m model  t test  r run  b benchmark  p profile  x refresh  q q q quit"
+            footer = "m models  t tests  r run matrix  a test all  p profile  x refresh  q q q quit"
             message = self.message or (f"quit: {self._quit}{'_' * (3-len(self._quit))}" if self._quit else "")
             stdscr.addnstr(height - 2, 0, message, max(0, width - 1))
             stdscr.addnstr(height - 1, 0, footer, max(0, width - 1), curses.A_DIM)

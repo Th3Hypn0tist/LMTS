@@ -41,6 +41,7 @@ class RunResult:
     responses: list[NormalizedResponse] = field(default_factory=list)
     workspace_trace: list[dict[str, object]] = field(default_factory=list)
     system_context: dict[str, Any] = field(default_factory=dict)
+    telemetry: dict[str, Any] = field(default_factory=dict)
     model_id: str | None = None
     model_ref: str | None = None
     provider_ref: str | None = None

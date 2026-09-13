@@ -9,7 +9,7 @@ from typing import Literal
 from lmts.tests.base import TestModule, test_ref
 
 from .control import RunControl
-from .models import ModelDescriptor
+from .executor import TestExecutor
 from .run import RunResult, utc_now
 from .runner import TestRunner
 
@@ -20,7 +20,7 @@ class BenchmarkBatch:
     test_ref: str
     started_at: str
     completed_at: str
-    model_ids: list[str] = field(default_factory=list)
+    target_ids: list[str] = field(default_factory=list)
     run_ids: list[str] = field(default_factory=list)
     completed: int = 0
     passed: int = 0
@@ -34,7 +34,7 @@ class BenchmarkBatch:
             "test_ref": self.test_ref,
             "started_at": self.started_at,
             "completed_at": self.completed_at,
-            "model_ids": list(self.model_ids),
+            "target_ids": list(self.target_ids),
             "run_ids": list(self.run_ids),
             "completed": self.completed,
             "passed": self.passed,
@@ -50,7 +50,8 @@ class BenchmarkProgress:
     index: int
     total: int
     test_ref: str
-    model_id: str
+    target_id: str
+    target_kind: str
     run: RunResult | None = None
     result_path: Path | None = None
 
@@ -65,7 +66,7 @@ class BenchmarkRunner:
     def run(
         self,
         test: TestModule,
-        models: list[ModelDescriptor],
+        targets: list[TestExecutor],
         workspace_root: Path,
         *,
         progress: ProgressCallback | None = None,
@@ -80,9 +81,9 @@ class BenchmarkRunner:
         failed = 0
         errors = 0
         cancelled = 0
-        total = len(models)
+        total = len(targets)
 
-        for index, model in enumerate(models, start=1):
+        for index, target in enumerate(targets, start=1):
             if control is not None and control.cancelled:
                 break
 
@@ -93,13 +94,14 @@ class BenchmarkRunner:
                         index=index,
                         total=total,
                         test_ref=resolved_test_ref,
-                        model_id=model.id,
+                        target_id=target.id,
+                        target_kind=target.kind,
                     )
                 )
 
-            run, result_path = self.runner.run(
+            run, result_path = self.runner.run_executor(
                 test,
-                model,
+                target,
                 workspace_root / batch_id,
                 control=control,
             )
@@ -122,7 +124,8 @@ class BenchmarkRunner:
                         index=index,
                         total=total,
                         test_ref=resolved_test_ref,
-                        model_id=model.id,
+                        target_id=target.id,
+                        target_kind=target.kind,
                         run=run,
                         result_path=result_path,
                     )
@@ -136,7 +139,7 @@ class BenchmarkRunner:
             test_ref=resolved_test_ref,
             started_at=started_at,
             completed_at=utc_now(),
-            model_ids=[model.id for model in models],
+            target_ids=[target.id for target in targets],
             run_ids=run_ids,
             completed=completed,
             passed=passed,

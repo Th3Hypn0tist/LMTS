@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import curses
+from pathlib import Path
 
 from lmts.cli import default_provider_registry
 from lmts.lib.view import SplitCursesViewHost
@@ -10,7 +11,7 @@ from lmts.tests.types import TestParameter, TestTypeDefinition
 
 from .controller import LMTSViewController
 from .projector import LMTSViewProjector
-from .results import format_run_result, result_label
+from .results import format_matrix, format_run_result, matrix_cells, matrix_label
 
 
 FOOTER = (
@@ -46,7 +47,6 @@ def run() -> None:
             footer=FOOTER,
         )
 
-        # The split view is the first visible frame. Startup work must never bypass it.
         host.message = (
             "system profile required before testing"
             if controller.state.profile_required
@@ -79,7 +79,14 @@ def run() -> None:
                 for index, model in enumerate(controller.state.models)
                 if model.id in controller.state.selected_model_ids
             }
-            chosen = host.choose_many(stdscr, "Models", options, selected, include_all=True, all_label="All models")
+            chosen = host.choose_many(
+                stdscr,
+                "Models",
+                options,
+                selected,
+                include_all=True,
+                all_label="All models",
+            )
             if chosen is not None:
                 controller.select_models(chosen)
                 host.message = f"selected {len(chosen)} model(s)"
@@ -173,17 +180,71 @@ def run() -> None:
                 show_progress()
 
         def browse_results(_stdscr: curses.window) -> None:
-            results = controller.recent_results()
-            if not results:
-                host.message = "no run results found"
+            matrices = controller.recent_matrices()
+            if not matrices:
+                host.message = "no canonical matrix results found"
                 return
-            options = [result_label(data, path) for path, data in results]
-            chosen = host.choose(stdscr, "Run results (newest first)", options)
-            if chosen is None:
+
+            chosen_matrix = 0
+            if len(matrices) > 1:
+                options = [matrix_label(data, path) for path, data in matrices]
+                selected = host.choose(stdscr, "Matrix results (newest first)", options)
+                if selected is None:
+                    return
+                chosen_matrix = selected
+
+            matrix_path, matrix_data = matrices[chosen_matrix]
+            host.text_viewer(
+                stdscr,
+                f"Matrix result: {matrix_data.get('matrix_id', matrix_path.stem)}",
+                format_matrix(matrix_data),
+            )
+
+            cells = list(matrix_cells(matrix_data))
+            if not cells:
+                host.message = f"viewed matrix: {matrix_path}"
                 return
-            path, data = results[chosen]
-            host.text_viewer(stdscr, f"Run result: {data.get('run_id', path.stem)}", format_run_result(data, path))
-            host.message = f"viewed result: {path}"
+
+            cell_options = []
+            for cell in cells:
+                passed = cell.get("passed")
+                status = str(cell.get("status") or "")
+                verdict = (
+                    "PASS"
+                    if status == "completed" and passed is True
+                    else "FAIL"
+                    if status == "completed" and passed is False
+                    else "CANCEL"
+                    if status == "cancelled"
+                    else "ERROR"
+                )
+                cell_options.append(
+                    f"{verdict:<7}  {cell.get('model_id', '?')}  {cell.get('test_ref', '?')}"
+                )
+
+            chosen_cell = host.choose(stdscr, "Matrix cell details", cell_options)
+            if chosen_cell is None:
+                host.message = f"viewed matrix: {matrix_path}"
+                return
+
+            cell = cells[chosen_cell]
+            result_path = Path(str(cell.get("result_path") or ""))
+            if not result_path.is_file():
+                host.message = f"canonical run result missing: {result_path}"
+                return
+            try:
+                run_data = controller.recent_results(limit=1)[0][1] if False else None
+                from lmts.core.store import RunStore
+                run_data = RunStore(controller.results_root).load(result_path)
+            except (OSError, ValueError) as exc:
+                host.message = f"cannot load run result: {exc}"
+                return
+            host.text_viewer(
+                stdscr,
+                f"Run result: {cell.get('run_id', result_path.stem)}",
+                format_run_result(run_data, result_path),
+            )
+            host.message = f"viewed matrix cell: {cell.get('run_id', '?')}"
 
         def cancel(_stdscr: curses.window) -> None:
             controller.cancel()

@@ -10,7 +10,7 @@ from .projector import LMTSViewProjector
 
 
 FOOTER = (
-    "m models  t tests  r run matrix  a test all  "
+    "m models  t tests  r run matrix  a test all  e export errors  "
     "p profile  x refresh  q q q quit"
 )
 
@@ -78,6 +78,12 @@ def run() -> None:
             controller.test_all()
             host.message = controller.state.message
 
+        def export_errors(_stdscr: curses.window) -> None:
+            path = controller.export_errors("task")
+            host.message = controller.state.message
+            if path is not None:
+                host.message = f"exported: {path}"
+
         def profile(_stdscr: curses.window) -> None:
             controller.profile()
             host.message = controller.state.message
@@ -91,6 +97,7 @@ def run() -> None:
             "t": select_tests,
             "r": run_selected,
             "a": test_all,
+            "e": export_errors,
             "p": profile,
             "x": refresh,
         })

@@ -40,6 +40,17 @@ class NormalizedUsage:
 class NormalizedTiming:
     ttft_ms: float | None = None
     total_ms: float | None = None
+    load_ms: float | None = None
+    prompt_eval_ms: float | None = None
+    generation_ms: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedPerformance:
+    """Provider-neutral performance metrics derived from provider evidence."""
+
+    prompt_tokens_per_second: float | None = None
+    generation_tokens_per_second: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,4 +69,5 @@ class NormalizedResponse:
     finish_reason: str | None = None
     usage: NormalizedUsage = field(default_factory=NormalizedUsage)
     timing: NormalizedTiming = field(default_factory=NormalizedTiming)
+    performance: NormalizedPerformance = field(default_factory=NormalizedPerformance)
     raw: dict[str, Any] = field(default_factory=dict)

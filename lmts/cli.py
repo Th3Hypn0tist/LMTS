@@ -114,9 +114,17 @@ def _benchmark(test_ref: str, model_ids: list[str], results: Path, workspaces: P
     return 0 if batch.failed == 0 and batch.errors == 0 else 1
 
 
+def _tui() -> int:
+    from lmts.view.tui import run
+
+    run()
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="lmts")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser("tui", help="Open the interactive LMTS View")
     sub.add_parser("models", help="Discover local models")
     sub.add_parser("tests", help="List registered test modules")
 
@@ -137,6 +145,8 @@ def main() -> int:
     benchmark.add_argument("--workspaces", type=Path, default=Path(".lmts/workspaces"))
 
     args = parser.parse_args()
+    if args.command in {None, "tui"}:
+        return _tui()
     if args.command == "models":
         return _models()
     if args.command == "tests":

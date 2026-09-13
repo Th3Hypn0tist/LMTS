@@ -10,6 +10,7 @@ from lmts.tests.base import TestContext, TestModule, test_ref
 from lmts.tools.profile import DEFAULT_PROFILE_PATH, load_system_profile
 
 from .control import RunCancelled, RunControl
+from .executor import ModelExecutor, TestExecutor
 from .models import ModelDescriptor, ResponseStreamChunk
 from .registry import ProviderRegistry
 from .run import RunResult, utc_now
@@ -50,30 +51,62 @@ class TestRunner:
         subject: EvaluationSubject | None = None,
     ) -> tuple[RunResult, Path]:
         provider = self.providers.provider(model.provider_ref)
-        evaluation_subject = subject or EvaluationSubject.for_model(model)
+        executor = ModelExecutor(provider, model)
+        if subject is not None and subject.kind != "model":
+            raise ValueError("non-model subject requires run_executor with a bot/composition executor")
+        return self.run_executor(
+            test,
+            executor,
+            workspace_root,
+            control=control,
+            subject=subject,
+        )
+
+    def run_executor(
+        self,
+        test: TestModule,
+        executor: TestExecutor,
+        workspace_root: Path,
+        *,
+        control: RunControl | None = None,
+        subject: EvaluationSubject | None = None,
+    ) -> tuple[RunResult, Path]:
+        evaluation_subject = subject or executor.subject
+        if evaluation_subject.kind != executor.kind:
+            raise ValueError("evaluation subject kind must match executor kind")
+
         system_context = self.system_context_loader()
         run_id = uuid.uuid4().hex
         started_at = utc_now()
         workspace = Workspace(workspace_root / run_id)
         context = TestContext(
-            provider=provider,
-            model=model,
+            executor=executor,
             workspace=workspace,
             control=control,
             response_sink=self.response_sink,
         )
         resolved_test_ref = test_ref(test)
-        common = {
+        execution_metadata = dict(executor.metadata)
+
+        common: dict[str, object] = {
             "run_id": run_id,
             "test_ref": resolved_test_ref,
-            "model_id": model.id,
-            "model_ref": model.model_ref,
-            "provider_ref": model.provider_ref,
+            "executor_id": executor.id,
+            "executor_kind": executor.kind,
             "started_at": started_at,
             "evaluation_subject": evaluation_subject.to_dict(),
+            "execution_metadata": execution_metadata,
             "system_context": system_context,
-            "model_metadata": dict(model.metadata),
         }
+        if executor.kind == "model":
+            common.update(
+                {
+                    "model_id": executor.id,
+                    "model_ref": execution_metadata.get("model_ref"),
+                    "provider_ref": execution_metadata.get("provider_ref"),
+                    "model_metadata": execution_metadata.get("model_metadata") or {},
+                }
+            )
 
         try:
             context.checkpoint()

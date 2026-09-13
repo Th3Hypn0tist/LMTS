@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import traceback
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from lmts.lib.workspace import Workspace
 from lmts.tests.base import TestContext, TestModule, test_ref
 from lmts.tools.profile import SystemProfile, scan_system_profile
 
 from .control import RunCancelled, RunControl
-from .models import ModelDescriptor
+from .models import ModelDescriptor, ResponseStreamChunk
 from .registry import ProviderRegistry
 from .run import RunResult, utc_now
 from .store import RunStore
@@ -25,10 +25,12 @@ class TestRunner:
         store: RunStore,
         *,
         profile_scan: Callable[[], SystemProfile] = scan_system_profile,
+        response_sink: Callable[[ResponseStreamChunk], None] | None = None,
     ) -> None:
         self.providers = providers
         self.store = store
         self.profile_scan = profile_scan
+        self.response_sink = response_sink
 
     def run(
         self,
@@ -47,6 +49,7 @@ class TestRunner:
             model=model,
             workspace=workspace,
             control=control,
+            response_sink=self.response_sink,
         )
         resolved_test_ref = test_ref(test)
 

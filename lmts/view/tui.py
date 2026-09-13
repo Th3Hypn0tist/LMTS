@@ -4,6 +4,7 @@ import curses
 from pathlib import Path
 
 from lmts.cli import default_provider_registry
+from lmts.core.store import RunStore
 from lmts.lib.view import SplitCursesViewHost
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
@@ -11,7 +12,7 @@ from lmts.tests.types import TestParameter, TestTypeDefinition
 
 from .controller import LMTSViewController
 from .projector import LMTSViewProjector
-from .results import format_matrix, format_run_result, matrix_cells, matrix_label
+from .results import cell_verdict, format_run_result, matrix_label
 
 
 FOOTER = (
@@ -27,6 +28,10 @@ def _next_instance_id(controller: LMTSViewController, definition: TestTypeDefini
     while f"{base}-{index}" in used:
         index += 1
     return f"{base}-{index}"
+
+
+def _short_test_label(ref: str) -> str:
+    return (ref.split("#", 1)[-1] if "#" in ref else ref.rsplit(".", 1)[-1])[:18]
 
 
 def run() -> None:
@@ -194,51 +199,51 @@ def run() -> None:
                 chosen_matrix = selected
 
             matrix_path, matrix_data = matrices[chosen_matrix]
-            host.text_viewer(
-                stdscr,
-                f"Matrix result: {matrix_data.get('matrix_id', matrix_path.stem)}",
-                format_matrix(matrix_data),
+            models = [str(value) for value in (matrix_data.get("model_ids") or [])]
+            tests = [str(value) for value in (matrix_data.get("test_refs") or [])]
+            cells = [cell for cell in (matrix_data.get("cells") or []) if isinstance(cell, dict)]
+            by_key = {
+                (str(cell.get("model_id")), str(cell.get("test_ref"))): cell
+                for cell in cells
+            }
+            values = [
+                [cell_verdict(by_key.get((model, test))) for test in tests]
+                for model in models
+            ]
+            summary = (
+                f"PASS {int(matrix_data.get('passed') or 0)}  "
+                f"FAIL {int(matrix_data.get('failed') or 0)}  "
+                f"ERROR {int(matrix_data.get('errors') or 0)}  "
+                f"CANCEL {int(matrix_data.get('cancelled') or 0)}"
             )
-
-            cells = list(matrix_cells(matrix_data))
-            if not cells:
+            selected_cell = host.matrix_browser(
+                stdscr,
+                f"Results: {str(matrix_data.get('started_at') or '').replace('T', ' ')[:19]}",
+                models,
+                [_short_test_label(ref) for ref in tests],
+                values,
+                summary=summary,
+            )
+            if selected_cell is None:
                 host.message = f"viewed matrix: {matrix_path}"
                 return
 
-            cell_options = []
-            for cell in cells:
-                passed = cell.get("passed")
-                status = str(cell.get("status") or "")
-                verdict = (
-                    "PASS"
-                    if status == "completed" and passed is True
-                    else "FAIL"
-                    if status == "completed" and passed is False
-                    else "CANCEL"
-                    if status == "cancelled"
-                    else "ERROR"
-                )
-                cell_options.append(
-                    f"{verdict:<7}  {cell.get('model_id', '?')}  {cell.get('test_ref', '?')}"
-                )
-
-            chosen_cell = host.choose(stdscr, "Matrix cell details", cell_options)
-            if chosen_cell is None:
-                host.message = f"viewed matrix: {matrix_path}"
+            row_index, col_index = selected_cell
+            cell = by_key.get((models[row_index], tests[col_index]))
+            if cell is None:
+                host.message = "no run for selected matrix cell"
                 return
 
-            cell = cells[chosen_cell]
             result_path = Path(str(cell.get("result_path") or ""))
             if not result_path.is_file():
                 host.message = f"canonical run result missing: {result_path}"
                 return
             try:
-                run_data = controller.recent_results(limit=1)[0][1] if False else None
-                from lmts.core.store import RunStore
                 run_data = RunStore(controller.results_root).load(result_path)
             except (OSError, ValueError) as exc:
                 host.message = f"cannot load run result: {exc}"
                 return
+
             host.text_viewer(
                 stdscr,
                 f"Run result: {cell.get('run_id', result_path.stem)}",

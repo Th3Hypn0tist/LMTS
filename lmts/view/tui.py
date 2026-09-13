@@ -3,17 +3,18 @@ from __future__ import annotations
 import curses
 
 from lmts.cli import default_provider_registry
-from lmts.lib.view import CursesViewHost
+from lmts.lib.view import SplitCursesViewHost
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tests.types import TestParameter, TestTypeDefinition
 
 from .controller import LMTSViewController
 from .projector import LMTSViewProjector
+from .results import format_run_result, result_label
 
 
 FOOTER = (
-    "m models  t matrix  n add test  d remove test  r run  a run all  "
+    "m models  t matrix  n add  d remove  r run  a all  v results  "
     "c cancel  e errors  p profile  x refresh  q q q quit"
 )
 
@@ -35,10 +36,13 @@ def run() -> None:
     projector = LMTSViewProjector(controller.state)
 
     def app(stdscr: curses.window) -> None:
-        host = CursesViewHost(
+        host = SplitCursesViewHost(
             "LMTS",
             lambda: projector.project().lines,
             lambda: projector.project().status,
+            controller.response_monitor.lines,
+            monitor_title="Bot response",
+            monitor_fraction=1 / 3,
             footer=FOOTER,
         )
 
@@ -70,14 +74,7 @@ def run() -> None:
                 for index, model in enumerate(controller.state.models)
                 if model.id in controller.state.selected_model_ids
             }
-            chosen = host.choose_many(
-                stdscr,
-                "Models",
-                options,
-                selected,
-                include_all=True,
-                all_label="All models",
-            )
+            chosen = host.choose_many(stdscr, "Models", options, selected, include_all=True, all_label="All models")
             if chosen is not None:
                 controller.select_models(chosen)
                 host.message = f"selected {len(chosen)} model(s)"
@@ -155,8 +152,7 @@ def run() -> None:
             chosen = host.choose(stdscr, "Remove configured test", options)
             if chosen is None:
                 return
-            instance_id = getattr(tests[chosen], "instance_id", "")
-            controller.remove_test(instance_id)
+            controller.remove_test(getattr(tests[chosen], "instance_id", ""))
             host.message = controller.state.message
 
         def run_selected(_stdscr: curses.window) -> None:
@@ -171,15 +167,26 @@ def run() -> None:
             if started:
                 show_progress()
 
+        def browse_results(_stdscr: curses.window) -> None:
+            results = controller.recent_results()
+            if not results:
+                host.message = "no run results found"
+                return
+            options = [result_label(data, path) for path, data in results]
+            chosen = host.choose(stdscr, "Run results (newest first)", options)
+            if chosen is None:
+                return
+            path, data = results[chosen]
+            host.text_viewer(stdscr, f"Run result: {data.get('run_id', path.stem)}", format_run_result(data, path))
+            host.message = f"viewed result: {path}"
+
         def cancel(_stdscr: curses.window) -> None:
             controller.cancel()
             host.message = controller.state.message
 
         def export_errors(_stdscr: curses.window) -> None:
             path = controller.export_errors("task")
-            host.message = controller.state.message
-            if path is not None:
-                host.message = f"exported: {path}"
+            host.message = controller.state.message if path is None else f"exported: {path}"
 
         def profile(_stdscr: curses.window) -> None:
             controller.profile()
@@ -196,6 +203,7 @@ def run() -> None:
             "d": remove_test,
             "r": run_selected,
             "a": test_all,
+            "v": browse_results,
             "c": cancel,
             "e": export_errors,
             "p": profile,

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from lmts.cli import default_provider_registry
 from lmts.core.result_export import build_matrix_bundle, export_matrix_bundle, export_run_json
+from lmts.core.runtime_targets import load_runtime_targets
 from lmts.core.settings import (
     DEFAULT_SETTINGS_PATH,
     LMTSSettings,
@@ -22,14 +23,21 @@ from lmts.tests.types import TestParameter, TestTypeDefinition
 from lmts.tools.ftp_profiles import load_ftp_profiles
 from lmts.tools.mysql_config import deploy_mysql_config
 from lmts.tools.profile import benchmark_system_reference, load_system_profile
+from lmts.tools.report_profiles import load_report_profiles
 from lmts.tools.report_publish import publish_report
 from lmts.tools.web_deploy import deploy_web_root
 
 from .controller import LMTSViewController
-from .output_dialog import choose_ftp_profile, choose_output_target, manage_ftp_profiles
+from .output_dialog import (
+    choose_output_target,
+    choose_report_profile,
+    manage_ftp_profiles,
+    manage_report_profiles,
+)
 from .projector import LMTSViewProjector
 from .registries import TAB_REGISTRY, build_shortcut_registry
 from .results import cell_verdict, format_run_result, matrix_label
+from .runtime_target_dialog import manage_runtime_targets
 from .shortcut_settings import (
     DEFAULT_SHORTCUT_SETTINGS_PATH,
     load_shortcut_overrides,
@@ -69,10 +77,21 @@ def _format_reference_metric(test: object) -> str:
     throughput = metrics.get('throughput_gib_per_second')
     if isinstance(throughput, (int, float)):
         return f'{float(throughput):.2f} GiB/s'
+    gigaops = metrics.get('gigaoperations_per_second')
+    if isinstance(gigaops, (int, float)):
+        return f'{float(gigaops):.2f} GOP/s'
     median_seconds = metrics.get('median_seconds')
     if isinstance(median_seconds, (int, float)):
         return f'{float(median_seconds):.4f} s median'
     return 'measured'
+
+
+def _reference_target_suffix(test: dict) -> str:
+    target = test.get('target')
+    if not isinstance(target, dict):
+        return ''
+    label = str(target.get('model') or target.get('uuid') or target.get('device_index') or '').strip()
+    return f' @ {label}' if label else ''
 
 
 def _reference_suite_lines(label: str, suite: object) -> list[str]:
@@ -85,7 +104,7 @@ def _reference_suite_lines(label: str, suite: object) -> list[str]:
     for test in tests:
         if not isinstance(test, dict):
             continue
-        test_label = str(test.get('label') or test.get('benchmark_id') or 'test')
+        test_label = str(test.get('label') or test.get('benchmark_id') or 'test') + _reference_target_suffix(test)
         method_version = test.get('method_version')
         method = str(test.get('method') or '')
         method_suffix = f' [{method} v{method_version}]' if method and isinstance(method_version, int) else ''
@@ -140,7 +159,7 @@ def _profile_lines(controller: LMTSViewController) -> tuple[str, ...]:
 
 def _benchmark_lines(projector: LMTSViewProjector) -> tuple[str, ...]:
     lines = list(projector.project().lines)
-    if lines and lines[0] == 'LMTS model laboratory':
+    if lines and lines[0] == 'LMTS evaluation laboratory':
         del lines[0]
         if lines and lines[0] == '':
             del lines[0]
@@ -180,16 +199,20 @@ def run() -> None:
 
     def settings_lines() -> tuple[str, ...]:
         ftp_count = len(load_ftp_profiles().profiles)
+        report_count = len(load_report_profiles().profiles)
+        runtime_count = len(load_runtime_targets())
         mysql = settings.mysql
         return (
             'Application, server and connection settings.',
             '',
-            f'Output folder : {settings.output_folder}',
-            f'MySQL host    : {mysql.host}',
-            f'MySQL database: {mysql.database}',
-            f'MySQL user    : {mysql.username}',
-            f'FTP profiles  : {ftp_count}',
-            f'Shortcuts     : {len(shortcut_overrides)} custom binding(s)',
+            f'Output folder  : {settings.output_folder}',
+            f'MySQL host     : {mysql.host}',
+            f'MySQL database : {mysql.database}',
+            f'MySQL user     : {mysql.username}',
+            f'FTP profiles   : {ftp_count}',
+            f'Report profiles: {report_count}',
+            f'Runtime targets: {runtime_count}',
+            f'Shortcuts      : {len(shortcut_overrides)} custom binding(s)',
             '',
             'Server installer:',
             '  lmts/install/install_server.sh',
@@ -236,16 +259,16 @@ def run() -> None:
             host.progress_dialog(stdscr, 'Test progress', controller.state.progress_lines, lambda: not controller.state.running, cancel=controller.cancel)
             set_message(controller.state.message)
 
-        def select_models(_stdscr: curses.window) -> None:
+        def select_targets(_stdscr: curses.window) -> None:
             if controller.state.running:
                 set_message('test matrix is running')
                 return
-            options = [model.id for model in controller.state.models]
-            selected = {i for i, model in enumerate(controller.state.models) if model.id in controller.state.selected_model_ids}
-            chosen = host.choose_many(stdscr, 'Models', options, selected, include_all=True, all_label='All models')
+            options = [f'{target.kind.upper():11} {target.id}' for target in controller.state.targets]
+            selected = {i for i, target in enumerate(controller.state.targets) if target.id in controller.state.selected_target_ids}
+            chosen = host.choose_many(stdscr, 'Targets', options, selected, include_all=True, all_label='All targets')
             if chosen is not None:
-                controller.select_models(chosen)
-                set_message(f'selected {len(chosen)} model(s)')
+                controller.select_targets(chosen)
+                set_message(f'selected {len(chosen)} target(s)')
 
         def select_tests(_stdscr: curses.window) -> None:
             if controller.state.running:
@@ -322,18 +345,20 @@ def run() -> None:
             if chosen is None:
                 return
             matrix_path, matrix_data = chosen
-            models = [str(v) for v in (matrix_data.get('model_ids') or [])]
+            targets = [str(v) for v in (matrix_data.get('target_ids') or [])]
+            kinds = matrix_data.get('target_kinds') if isinstance(matrix_data.get('target_kinds'), dict) else {}
             tests = [str(v) for v in (matrix_data.get('test_refs') or [])]
             cells = [cell for cell in (matrix_data.get('cells') or []) if isinstance(cell, dict)]
-            by_key = {(str(cell.get('model_id')), str(cell.get('test_ref'))): cell for cell in cells}
-            values = [[cell_verdict(by_key.get((model, test))) for test in tests] for model in models]
+            by_key = {(str(cell.get('target_id')), str(cell.get('test_ref'))): cell for cell in cells}
+            values = [[cell_verdict(by_key.get((target, test))) for test in tests] for target in targets]
+            rows = [f"{str(kinds.get(target) or '?').upper()} {target}" for target in targets]
             summary = f"PASS {int(matrix_data.get('passed') or 0)}  FAIL {int(matrix_data.get('failed') or 0)}  ERROR {int(matrix_data.get('errors') or 0)}  CANCEL {int(matrix_data.get('cancelled') or 0)}"
-            selected_cell = host.matrix_browser(stdscr, f"Results: {str(matrix_data.get('started_at') or '').replace('T', ' ')[:19]}", models, [_short_test_label(ref) for ref in tests], values, summary=summary)
+            selected_cell = host.matrix_browser(stdscr, f"Results: {str(matrix_data.get('started_at') or '').replace('T', ' ')[:19]}", rows, [_short_test_label(ref) for ref in tests], values, summary=summary)
             if selected_cell is None:
                 set_message(f'viewed matrix: {matrix_path}')
                 return
             row_index, col_index = selected_cell
-            cell = by_key.get((models[row_index], tests[col_index]))
+            cell = by_key.get((targets[row_index], tests[col_index]))
             if cell is None:
                 set_message('no run for selected matrix cell')
                 return
@@ -367,7 +392,7 @@ def run() -> None:
                 return
             _, matrix_data = chosen
             try:
-                profile = choose_ftp_profile(host, stdscr)
+                profile = choose_report_profile(host, stdscr)
                 if profile is None:
                     return
                 bundle = build_matrix_bundle(matrix_data, results_root=controller.results_root)
@@ -420,6 +445,15 @@ def run() -> None:
         def ftp_settings(_stdscr: curses.window) -> None:
             manage_ftp_profiles(host, stdscr)
             set_message('FTP profiles updated')
+
+        def report_settings(_stdscr: curses.window) -> None:
+            manage_report_profiles(host, stdscr)
+            set_message('report profiles updated')
+
+        def runtime_target_settings(_stdscr: curses.window) -> None:
+            manage_runtime_targets(host, stdscr)
+            controller.refresh()
+            set_message(controller.state.message)
 
         def server_setup(_stdscr: curses.window) -> None:
             action = host.choose(stdscr, 'Server setup', ['Deploy www-root', 'Show installer path'])
@@ -489,11 +523,12 @@ def run() -> None:
             'nav.back': back, 'profile.scan': profile_system,
             'profile.cpu': lambda _: profile_reference('cpu'), 'profile.memory': lambda _: profile_reference('memory'),
             'profile.gpu': lambda _: profile_reference('gpu'), 'profile.npu': lambda _: profile_reference('npu'),
-            'models': select_models, 'tests': select_tests, 'test.add': add_test, 'test.remove': remove_test,
+            'targets': select_targets, 'tests': select_tests, 'test.add': add_test, 'test.remove': remove_test,
             'run.selected': run_selected, 'run.all': test_all, 'results': browse_results,
             'benchmark.publish': publish_report_action, 'cancel': cancel, 'errors': export_errors, 'refresh': refresh,
             'settings.output': edit_output_folder, 'settings.server': server_setup, 'settings.mysql': edit_mysql,
-            'settings.ftp': ftp_settings, 'settings.shortcuts': shortcut_editor,
+            'settings.ftp': ftp_settings, 'settings.report': report_settings, 'settings.targets': runtime_target_settings,
+            'settings.shortcuts': shortcut_editor,
         }
         for action, handler in bindings.items():
             host.bind(action, handler)

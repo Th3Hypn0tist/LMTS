@@ -8,9 +8,8 @@ def make_run(run_id="abc"):
     return RunResult(
         run_id=run_id,
         test_ref="demo@1.0.0",
-        model_id="provider:model/x",
-        model_ref="model/x",
-        provider_ref="provider",
+        executor_id="bot.demo",
+        executor_kind="bot",
         started_at="2026-01-01T00:00:00+00:00",
         completed_at="2026-01-01T00:00:01+00:00",
         status="completed",

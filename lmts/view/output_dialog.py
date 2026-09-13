@@ -11,6 +11,12 @@ from lmts.tools.ftp_profiles import (
     save_ftp_profiles,
 )
 from lmts.tools.output import DiskOutputTarget, FTPOutputTarget, OutputTarget
+from lmts.tools.report_profiles import (
+    DEFAULT_REPORT_PROFILES_PATH,
+    ReportProfile,
+    load_report_profiles,
+    save_report_profiles,
+)
 
 
 def _single_line(
@@ -59,14 +65,6 @@ def create_ftp_profile(
     root = _single_line(host, stdscr, 'FTP web root', initial='/home/www/lmts')
     if root is None:
         return None
-    web_base_url = _single_line(
-        host,
-        stdscr,
-        'Benchmark web URL',
-        initial=f'http://{host_name}/benchmark/',
-    )
-    if web_base_url is None:
-        return None
 
     profile = FTPProfile(
         name=name,
@@ -75,7 +73,6 @@ def create_ftp_profile(
         username=username,
         password=password,
         root=root,
-        web_base_url=web_base_url,
     )
     profiles = load_ftp_profiles(store_path).upsert(profile)
     save_ftp_profiles(profiles, store_path)
@@ -119,6 +116,66 @@ def manage_ftp_profiles(
         if confirm == 1:
             save_ftp_profiles(profiles.remove(profile.name), store_path)
             host.message = f'FTP profile deleted: {profile.name}'
+
+
+def create_report_profile(
+    host: CursesViewHost,
+    stdscr: curses.window,
+    *,
+    store_path: Path = DEFAULT_REPORT_PROFILES_PATH,
+) -> ReportProfile | None:
+    name = _single_line(host, stdscr, 'Report profile name')
+    if name is None:
+        return None
+    endpoint = _single_line(host, stdscr, 'Report API endpoint', initial='http://127.0.0.1/benchmark/api/report.php')
+    if endpoint is None:
+        return None
+    publish_key = _single_line(host, stdscr, 'Report publish key', initial='lmts')
+    if publish_key is None:
+        return None
+    profile = ReportProfile(name=name, endpoint=endpoint, publish_key=publish_key)
+    profiles = load_report_profiles(store_path).upsert(profile)
+    save_report_profiles(profiles, store_path)
+    host.message = f'report profile saved: {profile.name}'
+    return profile
+
+
+def choose_report_profile(
+    host: CursesViewHost,
+    stdscr: curses.window,
+    *,
+    store_path: Path = DEFAULT_REPORT_PROFILES_PATH,
+) -> ReportProfile | None:
+    profiles = load_report_profiles(store_path)
+    options = ['[New report profile]', *(profile.name for profile in profiles.profiles)]
+    chosen = host.choose(stdscr, 'Report API profile', options)
+    if chosen is None:
+        return None
+    if chosen == 0:
+        return create_report_profile(host, stdscr, store_path=store_path)
+    return profiles.profiles[chosen - 1]
+
+
+def manage_report_profiles(
+    host: CursesViewHost,
+    stdscr: curses.window,
+    *,
+    store_path: Path = DEFAULT_REPORT_PROFILES_PATH,
+) -> None:
+    while True:
+        profiles = load_report_profiles(store_path)
+        options = ['New report profile', *(f'Delete  {profile.name}' for profile in profiles.profiles)]
+        chosen = host.choose(stdscr, 'Report API profiles', options)
+        if chosen is None:
+            return
+        if chosen == 0:
+            create_report_profile(host, stdscr, store_path=store_path)
+            continue
+        profile = profiles.profiles[chosen - 1]
+        confirm = host.choose(stdscr, f'Delete report profile {profile.name}?', ['No', 'Yes'], 0)
+        if confirm == 1:
+            save_report_profiles(profiles.remove(profile.name), store_path)
+            host.message = f'report profile deleted: {profile.name}'
 
 
 def choose_output_target(

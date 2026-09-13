@@ -4,8 +4,10 @@ import curses
 from pathlib import Path
 
 from lmts.cli import default_provider_registry
+from lmts.core.result_export import export_matrix_bundle, export_run_json
+from lmts.core.settings import DEFAULT_SETTINGS_PATH, LMTSSettings, load_settings, save_settings
 from lmts.core.store import RunStore
-from lmts.lib.view import SplitCursesViewHost
+from lmts.lib.view import SplitCursesViewHost, choose_directory
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tests.types import TestParameter, TestTypeDefinition
@@ -17,7 +19,7 @@ from .results import cell_verdict, format_run_result, matrix_label
 
 FOOTER = (
     "m models  t matrix  n add  d remove  r run  a all  v results  "
-    "c cancel  e errors  p profile  x refresh  q q q quit"
+    "c cancel  e errors  s settings  x refresh  q q q quit"
 )
 
 
@@ -40,8 +42,10 @@ def run() -> None:
     controller = LMTSViewController(default_provider_registry(), test_types, matrix)
     controller.refresh()
     projector = LMTSViewProjector(controller.state)
+    settings = load_settings(DEFAULT_SETTINGS_PATH)
 
     def app(stdscr: curses.window) -> None:
+        nonlocal settings
         host = SplitCursesViewHost(
             "LMTS",
             lambda: projector.project().lines,
@@ -184,6 +188,28 @@ def run() -> None:
             if started:
                 show_progress()
 
+        def export_matrix(matrix_data: dict) -> Path | None:
+            try:
+                path = export_matrix_bundle(
+                    matrix_data,
+                    Path(settings.output_folder),
+                    results_root=controller.results_root,
+                )
+            except (OSError, ValueError) as exc:
+                host.message = f"matrix export failed: {exc}"
+                return None
+            host.message = f"exported matrix: {path}"
+            return path
+
+        def export_run(run_data: dict) -> Path | None:
+            try:
+                path = export_run_json(run_data, Path(settings.output_folder))
+            except (OSError, ValueError) as exc:
+                host.message = f"run export failed: {exc}"
+                return None
+            host.message = f"exported run: {path}"
+            return path
+
         def browse_results(_stdscr: curses.window) -> None:
             matrices = controller.recent_matrices()
             if not matrices:
@@ -230,6 +256,21 @@ def run() -> None:
 
             row_index, col_index = selected_cell
             cell = by_key.get((models[row_index], tests[col_index]))
+            run_id = str(cell.get("run_id") or "?") if cell is not None else "-"
+            run_action = host.choose(
+                stdscr,
+                f"Result actions: {run_id}",
+                [
+                    "View details",
+                    f"Export selected run -> {settings.output_folder}",
+                    f"Export matrix -> {settings.output_folder}",
+                ],
+            )
+            if run_action is None:
+                return
+            if run_action == 2:
+                export_matrix(matrix_data)
+                return
             if cell is None:
                 host.message = "no run for selected matrix cell"
                 return
@@ -242,6 +283,9 @@ def run() -> None:
                 run_data = RunStore(controller.results_root).load(result_path)
             except (OSError, ValueError) as exc:
                 host.message = f"cannot load run result: {exc}"
+                return
+            if run_action == 1:
+                export_run(run_data)
                 return
 
             host.text_viewer(
@@ -259,9 +303,37 @@ def run() -> None:
             path = controller.export_errors("task")
             host.message = controller.state.message if path is None else f"exported: {path}"
 
-        def profile(_stdscr: curses.window) -> None:
-            controller.profile()
-            host.message = controller.state.message
+        def settings_dialog(_stdscr: curses.window) -> None:
+            nonlocal settings
+            if controller.state.running:
+                host.message = "settings unavailable while test matrix is running"
+                return
+            while True:
+                chosen = host.choose(
+                    stdscr,
+                    "Settings",
+                    [
+                        f"Output folder  {settings.output_folder}",
+                        "Profile system",
+                    ],
+                )
+                if chosen is None:
+                    return
+                if chosen == 0:
+                    selected = choose_directory(
+                        host,
+                        stdscr,
+                        "Output folder",
+                        initial=settings.output_folder,
+                    )
+                    if selected is None:
+                        continue
+                    settings = LMTSSettings(output_folder=str(selected))
+                    path = save_settings(settings, DEFAULT_SETTINGS_PATH)
+                    host.message = f"output folder saved: {settings.output_folder} ({path})"
+                    continue
+                controller.profile()
+                host.message = controller.state.message
 
         def refresh(_stdscr: curses.window) -> None:
             controller.refresh()
@@ -277,7 +349,7 @@ def run() -> None:
             "v": browse_results,
             "c": cancel,
             "e": export_errors,
-            "p": profile,
+            "s": settings_dialog,
             "x": refresh,
         })
         host.run(stdscr)

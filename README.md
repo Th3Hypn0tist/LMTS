@@ -1,4 +1,4 @@
-# LMTS
+# AIGM LMTS
 
 Language Model Test Suite for measuring model capabilities, limits, behavior and execution characteristics across reusable, versioned tests.
 

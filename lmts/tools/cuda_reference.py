@@ -2,14 +2,28 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import os
 import statistics
-import time
 from dataclasses import dataclass
 from typing import Any
 
 
 class CudaUnavailable(RuntimeError):
     pass
+
+
+_CUresult = ctypes.c_int
+_CUdevice = ctypes.c_int
+_CUdeviceptr = ctypes.c_uint64
+_CUcontext = ctypes.c_void_p
+_CUevent = ctypes.c_void_p
+_CUstream = ctypes.c_void_p
+_CUmodule = ctypes.c_void_p
+_CUfunction = ctypes.c_void_p
+
+
+class _CUuuid(ctypes.Structure):
+    _fields_ = [("bytes", ctypes.c_ubyte * 16)]
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,11 +46,12 @@ class CudaDriver:
     def __init__(self) -> None:
         names = [ctypes.util.find_library("cuda"), "libcuda.so.1", "nvcuda.dll"]
         self.lib = None
+        loader = ctypes.WinDLL if os.name == "nt" else ctypes.CDLL
         for name in names:
             if not name:
                 continue
             try:
-                self.lib = ctypes.CDLL(name)
+                self.lib = loader(name)
                 break
             except OSError:
                 continue
@@ -49,35 +64,81 @@ class CudaDriver:
         for name in names:
             fn = getattr(self.lib, name, None)
             if fn is not None:
+                fn.restype = _CUresult
                 return fn
         raise CudaUnavailable(f"CUDA driver symbol unavailable: {names[0]}")
 
+    @staticmethod
+    def _args(function, *types) -> None:
+        function.argtypes = list(types)
+
     def _bind(self) -> None:
         self.cuInit = self._function("cuInit")
+        self._args(self.cuInit, ctypes.c_uint)
+
         self.cuDeviceGetCount = self._function("cuDeviceGetCount")
+        self._args(self.cuDeviceGetCount, ctypes.POINTER(ctypes.c_int))
         self.cuDeviceGet = self._function("cuDeviceGet")
+        self._args(self.cuDeviceGet, ctypes.POINTER(_CUdevice), ctypes.c_int)
         self.cuDeviceGetName = self._function("cuDeviceGetName")
+        self._args(self.cuDeviceGetName, ctypes.c_char_p, ctypes.c_int, _CUdevice)
         self.cuDeviceTotalMem = self._function("cuDeviceTotalMem_v2", "cuDeviceTotalMem")
+        self._args(self.cuDeviceTotalMem, ctypes.POINTER(ctypes.c_size_t), _CUdevice)
         self.cuDeviceGetUuid = getattr(self.lib, "cuDeviceGetUuid_v2", None) or getattr(self.lib, "cuDeviceGetUuid", None)
+        if self.cuDeviceGetUuid is not None:
+            self.cuDeviceGetUuid.restype = _CUresult
+            self._args(self.cuDeviceGetUuid, ctypes.POINTER(_CUuuid), _CUdevice)
+
         self.cuCtxCreate = self._function("cuCtxCreate_v2", "cuCtxCreate")
+        self._args(self.cuCtxCreate, ctypes.POINTER(_CUcontext), ctypes.c_uint, _CUdevice)
         self.cuCtxDestroy = self._function("cuCtxDestroy_v2", "cuCtxDestroy")
-        self.cuMemAlloc = self._function("cuMemAlloc_v2", "cuMemAlloc")
-        self.cuMemFree = self._function("cuMemFree_v2", "cuMemFree")
-        self.cuMemHostAlloc = self._function("cuMemHostAlloc")
-        self.cuMemFreeHost = self._function("cuMemFreeHost")
-        self.cuMemcpyHtoD = self._function("cuMemcpyHtoD_v2", "cuMemcpyHtoD")
-        self.cuMemcpyDtoH = self._function("cuMemcpyDtoH_v2", "cuMemcpyDtoH")
-        self.cuMemcpyDtoD = self._function("cuMemcpyDtoD_v2", "cuMemcpyDtoD")
-        self.cuEventCreate = self._function("cuEventCreate")
-        self.cuEventRecord = self._function("cuEventRecord")
-        self.cuEventSynchronize = self._function("cuEventSynchronize")
-        self.cuEventElapsedTime = self._function("cuEventElapsedTime")
-        self.cuEventDestroy = self._function("cuEventDestroy_v2", "cuEventDestroy")
-        self.cuModuleLoadData = self._function("cuModuleLoadData")
-        self.cuModuleUnload = self._function("cuModuleUnload")
-        self.cuModuleGetFunction = self._function("cuModuleGetFunction")
-        self.cuLaunchKernel = self._function("cuLaunchKernel")
+        self._args(self.cuCtxDestroy, _CUcontext)
         self.cuCtxSynchronize = self._function("cuCtxSynchronize")
+        self._args(self.cuCtxSynchronize)
+
+        self.cuMemAlloc = self._function("cuMemAlloc_v2", "cuMemAlloc")
+        self._args(self.cuMemAlloc, ctypes.POINTER(_CUdeviceptr), ctypes.c_size_t)
+        self.cuMemFree = self._function("cuMemFree_v2", "cuMemFree")
+        self._args(self.cuMemFree, _CUdeviceptr)
+        self.cuMemHostAlloc = self._function("cuMemHostAlloc")
+        self._args(self.cuMemHostAlloc, ctypes.POINTER(ctypes.c_void_p), ctypes.c_size_t, ctypes.c_uint)
+        self.cuMemFreeHost = self._function("cuMemFreeHost")
+        self._args(self.cuMemFreeHost, ctypes.c_void_p)
+        self.cuMemcpyHtoD = self._function("cuMemcpyHtoD_v2", "cuMemcpyHtoD")
+        self._args(self.cuMemcpyHtoD, _CUdeviceptr, ctypes.c_void_p, ctypes.c_size_t)
+        self.cuMemcpyDtoH = self._function("cuMemcpyDtoH_v2", "cuMemcpyDtoH")
+        self._args(self.cuMemcpyDtoH, ctypes.c_void_p, _CUdeviceptr, ctypes.c_size_t)
+        self.cuMemcpyDtoD = self._function("cuMemcpyDtoD_v2", "cuMemcpyDtoD")
+        self._args(self.cuMemcpyDtoD, _CUdeviceptr, _CUdeviceptr, ctypes.c_size_t)
+
+        self.cuEventCreate = self._function("cuEventCreate")
+        self._args(self.cuEventCreate, ctypes.POINTER(_CUevent), ctypes.c_uint)
+        self.cuEventRecord = self._function("cuEventRecord")
+        self._args(self.cuEventRecord, _CUevent, _CUstream)
+        self.cuEventSynchronize = self._function("cuEventSynchronize")
+        self._args(self.cuEventSynchronize, _CUevent)
+        self.cuEventElapsedTime = self._function("cuEventElapsedTime")
+        self._args(self.cuEventElapsedTime, ctypes.POINTER(ctypes.c_float), _CUevent, _CUevent)
+        self.cuEventDestroy = self._function("cuEventDestroy_v2", "cuEventDestroy")
+        self._args(self.cuEventDestroy, _CUevent)
+
+        self.cuModuleLoadData = self._function("cuModuleLoadData")
+        self._args(self.cuModuleLoadData, ctypes.POINTER(_CUmodule), ctypes.c_void_p)
+        self.cuModuleUnload = self._function("cuModuleUnload")
+        self._args(self.cuModuleUnload, _CUmodule)
+        self.cuModuleGetFunction = self._function("cuModuleGetFunction")
+        self._args(self.cuModuleGetFunction, ctypes.POINTER(_CUfunction), _CUmodule, ctypes.c_char_p)
+        self.cuLaunchKernel = self._function("cuLaunchKernel")
+        self._args(
+            self.cuLaunchKernel,
+            _CUfunction,
+            ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+            ctypes.c_uint, ctypes.c_uint, ctypes.c_uint,
+            ctypes.c_uint,
+            _CUstream,
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        )
 
     @staticmethod
     def _check(code: int, operation: str) -> None:
@@ -90,7 +151,7 @@ class CudaDriver:
         return count.value
 
     def device(self, index: int) -> int:
-        device = ctypes.c_int()
+        device = _CUdevice()
         self._check(self.cuDeviceGet(ctypes.byref(device), index), "cuDeviceGet")
         return device.value
 
@@ -102,28 +163,27 @@ class CudaDriver:
         self._check(self.cuDeviceTotalMem(ctypes.byref(total), device), "cuDeviceTotalMem")
         uuid_text = None
         if self.cuDeviceGetUuid is not None:
-            uuid_bytes = (ctypes.c_ubyte * 16)()
-            if int(self.cuDeviceGetUuid(ctypes.byref(uuid_bytes), device)) == 0:
-                raw = bytes(uuid_bytes)
-                uuid_text = raw.hex()
+            uuid_value = _CUuuid()
+            if int(self.cuDeviceGetUuid(ctypes.byref(uuid_value), device)) == 0:
+                uuid_text = bytes(uuid_value.bytes).hex()
         return CudaDeviceIdentity(index, name.value.decode("utf-8", errors="replace"), uuid_text, total.value)
 
-    def context(self, index: int) -> ctypes.c_void_p:
-        ctx = ctypes.c_void_p()
+    def context(self, index: int) -> _CUcontext:
+        ctx = _CUcontext()
         self._check(self.cuCtxCreate(ctypes.byref(ctx), 0, self.device(index)), "cuCtxCreate")
         return ctx
 
     def timed(self, operation, repeats: int = 1) -> list[float]:
         samples: list[float] = []
         for _ in range(repeats):
-            start = ctypes.c_void_p()
-            end = ctypes.c_void_p()
+            start = _CUevent()
+            end = _CUevent()
             self._check(self.cuEventCreate(ctypes.byref(start), 0), "cuEventCreate")
             self._check(self.cuEventCreate(ctypes.byref(end), 0), "cuEventCreate")
             try:
-                self._check(self.cuEventRecord(start, 0), "cuEventRecord")
+                self._check(self.cuEventRecord(start, None), "cuEventRecord")
                 operation()
-                self._check(self.cuEventRecord(end, 0), "cuEventRecord")
+                self._check(self.cuEventRecord(end, None), "cuEventRecord")
                 self._check(self.cuEventSynchronize(end), "cuEventSynchronize")
                 elapsed = ctypes.c_float()
                 self._check(self.cuEventElapsedTime(ctypes.byref(elapsed), start, end), "cuEventElapsedTime")
@@ -151,27 +211,27 @@ def transfer_benchmarks(driver: CudaDriver, index: int, *, buffer_bytes: int = 6
     identity = driver.identity(index)
     target = identity.target()
     ctx = driver.context(index)
-    src = ctypes.c_uint64()
-    dst = ctypes.c_uint64()
+    src = _CUdeviceptr()
+    dst = _CUdeviceptr()
     host = ctypes.c_void_p()
     try:
         driver._check(driver.cuMemAlloc(ctypes.byref(src), buffer_bytes), "cuMemAlloc")
         driver._check(driver.cuMemAlloc(ctypes.byref(dst), buffer_bytes), "cuMemAlloc")
         driver._check(driver.cuMemHostAlloc(ctypes.byref(host), buffer_bytes, 0), "cuMemHostAlloc")
         ctypes.memset(host, 0xA5, buffer_bytes)
-        driver._check(driver.cuMemcpyHtoD(src.value, host, buffer_bytes), "cuMemcpyHtoD")
+        driver._check(driver.cuMemcpyHtoD(src, host, buffer_bytes), "cuMemcpyHtoD")
 
         def d2d() -> None:
             for _ in range(repeats_per_sample):
-                driver._check(driver.cuMemcpyDtoD(dst.value, src.value, buffer_bytes), "cuMemcpyDtoD")
+                driver._check(driver.cuMemcpyDtoD(dst, src, buffer_bytes), "cuMemcpyDtoD")
 
         def h2d() -> None:
             for _ in range(repeats_per_sample):
-                driver._check(driver.cuMemcpyHtoD(dst.value, host, buffer_bytes), "cuMemcpyHtoD")
+                driver._check(driver.cuMemcpyHtoD(dst, host, buffer_bytes), "cuMemcpyHtoD")
 
         def d2h() -> None:
             for _ in range(repeats_per_sample):
-                driver._check(driver.cuMemcpyDtoH(host, src.value, buffer_bytes), "cuMemcpyDtoH")
+                driver._check(driver.cuMemcpyDtoH(host, src, buffer_bytes), "cuMemcpyDtoH")
 
         tests = []
         for benchmark_id, label, method, op in (
@@ -200,9 +260,9 @@ def transfer_benchmarks(driver: CudaDriver, index: int, *, buffer_bytes: int = 6
         if host.value:
             driver.cuMemFreeHost(host)
         if dst.value:
-            driver.cuMemFree(dst.value)
+            driver.cuMemFree(dst)
         if src.value:
-            driver.cuMemFree(src.value)
+            driver.cuMemFree(src)
         driver.cuCtxDestroy(ctx)
 
 
@@ -247,9 +307,9 @@ LOOP:
 def compute_benchmark(driver: CudaDriver, index: int, *, blocks: int = 4096, threads: int = 256, iterations: int = 4096, sample_count: int = 5) -> dict[str, Any]:
     identity = driver.identity(index)
     ctx = driver.context(index)
-    data = ctypes.c_uint64()
-    module = ctypes.c_void_p()
-    function = ctypes.c_void_p()
+    data = _CUdeviceptr()
+    module = _CUmodule()
+    function = _CUfunction()
     element_count = blocks * threads
     size = element_count * 4
     try:
@@ -258,11 +318,14 @@ def compute_benchmark(driver: CudaDriver, index: int, *, blocks: int = 4096, thr
         driver._check(driver.cuModuleLoadData(ctypes.byref(module), ctypes.cast(ptx, ctypes.c_void_p)), "cuModuleLoadData")
         driver._check(driver.cuModuleGetFunction(ctypes.byref(function), module, b"lmts_fma"), "cuModuleGetFunction")
         iterations_arg = ctypes.c_uint(iterations)
-        data_arg = ctypes.c_uint64(data.value)
-        args = (ctypes.c_void_p * 2)(ctypes.cast(ctypes.byref(data_arg), ctypes.c_void_p), ctypes.cast(ctypes.byref(iterations_arg), ctypes.c_void_p))
+        data_arg = _CUdeviceptr(data.value)
+        args = (ctypes.c_void_p * 2)(
+            ctypes.cast(ctypes.byref(data_arg), ctypes.c_void_p),
+            ctypes.cast(ctypes.byref(iterations_arg), ctypes.c_void_p),
+        )
 
         def launch() -> None:
-            driver._check(driver.cuLaunchKernel(function, blocks, 1, 1, threads, 1, 1, 0, 0, args, None), "cuLaunchKernel")
+            driver._check(driver.cuLaunchKernel(function, blocks, 1, 1, threads, 1, 1, 0, None, args, None), "cuLaunchKernel")
 
         launch()
         driver._check(driver.cuCtxSynchronize(), "cuCtxSynchronize")
@@ -292,7 +355,7 @@ def compute_benchmark(driver: CudaDriver, index: int, *, blocks: int = 4096, thr
         if module.value:
             driver.cuModuleUnload(module)
         if data.value:
-            driver.cuMemFree(data.value)
+            driver.cuMemFree(data)
         driver.cuCtxDestroy(ctx)
 
 
@@ -305,10 +368,7 @@ def run_cuda_reference() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     devices: list[dict[str, Any]] = []
     for index in range(count):
         identity = driver.identity(index)
-        devices.append({
-            **identity.target(),
-            "total_memory_bytes": identity.total_memory_bytes,
-        })
+        devices.append({**identity.target(), "total_memory_bytes": identity.total_memory_bytes})
         tests.extend(transfer_benchmarks(driver, index))
         tests.append(compute_benchmark(driver, index))
     return tests, {"devices": devices, "backend": "cuda_driver_api"}

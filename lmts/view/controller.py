@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
-from lmts.core.benchmark_runner import BenchmarkRunner
+from lmts.core.benchmark_runner import BenchmarkProgress, BenchmarkRunner
 from lmts.core.benchmark_store import BenchmarkStore
 from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
@@ -36,8 +37,12 @@ class LMTSViewController:
         self.logs_root = logs_root
         self.state = LMTSViewState(tests=list(tests.tests()))
         self.last_errors: list[dict[str, object]] = []
+        self._run_thread: threading.Thread | None = None
 
     def refresh(self) -> None:
+        if self.state.running:
+            self.state.message = "cannot refresh while test matrix is running"
+            return
         previous_models = set(self.state.selected_model_ids)
         previous_tests = set(self.state.selected_test_refs)
 
@@ -60,6 +65,8 @@ class LMTSViewController:
         )
 
     def select_models(self, indices: set[int]) -> None:
+        if self.state.running:
+            return
         self.state.selected_model_ids = {
             self.state.models[index].id
             for index in sorted(indices)
@@ -67,13 +74,19 @@ class LMTSViewController:
         }
 
     def select_model_ids(self, model_ids: set[str]) -> None:
+        if self.state.running:
+            return
         available = {model.id for model in self.state.models}
         self.state.selected_model_ids = set(model_ids) & available
 
     def select_all_models(self) -> None:
+        if self.state.running:
+            return
         self.state.selected_model_ids = {model.id for model in self.state.models}
 
     def select_tests(self, indices: set[int]) -> None:
+        if self.state.running:
+            return
         self.state.selected_test_refs = {
             _test_ref(self.state.tests[index])
             for index in sorted(indices)
@@ -81,10 +94,14 @@ class LMTSViewController:
         }
 
     def select_test_refs(self, test_refs: set[str]) -> None:
+        if self.state.running:
+            return
         available = {_test_ref(test) for test in self.state.tests}
         self.state.selected_test_refs = set(test_refs) & available
 
     def select_all_tests(self) -> None:
+        if self.state.running:
+            return
         self.state.selected_test_refs = {_test_ref(test) for test in self.state.tests}
 
     def select_model(self, index: int) -> None:
@@ -93,66 +110,116 @@ class LMTSViewController:
     def select_test(self, index: int) -> None:
         self.select_tests({index})
 
-    def run_selected(self) -> None:
-        models = self.state.selected_models
-        tests = self.state.selected_tests
+    def run_selected(self) -> bool:
+        if self.state.running:
+            self.state.message = "test matrix already running"
+            return False
+
+        models = list(self.state.selected_models)
+        tests = list(self.state.selected_tests)
         if not models or not tests:
             self.state.message = "select at least one model and one test"
-            return
+            return False
 
+        self.state.running = True
+        self.state.progress_completed = 0
+        self.state.progress_total = len(models) * len(tests)
+        self.state.progress_passed = 0
+        self.state.progress_failed = 0
+        self.state.progress_errors = 0
+        self.state.progress_model_id = ""
+        self.state.progress_test_ref = ""
+        self.state.progress_phase = "starting"
+        self.state.last_result = None
+        self.state.message = (
+            f"test matrix started: {len(models)} model(s) x {len(tests)} test(s)"
+        )
+        self.last_errors = []
+
+        self._run_thread = threading.Thread(
+            target=self._run_matrix,
+            args=(models, tests),
+            name="lmts-test-matrix",
+            daemon=True,
+        )
+        self._run_thread.start()
+        return True
+
+    def _run_matrix(self, models, tests) -> None:
         runner = TestRunner(self.providers, RunStore(self.results_root))
         benchmark_runner = BenchmarkRunner(runner)
         benchmark_store = BenchmarkStore(self.results_root)
 
         batch_ids: list[str] = []
         batch_paths: list[str] = []
-        passed = 0
-        failed = 0
-        errors = 0
-        total_runs = 0
-        self.last_errors = []
+        completed_before = 0
 
-        for test in tests:
-            batch = benchmark_runner.run(test, models, self.workspace_root)
-            path = benchmark_store.append(batch)
-            batch_ids.append(batch.batch_id)
-            batch_paths.append(str(path))
-            passed += batch.passed
-            failed += batch.failed
-            errors += batch.errors
-            total_runs += len(batch.run_ids)
+        try:
+            for test in tests:
+                def on_progress(event: BenchmarkProgress, *, offset: int = completed_before) -> None:
+                    self.state.progress_model_id = event.model_id
+                    self.state.progress_test_ref = event.test_ref
+                    self.state.progress_phase = event.phase
+                    if event.phase == "starting":
+                        self.state.progress_completed = offset + event.index - 1
+                        return
 
-            if batch.errors:
-                for result_path in runner.store.iter_run_paths():
-                    data = runner.store.load(result_path)
-                    if data.get("run_id") not in batch.run_ids:
-                        continue
-                    if data.get("status") != "failed":
-                        continue
-                    self.last_errors.append(
-                        {
-                            "run_id": data.get("run_id"),
-                            "model_id": data.get("model_id"),
-                            "test_ref": data.get("test_ref"),
-                            "result_path": str(result_path),
-                            "error": data.get("error"),
-                        }
-                    )
+                    self.state.progress_completed = offset + event.index
+                    run = event.run
+                    if run is None:
+                        return
+                    if run.status != "completed":
+                        self.state.progress_errors += 1
+                        if event.result_path is not None:
+                            self.last_errors.append(
+                                {
+                                    "run_id": run.run_id,
+                                    "model_id": run.model_id,
+                                    "test_ref": run.test_ref,
+                                    "result_path": str(event.result_path),
+                                    "error": run.error,
+                                }
+                            )
+                    elif run.passed is True:
+                        self.state.progress_passed += 1
+                    else:
+                        self.state.progress_failed += 1
 
-        self.state.last_result = {
-            "matrix": f"{len(models)} model(s) x {len(tests)} test(s)",
-            "runs": total_runs,
-            "passed": passed,
-            "failed": failed,
-            "errors": errors,
-            "batch_ids": ", ".join(batch_ids),
-            "batch_paths": ", ".join(batch_paths),
-        }
-        if self.last_errors:
-            self.state.last_result["error_log"] = "press e to export"
-        self.state.message = (
-            f"test matrix finished: {passed} passed, {failed} failed, {errors} error(s)"
-        )
+                batch = benchmark_runner.run(
+                    test,
+                    models,
+                    self.workspace_root,
+                    progress=on_progress,
+                )
+                path = benchmark_store.append(batch)
+                batch_ids.append(batch.batch_id)
+                batch_paths.append(str(path))
+                completed_before += len(batch.run_ids)
+
+            self.state.last_result = {
+                "matrix": f"{len(models)} model(s) x {len(tests)} test(s)",
+                "runs": self.state.progress_completed,
+                "passed": self.state.progress_passed,
+                "failed": self.state.progress_failed,
+                "errors": self.state.progress_errors,
+                "batch_ids": ", ".join(batch_ids),
+                "batch_paths": ", ".join(batch_paths),
+            }
+            if self.last_errors:
+                self.state.last_result["error_log"] = "press e to export"
+            self.state.progress_phase = "finished"
+            self.state.message = (
+                "test matrix finished: "
+                f"{self.state.progress_passed} passed, "
+                f"{self.state.progress_failed} failed, "
+                f"{self.state.progress_errors} error(s)"
+            )
+        except Exception as exc:
+            self.state.progress_errors += 1
+            self.state.progress_phase = "error"
+            self.state.message = f"test matrix aborted: {type(exc).__name__}: {exc}"
+        finally:
+            self.state.running = False
 
     def export_errors(self, task: str = "task") -> Path | None:
         if not self.last_errors:
@@ -162,17 +229,26 @@ class LMTSViewController:
         self.state.message = f"error log exported: {path}"
         return path
 
-    def test_all(self) -> None:
+    def test_all(self) -> bool:
+        if self.state.running:
+            self.state.message = "test matrix already running"
+            return False
         self.select_all_models()
         self.select_all_tests()
-        self.run_selected()
+        return self.run_selected()
 
-    def benchmark_all_local(self) -> None:
+    def benchmark_all_local(self) -> bool:
+        if self.state.running:
+            self.state.message = "test matrix already running"
+            return False
         local_ids = {model.id for model in self.state.models if model.location == "local"}
         self.select_model_ids(local_ids)
-        self.run_selected()
+        return self.run_selected()
 
     def profile(self) -> None:
+        if self.state.running:
+            self.state.message = "cannot profile while test matrix is running"
+            return
         profile = scan_system_profile().to_dict()
         self.state.last_result = {
             "cpu": profile.get("cpu"),

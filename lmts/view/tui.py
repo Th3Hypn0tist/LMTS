@@ -7,24 +7,20 @@ from lmts.cli import default_provider_registry
 from lmts.core.result_export import build_matrix_bundle, export_matrix_bundle, export_run_json
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, LMTSSettings, load_settings, save_settings
 from lmts.core.store import RunStore
-from lmts.lib.view import SplitCursesViewHost, choose_directory
+from lmts.lib.view import RegistrySplitCursesViewHost, choose_directory
 from lmts.reporting import project_matrix_bundle
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tests.types import TestParameter, TestTypeDefinition
+from lmts.tools.profile import load_system_profile
 from lmts.tools.report_publish import publish_report
 from lmts.tools.web_deploy import deploy_web_root
 
 from .controller import LMTSViewController
 from .output_dialog import choose_ftp_profile, choose_output_target, manage_ftp_profiles
 from .projector import LMTSViewProjector
+from .registries import SHORTCUT_REGISTRY, TAB_REGISTRY
 from .results import cell_verdict, format_run_result, matrix_label
-
-
-FOOTER = (
-    "m models  t matrix  n add  d remove  r run  a all  v results  "
-    "c cancel  e errors  o output  s settings  x refresh  q q q quit"
-)
 
 
 def _next_instance_id(controller: LMTSViewController, definition: TestTypeDefinition) -> str:
@@ -40,6 +36,54 @@ def _short_test_label(ref: str) -> str:
     return (ref.split("#", 1)[-1] if "#" in ref else ref.rsplit(".", 1)[-1])[:18]
 
 
+def _profile_lines(controller: LMTSViewController) -> tuple[str, ...]:
+    payload = load_system_profile(controller.profile_path)
+    lines = [
+        "Profiler",
+        "",
+        "System identity and reference performance for benchmark comparison.",
+        "Reference benchmark domains: CPU / memory / GPU / NPU.",
+        "",
+        f"Profile: {'REQUIRED' if controller.state.profile_required else 'ready'}",
+    ]
+    if payload is None:
+        lines.extend(["", "No valid system profile is currently stored."])
+        return tuple(lines)
+    for name in ("cpu", "memory", "gpu", "npu"):
+        value = payload.get(name)
+        lines.append(f"{name.upper():6}: {value if value not in (None, [], {}) else '-'}")
+    profiled_at = str(payload.get("profiled_at") or "")
+    if profiled_at:
+        lines.append(f"Profiled: {profiled_at}")
+    return tuple(lines)
+
+
+def _server_lines() -> tuple[str, ...]:
+    return (
+        "Server tools",
+        "",
+        "Server-side setup, publishing and web deployment.",
+        "",
+        "Current tools",
+        "  Publish report to MySQL server",
+        "  Deploy web root to disk or FTP",
+        "  Manage saved FTP profiles",
+        "",
+        "Server installation resources",
+        "  lmts/install/install_server.sh",
+        "  lmts/config/db.php",
+    )
+
+
+def _root_lines() -> tuple[str, ...]:
+    lines = ["AIGM LMTS", "", "Tabs"]
+    for tab in TAB_REGISTRY.children("root"):
+        key = f"{tab.shortcut}  " if tab.shortcut else ""
+        lines.append(f"  {key}{tab.label}")
+    lines.extend(["", "Tabs are registry-driven and may contain child tabs recursively."])
+    return tuple(lines)
+
+
 def run() -> None:
     test_types = default_test_type_registry()
     matrix = default_test_matrix(test_types)
@@ -47,17 +91,50 @@ def run() -> None:
     controller.refresh()
     projector = LMTSViewProjector(controller.state)
     settings = load_settings(DEFAULT_SETTINGS_PATH)
+    active_tab = ["profiler"]
+
+    def current_tab() -> str:
+        return active_tab[0]
+
+    def render_lines() -> tuple[str, ...]:
+        tab = current_tab()
+        if tab == "root":
+            return _root_lines()
+        if tab == "profiler":
+            return _profile_lines(controller)
+        if tab == "server":
+            return _server_lines()
+        if tab == "benchmark":
+            return projector.project().lines
+        definition = TAB_REGISTRY.get(tab)
+        children = TAB_REGISTRY.children(tab)
+        lines = [definition.label, ""]
+        for child in children:
+            prefix = f"{child.shortcut}  " if child.shortcut else ""
+            lines.append(f"  {prefix}{child.label}")
+        return tuple(lines)
+
+    def render_status() -> str:
+        tab = TAB_REGISTRY.get(current_tab())
+        breadcrumb = " / ".join(item.label for item in TAB_REGISTRY.path(tab.id))
+        if tab.id == "benchmark":
+            return f"{breadcrumb}  |  {projector.project().status}"
+        if tab.id == "profiler":
+            state = "REQUIRED" if controller.state.profile_required else "ready"
+            return f"{breadcrumb}  |  profile={state}"
+        return breadcrumb
 
     def app(stdscr: curses.window) -> None:
         nonlocal settings
-        host = SplitCursesViewHost(
-            "LMTS",
-            lambda: projector.project().lines,
-            lambda: projector.project().status,
+        host = RegistrySplitCursesViewHost(
+            "AIGM LMTS",
+            render_lines,
+            render_status,
             controller.response_monitor.lines,
+            shortcuts=SHORTCUT_REGISTRY,
+            scopes=lambda: (current_tab(),),
             monitor_title="Bot response",
             monitor_fraction=1 / 3,
-            footer=FOOTER,
         )
 
         host.message = (
@@ -71,6 +148,19 @@ def run() -> None:
             controller.profile()
             host.message = controller.state.message
             host.draw(stdscr)
+
+        def open_tab(tab_id: str) -> None:
+            TAB_REGISTRY.get(tab_id)
+            active_tab[0] = tab_id
+            host.scroll = 0
+            host.message = f"tab: {TAB_REGISTRY.get(tab_id).label}"
+
+        def back(_stdscr: curses.window) -> None:
+            parent = TAB_REGISTRY.parent(current_tab())
+            if parent is None:
+                host.message = "already at root"
+                return
+            open_tab(parent.id)
 
         def show_progress() -> None:
             host.progress_dialog(
@@ -358,6 +448,10 @@ def run() -> None:
             path = controller.export_errors("task")
             host.message = controller.state.message if path is None else f"exported: {path}"
 
+        def profile_system(_stdscr: curses.window) -> None:
+            controller.profile()
+            host.message = controller.state.message
+
         def settings_dialog(_stdscr: curses.window) -> None:
             nonlocal settings
             if controller.state.running:
@@ -394,20 +488,28 @@ def run() -> None:
             controller.refresh()
             host.message = controller.state.message
 
-        host.handlers.update({
-            "m": select_models,
-            "t": select_tests,
-            "n": add_test,
-            "d": remove_test,
-            "r": run_selected,
-            "a": test_all,
-            "v": browse_results,
-            "c": cancel,
-            "e": export_errors,
-            "o": output_tools,
-            "s": settings_dialog,
-            "x": refresh,
-        })
+        bindings = {
+            "tab.profiler": lambda _stdscr: open_tab("profiler"),
+            "tab.server": lambda _stdscr: open_tab("server"),
+            "tab.benchmark": lambda _stdscr: open_tab("benchmark"),
+            "nav.back": back,
+            "settings": settings_dialog,
+            "profile.run": profile_system,
+            "server.output": output_tools,
+            "models": select_models,
+            "tests": select_tests,
+            "test.add": add_test,
+            "test.remove": remove_test,
+            "run.selected": run_selected,
+            "run.all": test_all,
+            "results": browse_results,
+            "cancel": cancel,
+            "errors": export_errors,
+            "refresh": refresh,
+        }
+        for action, handler in bindings.items():
+            host.bind(action, handler)
+
         host.run(stdscr)
 
     curses.wrapper(app)

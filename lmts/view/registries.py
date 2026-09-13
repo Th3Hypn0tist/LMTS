@@ -30,7 +30,7 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("profile.npu", ("v",), "Test NPU", "Profile", scope="profile", order=130),
     ShortcutDefinition("profile.scan", ("p",), "Profile system", "Profile", scope="profile", order=140),
 
-    ShortcutDefinition("models", ("m",), "Models", "Benchmark", scope="benchmark", order=100),
+    ShortcutDefinition("targets", ("m",), "Targets", "Benchmark", scope="benchmark", order=100),
     ShortcutDefinition("tests", ("t",), "Matrix", "Benchmark", scope="benchmark", order=110),
     ShortcutDefinition("test.add", ("n",), "Add test", "Benchmark", scope="benchmark", order=120),
     ShortcutDefinition("test.remove", ("d",), "Remove test", "Benchmark", scope="benchmark", order=130),
@@ -46,7 +46,8 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("settings.server", ("i",), "Server setup", "Settings", scope="settings", order=110),
     ShortcutDefinition("settings.mysql", ("m",), "MySQL", "Settings", scope="settings", order=120),
     ShortcutDefinition("settings.ftp", ("f",), "FTP", "Settings", scope="settings", order=130),
-    ShortcutDefinition("settings.shortcuts", ("k",), "Shortcut editor", "Settings", scope="settings", order=140),
+    ShortcutDefinition("settings.report", ("r",), "Report API", "Settings", scope="settings", order=140),
+    ShortcutDefinition("settings.shortcuts", ("k",), "Shortcut editor", "Settings", scope="settings", order=150),
 )
 
 

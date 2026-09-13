@@ -27,20 +27,23 @@ def primitive(value: Any) -> Any:
 class RunResult:
     run_id: str
     test_ref: str
-    model_id: str
-    model_ref: str
-    provider_ref: str
+    executor_id: str
+    executor_kind: str
     started_at: str
     completed_at: str
     status: RunStatus
     passed: bool | None
     evaluation_subject: dict[str, Any] = field(default_factory=dict)
+    execution_metadata: dict[str, Any] = field(default_factory=dict)
     score: dict[str, Any] | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     artifacts: dict[str, Any] = field(default_factory=dict)
     responses: list[NormalizedResponse] = field(default_factory=list)
     workspace_trace: list[dict[str, object]] = field(default_factory=list)
     system_context: dict[str, Any] = field(default_factory=dict)
+    model_id: str | None = None
+    model_ref: str | None = None
+    provider_ref: str | None = None
     model_metadata: dict[str, Any] = field(default_factory=dict)
     error: dict[str, str] | None = None
 

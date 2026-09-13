@@ -106,9 +106,7 @@ class NPUReferenceRegistry:
         return tests, {'backends': backends, 'backend_environments': environments}
 
 
-def load_npu_reference_registry(
-    path: Path = DEFAULT_NPU_REFERENCE_CONFIG_PATH,
-) -> NPUReferenceRegistry:
+def load_npu_reference_registry(path: Path = DEFAULT_NPU_REFERENCE_CONFIG_PATH) -> NPUReferenceRegistry:
     path = path.expanduser()
     if not path.is_file():
         return NPUReferenceRegistry()
@@ -143,6 +141,19 @@ def load_npu_reference_registry(
     if len(ids) != len(set(ids)):
         raise ValueError('NPU reference backend ids must be unique')
     return NPUReferenceRegistry(tuple(adapters))
+
+
+class _ConfiguredNPUReferenceRegistry:
+    """Canonical default: only explicitly configured command backends are used."""
+
+    def available_adapters(self) -> tuple[NPUReferenceAdapter, ...]:
+        return load_npu_reference_registry().available_adapters()
+
+    def benchmark(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        return load_npu_reference_registry().benchmark()
+
+
+DEFAULT_NPU_REFERENCE_REGISTRY = _ConfiguredNPUReferenceRegistry()
 
 
 def benchmark_configured_npu_reference(

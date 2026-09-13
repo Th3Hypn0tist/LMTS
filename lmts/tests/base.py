@@ -54,3 +54,11 @@ class TestModule(Protocol):
     requirements: TestRequirements
 
     def run(self, context: TestContext) -> TestResult: ...
+
+
+def test_ref(test: TestModule) -> str:
+    """Return configured-instance ref when available, otherwise type ref."""
+    configured = getattr(test, "ref", None)
+    if isinstance(configured, str) and configured:
+        return configured
+    return f"{test.id}@{test.version}"

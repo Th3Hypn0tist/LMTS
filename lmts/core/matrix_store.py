@@ -10,7 +10,8 @@ from .store import safe_component
 
 @dataclass(frozen=True, slots=True)
 class MatrixCell:
-    model_id: str
+    target_id: str
+    target_kind: str
     test_ref: str
     run_id: str
     status: str
@@ -27,7 +28,8 @@ class MatrixRunRecord:
     started_at: str
     completed_at: str
     status: str
-    model_ids: list[str] = field(default_factory=list)
+    target_ids: list[str] = field(default_factory=list)
+    target_kinds: dict[str, str] = field(default_factory=dict)
     test_refs: list[str] = field(default_factory=list)
     cells: list[MatrixCell] = field(default_factory=list)
     passed: int = 0
@@ -41,7 +43,8 @@ class MatrixRunRecord:
             "started_at": self.started_at,
             "completed_at": self.completed_at,
             "status": self.status,
-            "model_ids": list(self.model_ids),
+            "target_ids": list(self.target_ids),
+            "target_kinds": dict(self.target_kinds),
             "test_refs": list(self.test_refs),
             "cells": [cell.to_dict() for cell in self.cells],
             "passed": self.passed,

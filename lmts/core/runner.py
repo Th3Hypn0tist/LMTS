@@ -9,6 +9,7 @@ from lmts.lib.workspace import Workspace
 from lmts.tests.base import TestContext, TestModule
 from lmts.tools.profile import SystemProfile, scan_system_profile
 
+from .control import RunCancelled, RunControl
 from .models import ModelDescriptor
 from .registry import ProviderRegistry
 from .run import RunResult, utc_now
@@ -34,16 +35,25 @@ class TestRunner:
         test: TestModule,
         model: ModelDescriptor,
         workspace_root: Path,
+        *,
+        control: RunControl | None = None,
     ) -> tuple[RunResult, Path]:
         provider = self.providers.provider(model.provider_ref)
         run_id = uuid.uuid4().hex
         started_at = utc_now()
         workspace = Workspace(workspace_root / run_id)
-        context = TestContext(provider=provider, model=model, workspace=workspace)
+        context = TestContext(
+            provider=provider,
+            model=model,
+            workspace=workspace,
+            control=control,
+        )
         test_ref = f"{test.id}@{test.version}"
 
         try:
+            context.checkpoint()
             result = test.run(context)
+            context.checkpoint()
             run = RunResult(
                 run_id=run_id,
                 test_ref=test_ref,
@@ -56,6 +66,22 @@ class TestRunner:
                 passed=result.passed,
                 metrics=result.metrics,
                 artifacts=result.artifacts,
+                responses=list(context.responses),
+                workspace_trace=list(workspace.trace.operations),
+                system_profile=self.profile_scan().to_dict(),
+                model_metadata=dict(model.metadata),
+            )
+        except RunCancelled:
+            run = RunResult(
+                run_id=run_id,
+                test_ref=test_ref,
+                model_id=model.id,
+                model_ref=model.model_ref,
+                provider_ref=model.provider_ref,
+                started_at=started_at,
+                completed_at=utc_now(),
+                status="cancelled",
+                passed=None,
                 responses=list(context.responses),
                 workspace_trace=list(workspace.trace.operations),
                 system_profile=self.profile_scan().to_dict(),

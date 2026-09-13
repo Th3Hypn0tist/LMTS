@@ -17,5 +17,10 @@ lmts-view = "lmts.view.shell:main"
 [tool.setuptools.packages.find]
 include = ["lmts*"]
 
+[tool.setuptools.package-data]
+"lmts.config" = ["*.php"]
+"lmts.install" = ["*.sh"]
+"lmts.reporting" = ["*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -38,7 +38,7 @@ def export_run_json(run_data: dict, output_folder: Path) -> Path:
     return _write_json(path, run_data)
 
 
-def export_matrix_bundle(matrix_data: dict, output_folder: Path, *, results_root: Path) -> Path:
+def build_matrix_bundle(matrix_data: dict, *, results_root: Path) -> dict:
     matrix_id = str(matrix_data.get('matrix_id') or '').strip()
     if not matrix_id:
         raise ValueError('canonical matrix is missing matrix_id')
@@ -63,13 +63,18 @@ def export_matrix_bundle(matrix_data: dict, output_folder: Path, *, results_root
             raise ValueError(f'canonical run_id mismatch for matrix cell: {run_id}')
         runs.append(run_data)
 
-    payload = {
+    return {
         'schema_version': EXPORT_SCHEMA_VERSION,
         'export_type': 'lmts.matrix_bundle',
         'exported_at': utc_now(),
         'matrix': matrix_data,
         'runs': runs,
     }
+
+
+def export_matrix_bundle(matrix_data: dict, output_folder: Path, *, results_root: Path) -> Path:
+    payload = build_matrix_bundle(matrix_data, results_root=results_root)
+    matrix_id = str(matrix_data.get('matrix_id') or '').strip()
     short_id = safe_component(matrix_id)[:12]
     path = output_folder.expanduser() / f'{_timestamp()}-matrix-{short_id}.json'
     return _write_json(path, payload)

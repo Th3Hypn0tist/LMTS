@@ -1,0 +1,1 @@
+"""LMTS server installation resources."""

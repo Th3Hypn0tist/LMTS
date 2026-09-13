@@ -4,22 +4,26 @@ import curses
 from pathlib import Path
 
 from lmts.cli import default_provider_registry
-from lmts.core.result_export import export_matrix_bundle, export_run_json
+from lmts.core.result_export import build_matrix_bundle, export_matrix_bundle, export_run_json
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, LMTSSettings, load_settings, save_settings
 from lmts.core.store import RunStore
 from lmts.lib.view import SplitCursesViewHost, choose_directory
+from lmts.reporting import project_matrix_bundle
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tests.types import TestParameter, TestTypeDefinition
+from lmts.tools.report_publish import publish_report
+from lmts.tools.web_deploy import deploy_web_root
 
 from .controller import LMTSViewController
+from .output_dialog import choose_ftp_profile, choose_output_target, manage_ftp_profiles
 from .projector import LMTSViewProjector
 from .results import cell_verdict, format_run_result, matrix_label
 
 
 FOOTER = (
     "m models  t matrix  n add  d remove  r run  a all  v results  "
-    "c cancel  e errors  s settings  x refresh  q q q quit"
+    "c cancel  e errors  o output  s settings  x refresh  q q q quit"
 )
 
 
@@ -210,21 +214,25 @@ def run() -> None:
             host.message = f"exported run: {path}"
             return path
 
-        def browse_results(_stdscr: curses.window) -> None:
+        def choose_matrix_result(title: str) -> tuple[Path, dict] | None:
             matrices = controller.recent_matrices()
             if not matrices:
                 host.message = "no canonical matrix results found"
-                return
-
+                return None
             chosen_matrix = 0
             if len(matrices) > 1:
                 options = [matrix_label(data, path) for path, data in matrices]
-                selected = host.choose(stdscr, "Matrix results (newest first)", options)
+                selected = host.choose(stdscr, title, options)
                 if selected is None:
-                    return
+                    return None
                 chosen_matrix = selected
+            return matrices[chosen_matrix]
 
-            matrix_path, matrix_data = matrices[chosen_matrix]
+        def browse_results(_stdscr: curses.window) -> None:
+            chosen = choose_matrix_result("Matrix results (newest first)")
+            if chosen is None:
+                return
+            matrix_path, matrix_data = chosen
             models = [str(value) for value in (matrix_data.get("model_ids") or [])]
             tests = [str(value) for value in (matrix_data.get("test_refs") or [])]
             cells = [cell for cell in (matrix_data.get("cells") or []) if isinstance(cell, dict)]
@@ -295,6 +303,53 @@ def run() -> None:
             )
             host.message = f"viewed matrix cell: {cell.get('run_id', '?')}"
 
+        def output_tools(_stdscr: curses.window) -> None:
+            if controller.state.running:
+                host.message = "output tools unavailable while test matrix is running"
+                return
+            action = host.choose(
+                stdscr,
+                "Output",
+                [
+                    "Publish report to MySQL server",
+                    "Deploy web root",
+                    "FTP profiles",
+                ],
+            )
+            if action is None:
+                return
+            if action == 2:
+                try:
+                    manage_ftp_profiles(host, stdscr)
+                except (OSError, ValueError) as exc:
+                    host.message = f"FTP profile error: {exc}"
+                return
+            if action == 1:
+                try:
+                    target = choose_output_target(host, stdscr, disk_initial="/home/www/lmts")
+                    if target is None:
+                        return
+                    written = deploy_web_root(target)
+                    host.message = f"deployed {len(written)} web file(s)"
+                except (OSError, ValueError, RuntimeError) as exc:
+                    host.message = f"web deploy failed: {exc}"
+                return
+
+            chosen = choose_matrix_result("Publish matrix report")
+            if chosen is None:
+                return
+            _matrix_path, matrix_data = chosen
+            try:
+                profile = choose_ftp_profile(host, stdscr)
+                if profile is None:
+                    return
+                bundle = build_matrix_bundle(matrix_data, results_root=controller.results_root)
+                report = project_matrix_bundle(bundle)
+                report_id = publish_report(report, profile)
+                host.message = f"published report: {report_id}"
+            except (OSError, ValueError, RuntimeError) as exc:
+                host.message = f"report publish failed: {exc}"
+
         def cancel(_stdscr: curses.window) -> None:
             controller.cancel()
             host.message = controller.state.message
@@ -349,6 +404,7 @@ def run() -> None:
             "v": browse_results,
             "c": cancel,
             "e": export_errors,
+            "o": output_tools,
             "s": settings_dialog,
             "x": refresh,
         })

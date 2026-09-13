@@ -2,21 +2,35 @@ from __future__ import annotations
 
 import curses
 
-from lmts.cli import default_provider_registry, default_test_registry
+from lmts.cli import default_provider_registry
 from lmts.lib.view import CursesViewHost
+from lmts.tests.base import test_ref
+from lmts.tests.catalog import default_test_matrix, default_test_type_registry
+from lmts.tests.types import TestParameter, TestTypeDefinition
 
 from .controller import LMTSViewController
 from .projector import LMTSViewProjector
 
 
 FOOTER = (
-    "m models  t tests  r run matrix  a test all  e export errors  "
-    "p profile  x refresh  q q q quit"
+    "m models  t matrix  n add test  d remove test  r run  a run all  "
+    "c cancel  e errors  p profile  x refresh  q q q quit"
 )
 
 
+def _next_instance_id(controller: LMTSViewController, definition: TestTypeDefinition) -> str:
+    base = definition.id.rsplit(".", 1)[-1].replace("_", "-")
+    used = {getattr(test, "instance_id", "") for test in controller.state.tests}
+    index = 1
+    while f"{base}-{index}" in used:
+        index += 1
+    return f"{base}-{index}"
+
+
 def run() -> None:
-    controller = LMTSViewController(default_provider_registry(), default_test_registry())
+    test_types = default_test_type_registry()
+    matrix = default_test_matrix(test_types)
+    controller = LMTSViewController(default_provider_registry(), test_types, matrix)
     controller.refresh()
     projector = LMTSViewProjector(controller.state)
 
@@ -28,12 +42,21 @@ def run() -> None:
             footer=FOOTER,
         )
 
+        if controller.state.profile_required:
+            host.message = "system profile required; profiling before tests can run"
+            stdscr.erase()
+            stdscr.addnstr(0, 0, host.message, max(0, stdscr.getmaxyx()[1] - 1))
+            stdscr.refresh()
+            controller.profile()
+            host.message = controller.state.message
+
         def show_progress() -> None:
             host.progress_dialog(
                 stdscr,
                 "Test progress",
                 controller.state.progress_lines,
                 lambda: not controller.state.running,
+                cancel=controller.cancel,
             )
             host.message = controller.state.message
 
@@ -63,23 +86,78 @@ def run() -> None:
             if controller.state.running:
                 host.message = "test matrix is running"
                 return
-            options = [f"{test.id}@{test.version}" for test in controller.state.tests]
+            options = [test_ref(test) for test in controller.state.tests]
             selected = {
                 index
                 for index, test in enumerate(controller.state.tests)
-                if f"{test.id}@{test.version}" in controller.state.selected_test_refs
+                if test_ref(test) in controller.state.selected_test_refs
             }
             chosen = host.choose_many(
                 stdscr,
-                "Tests",
+                "Configured test matrix",
                 options,
                 selected,
                 include_all=True,
-                all_label="Test all",
+                all_label="All configured tests",
             )
             if chosen is not None:
                 controller.select_tests(chosen)
-                host.message = f"selected {len(chosen)} test(s)"
+                host.message = f"selected {len(chosen)} configured test(s)"
+
+        def collect_parameter(parameter: TestParameter) -> object | None:
+            if parameter.kind == "integer":
+                default = parameter.default if isinstance(parameter.default, int) else 1
+                return host.input_integer(
+                    stdscr,
+                    parameter.label,
+                    default=default,
+                    minimum=parameter.minimum if parameter.minimum is not None else -999999,
+                    maximum=parameter.maximum if parameter.maximum is not None else 999999,
+                )
+            if parameter.kind == "boolean":
+                chosen = host.choose(stdscr, parameter.label, ["false", "true"], 0)
+                return None if chosen is None else chosen == 1
+            if parameter.kind == "choice":
+                chosen = host.choose(stdscr, parameter.label, list(parameter.choices), 0)
+                return None if chosen is None else parameter.choices[chosen]
+            initial = parameter.default if isinstance(parameter.default, str) else ""
+            return host.input_multiline(stdscr, parameter.label, initial=initial)
+
+        def add_test(_stdscr: curses.window) -> None:
+            if controller.state.running:
+                host.message = "test matrix is running"
+                return
+            definitions = controller.test_types.definitions()
+            options = [f"{definition.ref}  {definition.title}" for definition in definitions]
+            chosen = host.choose(stdscr, "Test type registry", options)
+            if chosen is None:
+                return
+            definition = definitions[chosen]
+            params: dict[str, object] = {}
+            for parameter in definition.parameters:
+                value = collect_parameter(parameter)
+                if value is None:
+                    host.message = "test configuration cancelled"
+                    return
+                params[parameter.name] = value
+            instance_id = _next_instance_id(controller, definition)
+            configured = controller.add_test(definition.ref, instance_id, params)
+            host.message = controller.state.message
+            if configured is not None:
+                host.message = f"added: {configured.ref}"
+
+        def remove_test(_stdscr: curses.window) -> None:
+            if controller.state.running:
+                host.message = "test matrix is running"
+                return
+            tests = list(controller.state.tests)
+            options = [test_ref(test) for test in tests]
+            chosen = host.choose(stdscr, "Remove configured test", options)
+            if chosen is None:
+                return
+            instance_id = getattr(tests[chosen], "instance_id", "")
+            controller.remove_test(instance_id)
+            host.message = controller.state.message
 
         def run_selected(_stdscr: curses.window) -> None:
             started = controller.run_selected()
@@ -92,6 +170,10 @@ def run() -> None:
             host.message = controller.state.message
             if started:
                 show_progress()
+
+        def cancel(_stdscr: curses.window) -> None:
+            controller.cancel()
+            host.message = controller.state.message
 
         def export_errors(_stdscr: curses.window) -> None:
             path = controller.export_errors("task")
@@ -110,8 +192,11 @@ def run() -> None:
         host.handlers.update({
             "m": select_models,
             "t": select_tests,
+            "n": add_test,
+            "d": remove_test,
             "r": run_selected,
             "a": test_all,
+            "c": cancel,
             "e": export_errors,
             "p": profile,
             "x": refresh,

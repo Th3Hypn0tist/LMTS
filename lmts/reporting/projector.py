@@ -35,25 +35,38 @@ def _test_entity(test_ref: str) -> dict[str, Any]:
     }
 
 
-def _model_entity(run: dict[str, Any]) -> dict[str, Any]:
-    metadata = run.get('model_metadata')
-    if not isinstance(metadata, dict):
-        raise ValueError(f"run {run.get('run_id')!r} has no model_metadata object")
-    details = metadata.get('details')
-    if not isinstance(details, dict):
-        raise ValueError(f"run {run.get('run_id')!r} has no model_metadata.details object")
-    properties = {
-        'provider': run['provider_ref'],
-        'digest': metadata.get('digest'),
-        'size_bytes': metadata.get('size'),
-        'family': details.get('family'),
-        'parameter_size': details.get('parameter_size'),
-        'quantization': details.get('quantization_level'),
-        'context_length': details.get('context_length'),
-        'embedding_length': details.get('embedding_length'),
+def _target_entity(run: dict[str, Any]) -> dict[str, Any]:
+    target_id = str(run.get('executor_id') or '').strip()
+    target_kind = str(run.get('executor_kind') or '').strip()
+    if not target_id or not target_kind:
+        raise ValueError(f"run {run.get('run_id')!r} has no executor identity")
+    subject = run.get('evaluation_subject') if isinstance(run.get('evaluation_subject'), dict) else {}
+    metadata = run.get('execution_metadata') if isinstance(run.get('execution_metadata'), dict) else {}
+    properties: dict[str, Any] = {
+        'kind': target_kind,
+        'subject_fingerprint': subject.get('fingerprint'),
+        'runtime_configuration_fingerprint': metadata.get('runtime_configuration_fingerprint'),
     }
+    if target_kind == 'model':
+        model_metadata = run.get('model_metadata') if isinstance(run.get('model_metadata'), dict) else {}
+        details = model_metadata.get('details') if isinstance(model_metadata.get('details'), dict) else {}
+        properties.update({
+            'provider': run.get('provider_ref'),
+            'digest': model_metadata.get('digest'),
+            'size_bytes': model_metadata.get('size'),
+            'family': details.get('family'),
+            'parameter_size': details.get('parameter_size'),
+            'quantization': details.get('quantization_level'),
+            'context_length': details.get('context_length'),
+            'embedding_length': details.get('embedding_length'),
+        })
+        label = str(run.get('model_ref') or target_id)
+    else:
+        label = str(subject.get('label') or target_id)
+        properties['members'] = subject.get('members') or []
+        properties['configuration'] = subject.get('configuration') or {}
     return {
-        'label': run['model_ref'],
+        'label': label,
         'properties': {key: value for key, value in properties.items() if value is not None},
     }
 
@@ -86,7 +99,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     if not matrix_id:
         raise ValueError('bundle.matrix.matrix_id must be a non-empty string')
 
-    model_entities: dict[str, Any] = {}
+    target_entities: dict[str, Any] = {}
     test_entities: dict[str, Any] = {}
     records: list[dict[str, Any]] = []
     outcomes = {'pass': 0, 'fail': 0, 'error': 0, 'cancelled': 0, 'unknown': 0}
@@ -94,14 +107,14 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     for run in runs:
         if not isinstance(run, dict):
             raise ValueError('every bundle.runs item must be an object')
-        for key in ('run_id', 'model_id', 'model_ref', 'provider_ref', 'test_ref', 'status', 'passed', 'metrics'):
+        for key in ('run_id', 'executor_id', 'executor_kind', 'test_ref', 'status', 'passed', 'metrics'):
             if key not in run:
                 raise ValueError(f"run {run.get('run_id')!r} missing required field: {key}")
         run_id = str(run['run_id'])
-        model_id = str(run['model_id'])
+        target_id = str(run['executor_id'])
         test_ref = str(run['test_ref'])
-        if model_id not in model_entities:
-            model_entities[model_id] = _model_entity(run)
+        if target_id not in target_entities:
+            target_entities[target_id] = _target_entity(run)
         if test_ref not in test_entities:
             test_entities[test_ref] = _test_entity(test_ref)
 
@@ -115,12 +128,15 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
             if unit is not None:
                 metric['unit'] = unit
             metrics[projected_name] = metric
+        score = run.get('score')
+        if isinstance(score, dict) and isinstance(score.get('percent'), (int, float)):
+            metrics['score_percent'] = {'value': float(score['percent']), 'unit': 'percent'}
 
         outcome = _outcome(run)
         outcomes[outcome['result']] += 1
         record: dict[str, Any] = {
             'id': run_id,
-            'coordinates': {'model': model_id, 'test': test_ref},
+            'coordinates': {'target': target_id, 'test': test_ref},
             'outcome': outcome,
             'metrics': metrics,
         }
@@ -154,17 +170,17 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
             'exported_at': bundle.get('exported_at', created_at),
         },
         'dimensions': {
-            'model': {'label': 'Model', 'entity_type': 'model'},
+            'target': {'label': 'Target', 'entity_type': 'target'},
             'test': {'label': 'Test', 'entity_type': 'test'},
         },
-        'entities': {'model': model_entities, 'test': test_entities},
+        'entities': {'target': target_entities, 'test': test_entities},
         'records': records,
         'summary': {'records': len(records), 'outcomes': outcomes},
         'views': [{
             'id': 'results',
             'type': 'matrix',
             'title': 'Results',
-            'row_dimension': 'model',
+            'row_dimension': 'target',
             'column_dimension': 'test',
             'value': 'outcome.result',
         }],

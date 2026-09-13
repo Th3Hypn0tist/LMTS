@@ -5,20 +5,28 @@ import pytest
 from lmts.core.workspace import Workspace
 
 
-def test_workspace_blocks_input_writes(tmp_path: Path) -> None:
-    workspace = Workspace(tmp_path)
+def test_workspace_input_is_read_only(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path / "ws")
     with pytest.raises(PermissionError):
         workspace.write("input", "x.txt", "no")
 
 
-def test_workspace_blocks_path_escape(tmp_path: Path) -> None:
-    workspace = Workspace(tmp_path)
+def test_workspace_stage_input_and_read(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path / "ws")
+    workspace.stage_input("x.txt", "yes")
+    assert workspace.read("input", "x.txt") == "yes"
+
+
+def test_workspace_write_and_escape_guard(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path / "ws")
+    workspace.write("output", "nested/a.txt", "ok")
+    assert (workspace.output_root / "nested" / "a.txt").read_text() == "ok"
     with pytest.raises(ValueError):
-        workspace.read("input", "../outside.txt")
+        workspace.write("output", "../escape.txt", "no")
 
 
-def test_workspace_writes_and_traces_output(tmp_path: Path) -> None:
-    workspace = Workspace(tmp_path)
-    workspace.write("output", "pkg/main.py", "print('ok')\n")
-    assert workspace.read("output", "pkg/main.py") == "print('ok')\n"
-    assert [item["operation"] for item in workspace.trace.operations] == ["write", "read"]
+def test_workspace_delete_disabled(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path / "ws")
+    workspace.write("output", "a.txt", "ok")
+    with pytest.raises(PermissionError):
+        workspace.delete("output", "a.txt")

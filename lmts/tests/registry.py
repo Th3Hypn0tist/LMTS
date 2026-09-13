@@ -2,26 +2,24 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .base import TestModule
+from lmts.tests.base import TestModule
 
 
 class TestRegistry:
-    __test__ = False
-
     def __init__(self, tests: Iterable[TestModule] = ()) -> None:
         self._tests: dict[str, TestModule] = {}
         for test in tests:
             self.register(test)
+
+    @staticmethod
+    def ref(test: TestModule) -> str:
+        return f"{test.id}@{test.version}"
 
     def register(self, test: TestModule) -> None:
         ref = self.ref(test)
         if ref in self._tests:
             raise ValueError(f"test already registered: {ref}")
         self._tests[ref] = test
-
-    @staticmethod
-    def ref(test: TestModule) -> str:
-        return f"{test.id}@{test.version}"
 
     def get(self, ref: str) -> TestModule:
         try:

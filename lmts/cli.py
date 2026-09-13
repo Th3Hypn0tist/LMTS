@@ -4,11 +4,13 @@ import argparse
 import json
 from pathlib import Path
 
+from lmts.core.benchmark_runner import BenchmarkRunner
+from lmts.core.benchmark_store import BenchmarkStore
 from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
 from lmts.providers.ollama import OllamaProvider
-from lmts.tests.modules.text_generation import TextGenerationTest
+from lmts.tests.modules import TextGenerationTest, WorkspaceMultiFileTest
 from lmts.tests.registry import TestRegistry
 from lmts.tools.profile import profile_json
 
@@ -18,7 +20,7 @@ def default_provider_registry() -> ProviderRegistry:
 
 
 def default_test_registry() -> TestRegistry:
-    return TestRegistry([TextGenerationTest()])
+    return TestRegistry([TextGenerationTest(), WorkspaceMultiFileTest()])
 
 
 def _models() -> int:
@@ -60,23 +62,28 @@ def _tests() -> int:
     return 0
 
 
+def _select_models(providers: ProviderRegistry, model_ids: list[str]) -> list:
+    models = providers.discover_models()
+    if not model_ids:
+        return [model for model in models if model.location == "local"]
+    by_id = {model.id: model for model in models}
+    missing = [model_id for model_id in model_ids if model_id not in by_id]
+    if missing:
+        raise KeyError(f"unknown model(s): {', '.join(missing)}")
+    return [by_id[model_id] for model_id in model_ids]
+
+
 def _run(test_ref: str, model_id: str, results: Path, workspaces: Path) -> int:
     providers = default_provider_registry()
     tests = default_test_registry()
     try:
         test = tests.get(test_ref)
-        models = providers.discover_models()
+        models = _select_models(providers, [model_id])
     except Exception as exc:
         print(f"run setup failed: {exc}")
         return 2
-
-    model = next((item for item in models if item.id == model_id), None)
-    if model is None:
-        print(f"unknown model: {model_id}")
-        return 2
-
     runner = TestRunner(providers, RunStore(results))
-    run, path = runner.run(test, model, workspaces)
+    run, path = runner.run(test, models[0], workspaces)
     print(json.dumps({
         "run_id": run.run_id,
         "test_ref": run.test_ref,
@@ -86,6 +93,28 @@ def _run(test_ref: str, model_id: str, results: Path, workspaces: Path) -> int:
         "result_path": str(path),
     }, indent=2, ensure_ascii=False))
     return 0 if run.status == "completed" else 1
+
+
+def _benchmark(test_ref: str, model_ids: list[str], results: Path, workspaces: Path) -> int:
+    providers = default_provider_registry()
+    tests = default_test_registry()
+    try:
+        test = tests.get(test_ref)
+        models = _select_models(providers, model_ids)
+    except Exception as exc:
+        print(f"benchmark setup failed: {exc}")
+        return 2
+    if not models:
+        print("benchmark setup failed: no matching models")
+        return 2
+    run_store = RunStore(results)
+    batch = BenchmarkRunner(TestRunner(providers, run_store)).run(test, models, workspaces)
+    batch_path = BenchmarkStore(results).append(batch)
+    print(json.dumps({
+        **batch.to_dict(),
+        "batch_path": str(batch_path),
+    }, indent=2, ensure_ascii=False))
+    return 0 if batch.failed == 0 else 1
 
 
 def main() -> int:
@@ -104,6 +133,12 @@ def main() -> int:
     run.add_argument("--results", type=Path, default=Path("results"))
     run.add_argument("--workspaces", type=Path, default=Path(".lmts/workspaces"))
 
+    benchmark = sub.add_parser("benchmark", help="Run one test module against multiple models")
+    benchmark.add_argument("test_ref", help="Versioned test ref")
+    benchmark.add_argument("model_ids", nargs="*", help="Model ids; omit to run all discovered local models")
+    benchmark.add_argument("--results", type=Path, default=Path("results"))
+    benchmark.add_argument("--workspaces", type=Path, default=Path(".lmts/workspaces"))
+
     args = parser.parse_args()
     if args.command == "models":
         return _models()
@@ -114,6 +149,8 @@ def main() -> int:
         return 0
     if args.command == "run":
         return _run(args.test_ref, args.model_id, args.results, args.workspaces)
+    if args.command == "benchmark":
+        return _benchmark(args.test_ref, args.model_ids, args.results, args.workspaces)
     return 2
 
 

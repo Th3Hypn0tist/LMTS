@@ -19,7 +19,7 @@ class WorkspaceTrace:
 
 
 class Workspace:
-    """Bounded workspace with immutable input and isolated work/output roots."""
+    """Bounded workspace with immutable model input and isolated work/output roots."""
 
     def __init__(self, root: Path, *, policy: WorkspacePolicy | None = None) -> None:
         self.root = root.expanduser().resolve()
@@ -40,6 +40,17 @@ class Workspace:
         if candidate != root and root not in candidate.parents:
             raise ValueError("workspace path escapes mount")
         return candidate
+
+    def stage_input(self, relative: str, content: str) -> Path:
+        """Harness-only staging before the model sees the read-only input mount."""
+        payload = content.encode("utf-8")
+        if len(payload) > self.policy.max_write_bytes:
+            raise ValueError("workspace staged input exceeds max_write_bytes")
+        path = self._resolve("input", relative)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        self.trace.add("stage_input", f"input/{relative}", bytes=len(payload))
+        return path
 
     def list(self, mount: str, relative: str = ".") -> list[str]:
         path = self._resolve(mount, relative)
@@ -62,6 +73,13 @@ class Workspace:
         text = path.read_text(encoding="utf-8")
         self.trace.add("read", f"{mount}/{relative}", bytes=len(text.encode("utf-8")))
         return text
+
+    def mkdir(self, mount: str, relative: str) -> None:
+        if mount == "input":
+            raise PermissionError("input workspace is read-only")
+        path = self._resolve(mount, relative)
+        path.mkdir(parents=True, exist_ok=True)
+        self.trace.add("mkdir", f"{mount}/{relative}")
 
     def write(self, mount: str, relative: str, content: str) -> None:
         if mount == "input":

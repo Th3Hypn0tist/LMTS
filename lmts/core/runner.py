@@ -7,6 +7,7 @@ from pathlib import Path
 
 from lmts.lib.workspace import Workspace
 from lmts.tests.base import TestContext, TestModule, test_ref
+from lmts.tests.requirements import validate_requirements
 from lmts.tools.profile import DEFAULT_PROFILE_PATH, load_system_profile
 
 from .control import RunCancelled, RunControl
@@ -109,6 +110,7 @@ class TestRunner:
             )
 
         try:
+            validate_requirements(test.requirements, executor.capabilities)
             context.checkpoint()
             result = test.run(context)
             context.checkpoint()

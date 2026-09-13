@@ -118,6 +118,51 @@ class SplitCursesViewHost(CursesViewHost):
         self._safe_addnstr(stdscr, height - 1, 0, self.footer, width - 1, curses.A_DIM)
         stdscr.refresh()
 
+    def progress_dialog(
+        self,
+        stdscr: curses.window,
+        title: str,
+        render_lines: Callable[[], Sequence[str]],
+        is_done: Callable[[], bool],
+        *,
+        poll_ms: int = 200,
+        cancel: Callable[[], None] | None = None,
+    ) -> None:
+        """Keep the split view, including passive monitor, live behind the modal."""
+        while True:
+            self.draw(stdscr)
+            lines = list(render_lines())
+            height, width = stdscr.getmaxyx()
+            visible = max(1, min(len(lines), height - 7, 20))
+            win_h = visible + 4
+            widest = max([len(title) + 4, 36, *(len(str(line)) + 4 for line in lines)])
+            win_w = max(36, min(width - 4, widest))
+            win = curses.newwin(
+                win_h,
+                win_w,
+                max(0, (height - win_h) // 2),
+                max(0, (width - win_w) // 2),
+            )
+            win.keypad(True)
+            win.timeout(poll_ms)
+            win.erase()
+            win.box()
+            self._safe_addnstr(win, 0, 2, f" {title} ", win_w - 4)
+            for screen_row, line in enumerate(lines[:visible], start=1):
+                self._safe_addnstr(win, screen_row, 2, str(line), win_w - 4)
+            footer = "Enter close" if is_done() else (
+                "c cancel  Esc hide" if cancel else "Esc hide; test continues"
+            )
+            self._safe_addnstr(win, win_h - 2, 2, footer, win_w - 4, curses.A_DIM)
+            win.refresh()
+            key = win.getch()
+            if is_done() and key in (curses.KEY_ENTER, 10, 13, 27, -1):
+                return
+            if key == 27:
+                return
+            if cancel is not None and key in (ord("c"), ord("C")):
+                cancel()
+
     def run(self, stdscr: curses.window) -> None:
         curses.curs_set(0)
         stdscr.keypad(True)

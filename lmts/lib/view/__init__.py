@@ -3,6 +3,7 @@
 from .curses_host import CursesViewHost
 from .model import ViewFrame, ViewItem
 from .path_dialog import choose_directory
+from .registry_split_host import RegistrySplitCursesViewHost
 from .shortcut_registry import ShortcutDefinition, ShortcutMatch, ShortcutRegistry
 from .split_host import SplitCursesViewHost
 from .tab_registry import TabDefinition, TabRegistry
@@ -10,6 +11,7 @@ from .tab_registry import TabDefinition, TabRegistry
 __all__ = [
     "CursesViewHost",
     "SplitCursesViewHost",
+    "RegistrySplitCursesViewHost",
     "ViewFrame",
     "ViewItem",
     "choose_directory",

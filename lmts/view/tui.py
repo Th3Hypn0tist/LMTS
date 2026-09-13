@@ -21,7 +21,7 @@ from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tests.types import TestParameter, TestTypeDefinition
 from lmts.tools.ftp_profiles import load_ftp_profiles
 from lmts.tools.mysql_config import deploy_mysql_config
-from lmts.tools.profile import load_system_profile
+from lmts.tools.profile import benchmark_system_reference, load_system_profile
 from lmts.tools.report_publish import publish_report
 from lmts.tools.web_deploy import deploy_web_root
 
@@ -62,6 +62,19 @@ def _single_line(host, stdscr, title: str, *, initial: str = '', allow_empty: bo
         host.message = f"{title}: enter one {'line' if allow_empty else 'non-empty line'}"
 
 
+def _reference_line(label: str, result: object) -> str:
+    if not isinstance(result, dict):
+        return f'{label} ref: not measured'
+    method = str(result.get('method') or '?')
+    version = result.get('method_version')
+    metrics = result.get('metrics') if isinstance(result.get('metrics'), dict) else {}
+    throughput = metrics.get('throughput_gib_per_second')
+    suffix = f'{method} v{version}' if isinstance(version, int) else method
+    if isinstance(throughput, (int, float)):
+        return f'{label} ref: {float(throughput):.2f} GiB/s ({suffix})'
+    return f'{label} ref: measured ({suffix})'
+
+
 def _profile_lines(controller: LMTSViewController) -> tuple[str, ...]:
     payload = load_system_profile(controller.profile_path)
     lines = [
@@ -90,6 +103,15 @@ def _profile_lines(controller: LMTSViewController) -> tuple[str, ...]:
         f'MEM : {memory_label}',
         f"GPU : {', '.join(gpu_labels) if gpu_labels else '-'}",
         f"NPU : {', '.join(npu_labels) if npu_labels else '-'}",
+    ])
+    references = payload.get('reference_benchmarks') if isinstance(payload.get('reference_benchmarks'), dict) else {}
+    lines.extend([
+        '',
+        'Reference performance:',
+        _reference_line('CPU', references.get('cpu')),
+        _reference_line('MEM', references.get('memory')),
+        _reference_line('GPU', references.get('gpu')),
+        _reference_line('NPU', references.get('npu')),
     ])
     profiled_at = str(payload.get('profiled_at') or '')
     if profiled_at:
@@ -340,7 +362,20 @@ def run() -> None:
             set_message(controller.state.message)
 
         def profile_reference(domain: str) -> None:
-            set_message(f'{domain.upper()} reference benchmark is not implemented yet')
+            try:
+                result = benchmark_system_reference(domain, controller.profile_path)
+            except NotImplementedError as exc:
+                set_message(str(exc))
+                return
+            except (OSError, ValueError) as exc:
+                set_message(f'{domain.upper()} reference benchmark failed: {exc}')
+                return
+            metrics = result.get('metrics') if isinstance(result.get('metrics'), dict) else {}
+            throughput = metrics.get('throughput_gib_per_second')
+            if isinstance(throughput, (int, float)):
+                set_message(f'{domain.upper()} reference: {float(throughput):.2f} GiB/s')
+            else:
+                set_message(f'{domain.upper()} reference benchmark completed')
 
         def edit_output_folder(_stdscr: curses.window) -> None:
             nonlocal settings

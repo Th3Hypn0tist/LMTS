@@ -159,9 +159,54 @@ class CursesViewHost:
             if key == "\x1b":
                 return None
 
+    def progress_dialog(
+        self,
+        stdscr: curses.window,
+        title: str,
+        render_lines: Callable[[], Sequence[str]],
+        is_done: Callable[[], bool],
+        *,
+        poll_ms: int = 200,
+    ) -> None:
+        """Show live progress supplied by the caller; owns no task semantics."""
+        while True:
+            lines = list(render_lines())
+            height, width = stdscr.getmaxyx()
+            visible = max(1, min(len(lines), height - 7, 20))
+            win_h = visible + 4
+            widest = max([len(title) + 4, 36, *(len(str(line)) + 4 for line in lines)])
+            win_w = max(36, min(width - 4, widest))
+            win = curses.newwin(
+                win_h,
+                win_w,
+                max(0, (height - win_h) // 2),
+                max(0, (width - win_w) // 2),
+            )
+            win.keypad(True)
+            win.timeout(poll_ms)
+            win.erase()
+            win.box()
+            win.addnstr(0, 2, f" {title} ", max(0, win_w - 4))
+            for row, line in enumerate(lines[:visible], start=1):
+                win.addnstr(row, 2, str(line), max(0, win_w - 4))
+            footer = "Enter close" if is_done() else "Esc hide; test continues"
+            win.addnstr(win_h - 2, 2, footer, max(0, win_w - 4), curses.A_DIM)
+            win.refresh()
+
+            if is_done():
+                key = win.getch()
+                if key in (curses.KEY_ENTER, 10, 13, 27, -1):
+                    return
+                continue
+
+            key = win.getch()
+            if key == 27:
+                return
+
     def run(self, stdscr: curses.window) -> None:
         curses.curs_set(0)
         stdscr.keypad(True)
+        stdscr.timeout(250)
         while True:
             lines = list(self.render())
             height, width = stdscr.getmaxyx()
@@ -192,7 +237,10 @@ class CursesViewHost:
             )
             stdscr.refresh()
 
-            key = stdscr.get_wch()
+            try:
+                key = stdscr.get_wch()
+            except curses.error:
+                continue
             if key == curses.KEY_UP:
                 self.scroll = max(0, self.scroll - 1)
                 self._quit = ""

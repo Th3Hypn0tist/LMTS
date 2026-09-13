@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 
 Location = Literal["local", "remote"]
+ResponseStreamChannel = Literal["thinking", "text", "tool", "meta"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +40,16 @@ class NormalizedUsage:
 class NormalizedTiming:
     ttft_ms: float | None = None
     total_ms: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResponseStreamChunk:
+    """Provider-neutral read-only chunk of a bot response stream."""
+
+    model_id: str
+    channel: ResponseStreamChannel
+    text: str = ""
+    data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

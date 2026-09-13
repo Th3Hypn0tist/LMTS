@@ -4,10 +4,10 @@ import json
 from typing import Any
 from urllib.request import Request, urlopen
 
-from .ftp_profiles import FTPProfile
+from .report_profiles import ReportProfile
 
 
-def publish_report(report: dict[str, Any], profile: FTPProfile, *, timeout: float = 20.0) -> str:
+def publish_report(report: dict[str, Any], profile: ReportProfile, *, timeout: float = 20.0) -> str:
     report_meta = report.get('report')
     if report.get('format') != 'lmts.report' or report.get('version') != '1.0' or not isinstance(report_meta, dict):
         raise ValueError('payload is not an LMTS Report v1.0 document')
@@ -17,7 +17,7 @@ def publish_report(report: dict[str, Any], profile: FTPProfile, *, timeout: floa
 
     body = json.dumps(report, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
     request = Request(
-        profile.report_endpoint,
+        profile.endpoint,
         data=body,
         method='POST',
         headers={

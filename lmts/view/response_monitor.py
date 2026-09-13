@@ -1,0 +1,68 @@
+from __future__ import annotations
+
+import threading
+from collections import deque
+
+from lmts.core.models import ResponseStreamChunk
+
+
+class ResponseMonitor:
+    """Read-only projection buffer for the currently active bot response stream."""
+
+    def __init__(self, *, max_lines: int = 400) -> None:
+        self._lock = threading.Lock()
+        self._max_lines = max_lines
+        self._model_id = ""
+        self._channel = ""
+        self._lines: deque[str] = deque(maxlen=max_lines)
+        self._partial: dict[str, str] = {"thinking": "", "text": "", "tool": "", "meta": ""}
+
+    def reset(self, model_id: str = "") -> None:
+        with self._lock:
+            self._model_id = model_id
+            self._channel = ""
+            self._lines.clear()
+            for key in self._partial:
+                self._partial[key] = ""
+
+    def accept(self, chunk: ResponseStreamChunk) -> None:
+        with self._lock:
+            if chunk.model_id and chunk.model_id != self._model_id:
+                self._model_id = chunk.model_id
+                self._channel = ""
+                self._lines.clear()
+                for key in self._partial:
+                    self._partial[key] = ""
+
+            channel = chunk.channel
+            if channel != self._channel:
+                if self._lines and self._lines[-1] != "":
+                    self._lines.append("")
+                self._lines.append(channel.upper())
+                self._channel = channel
+
+            if chunk.text:
+                text = self._partial.get(channel, "") + chunk.text
+                pieces = text.split("\n")
+                self._partial[channel] = pieces.pop() if pieces else ""
+                for piece in pieces:
+                    self._lines.append(piece)
+
+            if channel == "meta" and chunk.data:
+                summary = "  ".join(f"{key}={value}" for key, value in chunk.data.items())
+                if summary:
+                    self._lines.append(summary)
+
+    def lines(self) -> tuple[str, ...]:
+        with self._lock:
+            output: list[str] = []
+            if self._model_id:
+                output.append(self._model_id)
+                output.append("")
+            output.extend(self._lines)
+            partial = self._partial.get(self._channel, "")
+            if partial:
+                output.append(partial)
+            if not output:
+                return ("waiting for bot response...",)
+            return tuple(output[-self._max_lines :])

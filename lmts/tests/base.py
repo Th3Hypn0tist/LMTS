@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from lmts.core.control import RunControl
 from lmts.core.models import ModelDescriptor, NormalizedResponse, ResponseStreamChunk
 from lmts.core.provider import ModelProvider
+from lmts.core.scoring import TestScore
 from lmts.lib.workspace import Workspace
 
 
@@ -14,6 +15,9 @@ from lmts.lib.workspace import Workspace
 class TestRequirements:
     __test__ = False
     text_generation: bool = True
+    vision: bool = False
+    tools: bool = False
+    structured_output: bool = False
     workspace_read: bool = False
     workspace_write: bool = False
     multi_file_output: bool = False
@@ -23,6 +27,7 @@ class TestRequirements:
 class TestResult:
     __test__ = False
     passed: bool | None
+    score: TestScore | None = None
     metrics: dict[str, Any] = field(default_factory=dict)
     artifacts: dict[str, Any] = field(default_factory=dict)
 

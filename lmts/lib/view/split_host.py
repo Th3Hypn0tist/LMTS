@@ -74,54 +74,57 @@ class SplitCursesViewHost(CursesViewHost):
             elif key == curses.KEY_END:
                 scroll = max(0, len(lines) - content_h)
 
+    def draw(self, stdscr: curses.window) -> None:
+        """Render the complete split layout once without reading input."""
+        lines = list(self.render())
+        monitor_lines = list(self.monitor_render())
+        height, width = stdscr.getmaxyx()
+
+        footer_rows = 2
+        usable = max(4, height - footer_rows)
+        monitor_h = max(4, int(usable * self.monitor_fraction))
+        main_h = max(3, usable - monitor_h)
+        if main_h + monitor_h > usable:
+            monitor_h = max(3, usable - main_h)
+
+        main_content_h = max(1, main_h - 2)
+        self.scroll = min(max(0, self.scroll), max(0, len(lines) - main_content_h))
+
+        stdscr.erase()
+        self._safe_addnstr(stdscr, 0, 0, self.title, width - 1, curses.A_BOLD)
+        self._safe_addnstr(stdscr, 1, 0, self.status(), width - 1)
+        for row, line in enumerate(lines[self.scroll : self.scroll + main_content_h], start=2):
+            if row >= main_h:
+                break
+            self._safe_addnstr(stdscr, row, 0, str(line), width - 1)
+
+        separator_y = main_h
+        self._safe_addnstr(stdscr, separator_y, 0, "─" * max(1, width - 1), width - 1, curses.A_DIM)
+        title = f" {self.monitor_title} "
+        self._safe_addnstr(stdscr, separator_y, 2, title, min(len(title), max(0, width - 4)), curses.A_BOLD)
+
+        monitor_body_h = max(1, monitor_h - 1)
+        tail = monitor_lines[-monitor_body_h:]
+        for offset, line in enumerate(tail, start=separator_y + 1):
+            if offset >= height - footer_rows:
+                break
+            self._safe_addnstr(stdscr, offset, 0, str(line), width - 1)
+
+        quit_hint = ""
+        if self._quit:
+            remaining = max(0, len(self.quit_sequence) - len(self._quit))
+            quit_hint = f"quit: {self._quit}{'_' * remaining}"
+        self._safe_addnstr(stdscr, height - 2, 0, self.message or quit_hint, width - 1)
+        self._safe_addnstr(stdscr, height - 1, 0, self.footer, width - 1, curses.A_DIM)
+        stdscr.refresh()
+
     def run(self, stdscr: curses.window) -> None:
         curses.curs_set(0)
         stdscr.keypad(True)
         stdscr.timeout(200)
 
         while True:
-            lines = list(self.render())
-            monitor_lines = list(self.monitor_render())
-            height, width = stdscr.getmaxyx()
-
-            footer_rows = 2
-            usable = max(4, height - footer_rows)
-            monitor_h = max(4, int(usable * self.monitor_fraction))
-            main_h = max(3, usable - monitor_h)
-            if main_h + monitor_h > usable:
-                monitor_h = max(3, usable - main_h)
-
-            main_content_h = max(1, main_h - 2)
-            self.scroll = min(max(0, self.scroll), max(0, len(lines) - main_content_h))
-
-            stdscr.erase()
-            self._safe_addnstr(stdscr, 0, 0, self.title, width - 1, curses.A_BOLD)
-            self._safe_addnstr(stdscr, 1, 0, self.status(), width - 1)
-            for row, line in enumerate(lines[self.scroll : self.scroll + main_content_h], start=2):
-                if row >= main_h:
-                    break
-                self._safe_addnstr(stdscr, row, 0, str(line), width - 1)
-
-            separator_y = main_h
-            self._safe_addnstr(stdscr, separator_y, 0, "─" * max(1, width - 1), width - 1, curses.A_DIM)
-            title = f" {self.monitor_title} "
-            self._safe_addnstr(stdscr, separator_y, 2, title, min(len(title), max(0, width - 4)), curses.A_BOLD)
-
-            monitor_body_h = max(1, monitor_h - 1)
-            tail = monitor_lines[-monitor_body_h:]
-            for offset, line in enumerate(tail, start=separator_y + 1):
-                if offset >= height - footer_rows:
-                    break
-                self._safe_addnstr(stdscr, offset, 0, str(line), width - 1)
-
-            quit_hint = ""
-            if self._quit:
-                remaining = max(0, len(self.quit_sequence) - len(self._quit))
-                quit_hint = f"quit: {self._quit}{'_' * remaining}"
-            self._safe_addnstr(stdscr, height - 2, 0, self.message or quit_hint, width - 1)
-            self._safe_addnstr(stdscr, height - 1, 0, self.footer, width - 1, curses.A_DIM)
-            stdscr.refresh()
-
+            self.draw(stdscr)
             try:
                 key = stdscr.get_wch()
             except curses.error:

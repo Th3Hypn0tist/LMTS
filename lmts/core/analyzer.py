@@ -52,23 +52,18 @@ def compare_targets(
     baseline = _scorecard(runs, baseline_id)
     candidate = _scorecard(runs, candidate_id)
 
-    baseline_tests = {item.test_ref: item.percent for item in baseline.tests if item.percent is not None}
-    candidate_tests = {item.test_ref: item.percent for item in candidate.tests if item.percent is not None}
-    baseline_dimensions = {item.id: item.percent for item in baseline.dimensions if item.percent is not None}
-    candidate_dimensions = {item.id: item.percent for item in candidate.dimensions if item.percent is not None}
-
     overall_delta = None
-    if baseline.percent is not None and candidate.percent is not None:
-        overall_delta = candidate.percent - baseline.percent
+    if baseline.overall_percent is not None and candidate.overall_percent is not None:
+        overall_delta = candidate.overall_percent - baseline.overall_percent
 
     return TargetComparison(
         baseline_id=baseline_id,
         candidate_id=candidate_id,
-        baseline_score=baseline.percent,
-        candidate_score=candidate.percent,
+        baseline_score=baseline.overall_percent,
+        candidate_score=candidate.overall_percent,
         score_delta_points=overall_delta,
-        test_deltas=_delta_map(baseline_tests, candidate_tests),
-        dimension_deltas=_delta_map(baseline_dimensions, candidate_dimensions),
+        test_deltas=_delta_map(baseline.tests, candidate.tests),
+        dimension_deltas=_delta_map(baseline.dimensions, candidate.dimensions),
         coverage={
             baseline_id: baseline.coverage,
             candidate_id: candidate.coverage,

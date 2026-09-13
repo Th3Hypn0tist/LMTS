@@ -51,12 +51,7 @@ class EvaluationSubject:
             "members": [asdict(member) for member in self.members],
             "configuration": self.configuration,
         }
-        encoded = json.dumps(
-            canonical,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
+        encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
     def to_dict(self) -> dict[str, Any]:
@@ -80,42 +75,15 @@ class EvaluationSubject:
                 "provider_ref": model.provider_ref,
                 "model_ref": model.model_ref,
                 "location": model.location,
-                "model_metadata": dict(model.metadata),
+                "runtime_configuration": dict(model.runtime_configuration),
             },
+            metadata={"model_metadata": dict(model.metadata)},
         )
 
     @classmethod
-    def for_bot(
-        cls,
-        bot_id: str,
-        *,
-        label: str = "",
-        configuration: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> EvaluationSubject:
-        return cls(
-            id=bot_id,
-            kind="bot",
-            label=label,
-            configuration=dict(configuration or {}),
-            metadata=dict(metadata or {}),
-        )
+    def for_bot(cls, bot_id: str, *, label: str = "", configuration: dict[str, Any] | None = None, metadata: dict[str, Any] | None = None) -> EvaluationSubject:
+        return cls(id=bot_id, kind="bot", label=label, configuration=dict(configuration or {}), metadata=dict(metadata or {}))
 
     @classmethod
-    def for_composition(
-        cls,
-        composition_id: str,
-        members: tuple[SubjectMember, ...],
-        *,
-        label: str = "",
-        configuration: dict[str, Any] | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> EvaluationSubject:
-        return cls(
-            id=composition_id,
-            kind="composition",
-            label=label,
-            members=members,
-            configuration=dict(configuration or {}),
-            metadata=dict(metadata or {}),
-        )
+    def for_composition(cls, composition_id: str, members: tuple[SubjectMember, ...], *, label: str = "", configuration: dict[str, Any] | None = None, metadata: dict[str, Any] | None = None) -> EvaluationSubject:
+        return cls(id=composition_id, kind="composition", label=label, members=members, configuration=dict(configuration or {}), metadata=dict(metadata or {}))

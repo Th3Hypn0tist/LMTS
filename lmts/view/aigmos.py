@@ -25,6 +25,12 @@ class AIGMosViewAdapter:
             "view_target": self.VIEW_TARGET,
             "render_owner": "aigmos-layout",
             "lmts_owns_render_logic": False,
+            "profile_required": self.controller.state.profile_required,
+            "running": self.controller.state.running,
+            "registry_test_types": len(self.controller.test_types.definitions()),
+            "configured_tests": len(self.controller.state.tests),
+            "progress_completed": self.controller.state.progress_completed,
+            "progress_total": self.controller.state.progress_total,
         }
 
     def action(self, name: str, value: object | None = None) -> bool:
@@ -43,17 +49,25 @@ class AIGMosViewAdapter:
         if name == "select_all_tests":
             self.controller.select_all_tests()
             return True
+        if name == "add_test" and isinstance(value, dict):
+            type_ref = str(value.get("type_ref") or "")
+            instance_id = str(value.get("instance_id") or "")
+            params = value.get("params")
+            if params is not None and not isinstance(params, dict):
+                return False
+            return self.controller.add_test(type_ref, instance_id, params) is not None
+        if name == "remove_test" and isinstance(value, str):
+            return self.controller.remove_test(value)
         if name == "run":
-            self.controller.run_selected()
-            return True
+            return self.controller.run_selected()
         if name == "test_all":
-            self.controller.test_all()
-            return True
+            return self.controller.test_all()
+        if name == "cancel":
+            return self.controller.cancel()
         if name == "export_errors":
             task = str(value) if isinstance(value, str) and value.strip() else "task"
             self.controller.export_errors(task)
             return True
         if name == "profile":
-            self.controller.profile()
-            return True
+            return self.controller.profile() is not None
         return False

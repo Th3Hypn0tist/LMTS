@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from .models import NormalizedResponse
 
-RunStatus = Literal["completed", "failed"]
+RunStatus = Literal["completed", "failed", "cancelled"]
 
 
 def utc_now() -> str:

@@ -134,14 +134,14 @@ class OllamaProvider:
                 if isinstance(thinking, str) and thinking:
                     if first_chunk_at is None:
                         first_chunk_at = time.perf_counter()
-                    sink(ResponseStreamChunk(model_id=model.id, channel="thinking", text=thinking))
+                    sink(ResponseStreamChunk(source_id=model.id, channel="thinking", text=thinking))
 
                 text = raw.get("response")
                 if isinstance(text, str) and text:
                     if first_chunk_at is None:
                         first_chunk_at = time.perf_counter()
                     text_parts.append(text)
-                    sink(ResponseStreamChunk(model_id=model.id, channel="text", text=text))
+                    sink(ResponseStreamChunk(source_id=model.id, channel="text", text=text))
 
         total_ms = (time.perf_counter() - started) * 1000.0
         ttft_ms = None if first_chunk_at is None else (first_chunk_at - started) * 1000.0
@@ -150,7 +150,7 @@ class OllamaProvider:
         normalized = self._normalized_response(final, "".join(text_parts), total_ms, ttft_ms)
         sink(
             ResponseStreamChunk(
-                model_id=model.id,
+                source_id=model.id,
                 channel="meta",
                 data={
                     "finish_reason": normalized.finish_reason,

@@ -2,5 +2,6 @@
 
 from .curses_host import CursesViewHost
 from .model import ViewFrame, ViewItem
+from .split_host import SplitCursesViewHost
 
-__all__ = ["CursesViewHost", "ViewFrame", "ViewItem"]
+__all__ = ["CursesViewHost", "SplitCursesViewHost", "ViewFrame", "ViewItem"]

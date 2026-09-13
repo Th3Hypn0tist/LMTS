@@ -92,7 +92,7 @@ def _run(test_ref: str, model_id: str, results: Path, workspaces: Path) -> int:
         "passed": run.passed,
         "result_path": str(path),
     }, indent=2, ensure_ascii=False))
-    return 0 if run.status == "completed" else 1
+    return 0 if run.status == "completed" and run.passed is not False else 1
 
 
 def _benchmark(test_ref: str, model_ids: list[str], results: Path, workspaces: Path) -> int:
@@ -110,11 +110,8 @@ def _benchmark(test_ref: str, model_ids: list[str], results: Path, workspaces: P
     run_store = RunStore(results)
     batch = BenchmarkRunner(TestRunner(providers, run_store)).run(test, models, workspaces)
     batch_path = BenchmarkStore(results).append(batch)
-    print(json.dumps({
-        **batch.to_dict(),
-        "batch_path": str(batch_path),
-    }, indent=2, ensure_ascii=False))
-    return 0 if batch.failed == 0 else 1
+    print(json.dumps({**batch.to_dict(), "batch_path": str(batch_path)}, indent=2, ensure_ascii=False))
+    return 0 if batch.failed == 0 and batch.errors == 0 else 1
 
 
 def main() -> int:

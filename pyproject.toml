@@ -10,6 +10,8 @@ requires-python = ">=3.11"
 
 [project.scripts]
 lmts = "lmts.cli:main"
+lmts-tui = "lmts.view.tui:main"
+lmts-view = "lmts.view.shell:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

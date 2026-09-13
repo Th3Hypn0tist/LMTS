@@ -5,15 +5,10 @@ from dataclasses import replace
 from pathlib import Path
 
 from lmts.cli import default_provider_registry
+from lmts.core.analyzer import compare_targets, format_target_comparison
 from lmts.core.result_export import build_matrix_bundle, export_matrix_bundle, export_run_json
 from lmts.core.runtime_targets import load_runtime_targets
-from lmts.core.settings import (
-    DEFAULT_SETTINGS_PATH,
-    LMTSSettings,
-    MySQLSettings,
-    load_settings,
-    save_settings,
-)
+from lmts.core.settings import DEFAULT_SETTINGS_PATH, MySQLSettings, load_settings, save_settings
 from lmts.core.store import RunStore
 from lmts.lib.view import RegistrySplitCursesViewHost, choose_directory
 from lmts.reporting import project_matrix_bundle
@@ -28,22 +23,12 @@ from lmts.tools.report_publish import publish_report
 from lmts.tools.web_deploy import deploy_web_root
 
 from .controller import LMTSViewController
-from .output_dialog import (
-    choose_output_target,
-    choose_report_profile,
-    manage_ftp_profiles,
-    manage_report_profiles,
-)
+from .output_dialog import choose_output_target, choose_report_profile, manage_ftp_profiles, manage_report_profiles
 from .projector import LMTSViewProjector
 from .registries import TAB_REGISTRY, build_shortcut_registry
 from .results import cell_verdict, format_run_result, matrix_label
 from .runtime_target_dialog import manage_runtime_targets
-from .shortcut_settings import (
-    DEFAULT_SHORTCUT_SETTINGS_PATH,
-    load_shortcut_overrides,
-    normalise_sequence_text,
-    save_shortcut_overrides,
-)
+from .shortcut_settings import DEFAULT_SHORTCUT_SETTINGS_PATH, load_shortcut_overrides, normalise_sequence_text, save_shortcut_overrides
 
 
 def _next_instance_id(controller: LMTSViewController, definition: TestTypeDefinition) -> str:
@@ -120,11 +105,7 @@ def _reference_suite_lines(label: str, suite: object) -> list[str]:
 
 def _profile_lines(controller: LMTSViewController) -> tuple[str, ...]:
     payload = load_system_profile(controller.profile_path)
-    lines = [
-        'System identity and reference performance for benchmark comparison.',
-        '',
-        f"Profile: {'REQUIRED' if controller.state.profile_required else 'ready'}",
-    ]
+    lines = ['System identity and reference performance for benchmark comparison.', '', f"Profile: {'REQUIRED' if controller.state.profile_required else 'ready'}"]
     if payload is None:
         lines.extend(['', 'No valid system profile is currently stored.'])
         return tuple(lines)
@@ -141,12 +122,7 @@ def _profile_lines(controller: LMTSViewController) -> tuple[str, ...]:
     memory_label = f'{int(total_bytes) / (1024 ** 3):.2f} GiB' if isinstance(total_bytes, int) and total_bytes > 0 else '-'
     gpu_labels = [str(item.get('model') or item.get('vendor') or '-') for item in gpu if isinstance(item, dict)]
     npu_labels = [str(item.get('model') or item.get('name') or item.get('vendor') or '-') for item in npu if isinstance(item, dict)]
-    lines.extend([
-        f'CPU : {cpu_label}',
-        f'MEM : {memory_label}',
-        f"GPU : {', '.join(gpu_labels) if gpu_labels else '-'}",
-        f"NPU : {', '.join(npu_labels) if npu_labels else '-'}",
-    ])
+    lines.extend([f'CPU : {cpu_label}', f'MEM : {memory_label}', f"GPU : {', '.join(gpu_labels) if gpu_labels else '-'}", f"NPU : {', '.join(npu_labels) if npu_labels else '-'}"])
     references = payload.get('reference_benchmarks') if isinstance(payload.get('reference_benchmarks'), dict) else {}
     lines.extend(['', 'Reference performance:'])
     for label, domain in [('CPU', 'cpu'), ('MEM', 'memory'), ('GPU', 'gpu'), ('NPU', 'npu')]:
@@ -192,10 +168,7 @@ def run() -> None:
         return '-'
 
     def tabs_line() -> str:
-        return 'Tabs: ' + ' | '.join(
-            f"{shortcut_label(f'tab.{tab.id}')}. {tab.label}"
-            for tab in TAB_REGISTRY.children('root')
-        )
+        return 'Tabs: ' + ' | '.join(f"{shortcut_label(f'tab.{tab.id}')}. {tab.label}" for tab in TAB_REGISTRY.children('root'))
 
     def settings_lines() -> tuple[str, ...]:
         ftp_count = len(load_ftp_profiles().profiles)
@@ -203,19 +176,12 @@ def run() -> None:
         runtime_count = len(load_runtime_targets())
         mysql = settings.mysql
         return (
-            'Application, server and connection settings.',
-            '',
-            f'Output folder  : {settings.output_folder}',
-            f'MySQL host     : {mysql.host}',
-            f'MySQL database : {mysql.database}',
-            f'MySQL user     : {mysql.username}',
-            f'FTP profiles   : {ftp_count}',
-            f'Report profiles: {report_count}',
-            f'Runtime targets: {runtime_count}',
-            f'Shortcuts      : {len(shortcut_overrides)} custom binding(s)',
-            '',
-            'Server installer:',
-            '  lmts/install/install_server.sh',
+            'Application, server and connection settings.', '',
+            f'Output folder  : {settings.output_folder}', f'MySQL host     : {mysql.host}',
+            f'MySQL database : {mysql.database}', f'MySQL user     : {mysql.username}',
+            f'FTP profiles   : {ftp_count}', f'Report profiles: {report_count}',
+            f'Runtime targets: {runtime_count}', f'Shortcuts      : {len(shortcut_overrides)} custom binding(s)',
+            '', 'Server installer:', '  lmts/install/install_server.sh',
         )
 
     def render_lines() -> tuple[str, ...]:
@@ -231,8 +197,7 @@ def run() -> None:
         nonlocal settings
         host = RegistrySplitCursesViewHost(
             'AIGM LMTS - Profile', render_lines, tabs_line, controller.response_monitor.lines,
-            shortcuts=active_shortcuts[0], scopes=lambda: (current_tab(),),
-            monitor_title='Bot response', monitor_fraction=1 / 3,
+            shortcuts=active_shortcuts[0], scopes=lambda: (current_tab(),), monitor_title='Bot response', monitor_fraction=1 / 3,
         )
         if controller.state.profile_required:
             controller.profile()
@@ -386,6 +351,34 @@ def run() -> None:
                 return
             host.text_viewer(stdscr, f"Run result: {cell.get('run_id', result_path.stem)}", format_run_result(run_data, result_path))
 
+        def compare_targets_action(_stdscr: curses.window) -> None:
+            chosen = choose_matrix_result('Compare targets from matrix')
+            if chosen is None:
+                return
+            _, matrix_data = chosen
+            target_ids = [str(value) for value in (matrix_data.get('target_ids') or [])]
+            if len(target_ids) < 2:
+                set_message('target comparison requires at least two targets in the matrix')
+                return
+            baseline_index = host.choose(stdscr, 'Baseline target', target_ids)
+            if baseline_index is None:
+                return
+            baseline = target_ids[baseline_index]
+            candidates = [target for target in target_ids if target != baseline]
+            candidate_index = host.choose(stdscr, 'Candidate target', candidates)
+            if candidate_index is None:
+                return
+            candidate = candidates[candidate_index]
+            try:
+                bundle = build_matrix_bundle(matrix_data, results_root=controller.results_root)
+                runs = bundle.get('runs') if isinstance(bundle.get('runs'), list) else []
+                comparison = compare_targets(runs, baseline, candidate)
+            except (OSError, ValueError) as exc:
+                set_message(f'target comparison failed: {exc}')
+                return
+            host.text_viewer(stdscr, f'Compare: {baseline} -> {candidate}', format_target_comparison(comparison))
+            set_message(f'compared {baseline} -> {candidate}')
+
         def publish_report_action(_stdscr: curses.window) -> None:
             chosen = choose_matrix_result('Publish matrix report')
             if chosen is None:
@@ -429,11 +422,7 @@ def run() -> None:
             nonlocal settings
             mysql = settings.mysql
             values = []
-            for title, initial, allow_empty in [
-                ('MySQL host', mysql.host, False), ('MySQL database', mysql.database, False),
-                ('MySQL username', mysql.username, False), ('MySQL password', mysql.password, True),
-                ('Publish key', mysql.publish_key, False),
-            ]:
+            for title, initial, allow_empty in [('MySQL host', mysql.host, False), ('MySQL database', mysql.database, False), ('MySQL username', mysql.username, False), ('MySQL password', mysql.password, True), ('Publish key', mysql.publish_key, False)]:
                 value = _single_line(host, stdscr, title, initial=initial, allow_empty=allow_empty)
                 if value is None:
                     return
@@ -525,7 +514,8 @@ def run() -> None:
             'profile.gpu': lambda _: profile_reference('gpu'), 'profile.npu': lambda _: profile_reference('npu'),
             'targets': select_targets, 'tests': select_tests, 'test.add': add_test, 'test.remove': remove_test,
             'run.selected': run_selected, 'run.all': test_all, 'results': browse_results,
-            'benchmark.publish': publish_report_action, 'cancel': cancel, 'errors': export_errors, 'refresh': refresh,
+            'benchmark.compare': compare_targets_action, 'benchmark.publish': publish_report_action,
+            'cancel': cancel, 'errors': export_errors, 'refresh': refresh,
             'settings.output': edit_output_folder, 'settings.server': server_setup, 'settings.mysql': edit_mysql,
             'settings.ftp': ftp_settings, 'settings.report': report_settings, 'settings.targets': runtime_target_settings,
             'settings.shortcuts': shortcut_editor,

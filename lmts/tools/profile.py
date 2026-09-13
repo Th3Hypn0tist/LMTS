@@ -41,6 +41,14 @@ class SystemProfile:
         return asdict(self)
 
 
+def _read_text(path: Path) -> str | None:
+    try:
+        value = path.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+    return value or None
+
+
 def _memory_total_bytes() -> int | None:
     meminfo = Path("/proc/meminfo")
     if meminfo.exists():
@@ -92,28 +100,10 @@ def _as_float(value: str | None) -> float | None:
 def _cpu_profile() -> dict[str, object]:
     blocks = _cpuinfo_blocks()
     first = blocks[0] if blocks else {}
-
-    model_names = sorted(
-        {
-            block.get("model name", "").strip()
-            for block in blocks
-            if block.get("model name", "").strip()
-        }
-    )
-    physical_ids = sorted(
-        {
-            block.get("physical id", "").strip()
-            for block in blocks
-            if block.get("physical id", "").strip()
-        }
-    )
-    core_pairs = {
-        (block.get("physical id", "0"), block.get("core id", ""))
-        for block in blocks
-        if block.get("core id", "").strip()
-    }
+    model_names = sorted({block.get("model name", "").strip() for block in blocks if block.get("model name", "").strip()})
+    physical_ids = sorted({block.get("physical id", "").strip() for block in blocks if block.get("physical id", "").strip()})
+    core_pairs = {(block.get("physical id", "0"), block.get("core id", "")) for block in blocks if block.get("core id", "").strip()}
     flags_text = first.get("flags") or first.get("Features") or ""
-
     return {
         "architecture": platform.machine() or None,
         "model_name": first.get("model name") or platform.processor() or None,
@@ -141,18 +131,9 @@ def _cpu_profile() -> dict[str, object]:
 def _nvidia_gpus() -> list[GPUProfile]:
     if shutil.which("nvidia-smi") is None:
         return []
-    command = [
-        "nvidia-smi",
-        "--query-gpu=name,memory.total,driver_version",
-        "--format=csv,noheader,nounits",
-    ]
+    command = ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"]
     try:
-        output = subprocess.check_output(
-            command,
-            text=True,
-            stderr=subprocess.DEVNULL,
-            timeout=5,
-        )
+        output = subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL, timeout=5)
     except (OSError, subprocess.SubprocessError):
         return []
     gpus: list[GPUProfile] = []
@@ -171,16 +152,53 @@ def _nvidia_gpus() -> list[GPUProfile]:
     return gpus
 
 
+def _linux_accelerators(root: Path = Path("/sys/class/accel")) -> list[dict[str, object]]:
+    if not root.is_dir():
+        return []
+    devices: list[dict[str, object]] = []
+    for entry in sorted(root.iterdir(), key=lambda path: path.name):
+        if not entry.name.startswith("accel"):
+            continue
+        device = entry / "device"
+        resolved = device.resolve() if device.exists() else entry.resolve()
+        driver_link = device / "driver"
+        driver = None
+        try:
+            if driver_link.exists():
+                driver = driver_link.resolve().name
+        except OSError:
+            driver = None
+        identity: dict[str, object] = {
+            "class": "accel",
+            "name": entry.name,
+            "sysfs_path": str(resolved),
+            "vendor_id": _read_text(device / "vendor"),
+            "device_id": _read_text(device / "device"),
+            "subsystem_vendor_id": _read_text(device / "subsystem_vendor"),
+            "subsystem_device_id": _read_text(device / "subsystem_device"),
+            "driver": driver,
+        }
+        uevent = _read_text(device / "uevent")
+        if uevent:
+            fields: dict[str, str] = {}
+            for line in uevent.splitlines():
+                key, sep, value = line.partition("=")
+                if sep:
+                    fields[key] = value
+            identity["driver"] = identity.get("driver") or fields.get("DRIVER")
+            identity["pci_slot"] = fields.get("PCI_SLOT_NAME")
+            identity["modalias"] = fields.get("MODALIAS")
+        devices.append(identity)
+    return devices
+
+
 def scan_system_profile() -> SystemProfile:
     return SystemProfile(
         cpu=_cpu_profile(),
         memory={"total_bytes": _memory_total_bytes()},
         gpu=_nvidia_gpus(),
-        software={
-            "os": platform.system() or None,
-            "os_release": platform.release() or None,
-            "python": platform.python_version(),
-        },
+        npu=_linux_accelerators(),
+        software={"os": platform.system() or None, "os_release": platform.release() or None, "python": platform.python_version()},
     )
 
 
@@ -190,21 +208,12 @@ def system_fingerprint(profile: SystemProfile) -> str:
     software = data.get("software") if isinstance(data.get("software"), dict) else {}
     identity = {
         "cpu": {
-            "architecture": cpu.get("architecture"),
-            "model_name": cpu.get("model_name"),
-            "model_names": cpu.get("model_names"),
-            "vendor_id": cpu.get("vendor_id"),
-            "cpu_family": cpu.get("cpu_family"),
-            "model": cpu.get("model"),
-            "stepping": cpu.get("stepping"),
-            "logical_cores": cpu.get("logical_cores"),
-            "physical_packages": cpu.get("physical_packages"),
-            "physical_cores": cpu.get("physical_cores"),
+            "architecture": cpu.get("architecture"), "model_name": cpu.get("model_name"), "model_names": cpu.get("model_names"),
+            "vendor_id": cpu.get("vendor_id"), "cpu_family": cpu.get("cpu_family"), "model": cpu.get("model"),
+            "stepping": cpu.get("stepping"), "logical_cores": cpu.get("logical_cores"),
+            "physical_packages": cpu.get("physical_packages"), "physical_cores": cpu.get("physical_cores"),
         },
-        "memory": data.get("memory"),
-        "gpu": data.get("gpu"),
-        "npu": data.get("npu"),
-        "os": software.get("os"),
+        "memory": data.get("memory"), "gpu": data.get("gpu"), "npu": data.get("npu"), "os": software.get("os"),
     }
     canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -225,12 +234,7 @@ def _existing_reference_benchmarks(target: Path, fingerprint: str) -> dict[str, 
     return references if validate_reference_benchmarks(references) else None
 
 
-def save_system_profile(
-    profile: SystemProfile,
-    path: Path = DEFAULT_PROFILE_PATH,
-    *,
-    reference_benchmarks: dict[str, object] | None = None,
-) -> Path:
+def save_system_profile(profile: SystemProfile, path: Path = DEFAULT_PROFILE_PATH, *, reference_benchmarks: dict[str, object] | None = None) -> Path:
     target = path.expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
     fingerprint = system_fingerprint(profile)
@@ -258,11 +262,7 @@ def load_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object] 
         payload = json.loads(target.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(payload, dict):
-        return None
-    if payload.get("schema_version") != PROFILE_SCHEMA_VERSION:
-        return None
-    if not isinstance(payload.get("profile"), dict):
+    if not isinstance(payload, dict) or payload.get("schema_version") != PROFILE_SCHEMA_VERSION or not isinstance(payload.get("profile"), dict):
         return None
     if not validate_reference_benchmarks(payload.get("reference_benchmarks")):
         return None
@@ -274,11 +274,7 @@ def load_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object] 
     return payload
 
 
-def save_reference_benchmark(
-    domain: str,
-    result: dict[str, object],
-    path: Path = DEFAULT_PROFILE_PATH,
-) -> Path:
+def save_reference_benchmark(domain: str, result: dict[str, object], path: Path = DEFAULT_PROFILE_PATH) -> Path:
     normalized = domain.strip().casefold()
     if normalized not in REFERENCE_BENCHMARK_DOMAINS:
         raise ValueError(f"unknown reference benchmark domain: {domain}")
@@ -297,10 +293,7 @@ def save_reference_benchmark(
     return target
 
 
-def benchmark_system_reference(
-    domain: str,
-    path: Path = DEFAULT_PROFILE_PATH,
-) -> dict[str, object]:
+def benchmark_system_reference(domain: str, path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object]:
     result = run_reference_benchmark(domain).to_dict()
     save_reference_benchmark(domain, result, path)
     return result

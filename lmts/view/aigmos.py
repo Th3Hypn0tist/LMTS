@@ -49,6 +49,10 @@ class AIGMosViewAdapter:
         if name == "test_all":
             self.controller.test_all()
             return True
+        if name == "export_errors":
+            task = str(value) if isinstance(value, str) and value.strip() else "task"
+            self.controller.export_errors(task)
+            return True
         if name == "profile":
             self.controller.profile()
             return True

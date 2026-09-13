@@ -6,8 +6,10 @@ from pathlib import Path
 
 from lmts.core.benchmark_runner import BenchmarkRunner
 from lmts.core.benchmark_store import BenchmarkStore
+from lmts.core.executor import ModelExecutor, TestExecutor
 from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
+from lmts.core.runtime_targets import executor_from_definition, load_runtime_targets
 from lmts.core.store import RunStore
 from lmts.providers.ollama import OllamaProvider
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
@@ -45,6 +47,46 @@ def _models() -> int:
     return 0
 
 
+def _discover_targets(providers: ProviderRegistry) -> list[TestExecutor]:
+    targets: list[TestExecutor] = [
+        ModelExecutor(providers.provider(model.provider_ref), model)
+        for model in providers.discover_models()
+    ]
+    targets.extend(executor_from_definition(item) for item in load_runtime_targets())
+    ids = [target.id for target in targets]
+    if len(ids) != len(set(ids)):
+        raise ValueError("evaluation target ids must be unique across models, bots and compositions")
+    return sorted(targets, key=lambda item: (item.kind, item.id.casefold()))
+
+
+def _targets() -> int:
+    providers = default_provider_registry()
+    try:
+        targets = _discover_targets(providers)
+    except Exception as exc:
+        print(f"target discovery failed: {exc}")
+        return 2
+    print(json.dumps([
+        {
+            "id": target.id,
+            "kind": target.kind,
+            "subject": target.subject.to_dict(),
+            "capabilities": {
+                "text": target.capabilities.text,
+                "vision": target.capabilities.vision,
+                "tools": target.capabilities.tools,
+                "structured_output": target.capabilities.structured_output,
+                "workspace_read": target.capabilities.workspace_read,
+                "workspace_write": target.capabilities.workspace_write,
+                "multi_file_output": target.capabilities.multi_file_output,
+            },
+            "metadata": target.metadata,
+        }
+        for target in targets
+    ], indent=2, ensure_ascii=False))
+    return 0
+
+
 def _tests() -> int:
     registry = default_test_type_registry()
     print(json.dumps([
@@ -56,6 +98,9 @@ def _tests() -> int:
             "description": definition.description,
             "requirements": {
                 "text_generation": definition.requirements.text_generation,
+                "vision": definition.requirements.vision,
+                "tools": definition.requirements.tools,
+                "structured_output": definition.requirements.structured_output,
                 "workspace_read": definition.requirements.workspace_read,
                 "workspace_write": definition.requirements.workspace_write,
                 "multi_file_output": definition.requirements.multi_file_output,
@@ -107,6 +152,17 @@ def _select_models(providers: ProviderRegistry, model_ids: list[str]) -> list:
     return [by_id[model_id] for model_id in model_ids]
 
 
+def _select_targets(providers: ProviderRegistry, target_ids: list[str]) -> list[TestExecutor]:
+    targets = _discover_targets(providers)
+    if not target_ids:
+        return targets
+    by_id = {target.id: target for target in targets}
+    missing = [target_id for target_id in target_ids if target_id not in by_id]
+    if missing:
+        raise KeyError(f"unknown target(s): {', '.join(missing)}")
+    return [by_id[target_id] for target_id in target_ids]
+
+
 def _run(test_ref: str, model_id: str, results: Path, workspaces: Path) -> int:
     providers = default_provider_registry()
     tests = default_test_registry()
@@ -121,7 +177,8 @@ def _run(test_ref: str, model_id: str, results: Path, workspaces: Path) -> int:
     print(json.dumps({
         "run_id": run.run_id,
         "test_ref": run.test_ref,
-        "model_id": run.model_id,
+        "executor_id": run.executor_id,
+        "executor_kind": run.executor_kind,
         "status": run.status,
         "passed": run.passed,
         "result_path": str(path),
@@ -129,20 +186,20 @@ def _run(test_ref: str, model_id: str, results: Path, workspaces: Path) -> int:
     return 0 if run.status == "completed" and run.passed is not False else 1
 
 
-def _benchmark(test_ref: str, model_ids: list[str], results: Path, workspaces: Path) -> int:
+def _benchmark(test_ref: str, target_ids: list[str], results: Path, workspaces: Path) -> int:
     providers = default_provider_registry()
     tests = default_test_registry()
     try:
         test = tests.get(test_ref)
-        models = _select_models(providers, model_ids)
+        targets = _select_targets(providers, target_ids)
     except Exception as exc:
         print(f"benchmark setup failed: {exc}")
         return 2
-    if not models:
-        print("benchmark setup failed: no matching models")
+    if not targets:
+        print("benchmark setup failed: no matching targets")
         return 2
     run_store = RunStore(results)
-    batch = BenchmarkRunner(TestRunner(providers, run_store)).run(test, models, workspaces)
+    batch = BenchmarkRunner(TestRunner(providers, run_store)).run(test, targets, workspaces)
     batch_path = BenchmarkStore(results).append(batch)
     print(json.dumps({**batch.to_dict(), "batch_path": str(batch_path)}, indent=2, ensure_ascii=False))
     return 0 if batch.failed == 0 and batch.errors == 0 else 1
@@ -160,6 +217,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("tui", help="Open the interactive LMTS View")
     sub.add_parser("models", help="Discover local models")
+    sub.add_parser("targets", help="Discover evaluation targets: models, bots and compositions")
     sub.add_parser("tests", help="List registered test types")
     sub.add_parser("matrix", help="List default configured test matrix")
 
@@ -173,9 +231,9 @@ def main() -> int:
     run.add_argument("--results", type=Path, default=Path("results"))
     run.add_argument("--workspaces", type=Path, default=Path(".lmts/workspaces"))
 
-    benchmark = sub.add_parser("benchmark", help="Run one compatibility test module against multiple models")
+    benchmark = sub.add_parser("benchmark", help="Run one compatibility test module against evaluation targets")
     benchmark.add_argument("test_ref", help="Versioned test ref")
-    benchmark.add_argument("model_ids", nargs="*", help="Model ids; omit to run all discovered local models")
+    benchmark.add_argument("target_ids", nargs="*", help="Target ids; omit to run all discovered targets")
     benchmark.add_argument("--results", type=Path, default=Path("results"))
     benchmark.add_argument("--workspaces", type=Path, default=Path(".lmts/workspaces"))
 
@@ -184,6 +242,8 @@ def main() -> int:
         return _tui()
     if args.command == "models":
         return _models()
+    if args.command == "targets":
+        return _targets()
     if args.command == "tests":
         return _tests()
     if args.command == "matrix":
@@ -194,7 +254,7 @@ def main() -> int:
     if args.command == "run":
         return _run(args.test_ref, args.model_id, args.results, args.workspaces)
     if args.command == "benchmark":
-        return _benchmark(args.test_ref, args.model_ids, args.results, args.workspaces)
+        return _benchmark(args.test_ref, args.target_ids, args.results, args.workspaces)
     return 2
 
 

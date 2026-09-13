@@ -18,7 +18,7 @@ from .reference_benchmark import (
 )
 
 DEFAULT_PROFILE_PATH = Path(".lmts/system-profile.json")
-PROFILE_SCHEMA_VERSION = 5
+PROFILE_SCHEMA_VERSION = 6
 
 
 @dataclass(slots=True)

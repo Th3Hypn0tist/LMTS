@@ -74,6 +74,85 @@ class SplitCursesViewHost(CursesViewHost):
             elif key == curses.KEY_END:
                 scroll = max(0, len(lines) - content_h)
 
+    def matrix_browser(
+        self,
+        stdscr: curses.window,
+        title: str,
+        row_labels: Sequence[str],
+        column_labels: Sequence[str],
+        values: Sequence[Sequence[str]],
+        *,
+        summary: str = "",
+    ) -> tuple[int, int] | None:
+        """Read-only matrix overview with selectable cells for drill-down."""
+        if not row_labels or not column_labels:
+            return None
+
+        row_index = 0
+        col_index = 0
+        row_width = max(5, max(len(str(label)) for label in row_labels))
+        col_width = max(
+            8,
+            max(
+                [len(str(label)) for label in column_labels]
+                + [len(str(value)) for row in values for value in row]
+            ),
+        )
+
+        while True:
+            height, width = stdscr.getmaxyx()
+            stdscr.erase()
+            self._safe_addnstr(stdscr, 0, 0, title, width - 1, curses.A_BOLD)
+
+            header = f"{'MODEL':<{row_width}}"
+            for label in column_labels:
+                header += f"  {str(label):^{col_width}}"
+            self._safe_addnstr(stdscr, 2, 0, header, width - 1, curses.A_BOLD)
+
+            separator = "-" * min(len(header), max(1, width - 1))
+            self._safe_addnstr(stdscr, 3, 0, separator, width - 1, curses.A_DIM)
+
+            max_rows = max(1, height - 7)
+            start_row = min(max(0, row_index - max_rows + 1), max(0, len(row_labels) - max_rows))
+            visible_rows = row_labels[start_row : start_row + max_rows]
+
+            for screen_offset, row_label in enumerate(visible_rows, start=4):
+                source_row = start_row + screen_offset - 4
+                x = 0
+                self._safe_addnstr(stdscr, screen_offset, x, f"{str(row_label):<{row_width}}", row_width)
+                x += row_width
+                for source_col, value in enumerate(values[source_row]):
+                    cell = f"  {str(value):^{col_width}}"
+                    attr = curses.A_REVERSE if source_row == row_index and source_col == col_index else 0
+                    self._safe_addnstr(stdscr, screen_offset, x, cell, len(cell), attr)
+                    x += len(cell)
+
+            if summary:
+                self._safe_addnstr(stdscr, height - 2, 0, summary, width - 1)
+            self._safe_addnstr(
+                stdscr,
+                height - 1,
+                0,
+                "Arrows select  Enter details  Esc back",
+                width - 1,
+                curses.A_DIM,
+            )
+            stdscr.refresh()
+
+            key = stdscr.get_wch()
+            if key == "\x1b":
+                return None
+            if key in ("\n", "\r") or key == curses.KEY_ENTER:
+                return row_index, col_index
+            if key == curses.KEY_UP:
+                row_index = max(0, row_index - 1)
+            elif key == curses.KEY_DOWN:
+                row_index = min(len(row_labels) - 1, row_index + 1)
+            elif key == curses.KEY_LEFT:
+                col_index = max(0, col_index - 1)
+            elif key == curses.KEY_RIGHT:
+                col_index = min(len(column_labels) - 1, col_index + 1)
+
     def draw(self, stdscr: curses.window, *, commit: bool = True) -> None:
         """Render the split layout into curses' virtual screen.
 
@@ -137,7 +216,6 @@ class SplitCursesViewHost(CursesViewHost):
     ) -> None:
         """Keep split view and modal live in one atomic curses update."""
         while True:
-            # Stage background first, but do not touch the physical terminal yet.
             self.draw(stdscr, commit=False)
 
             lines = list(render_lines())
@@ -164,7 +242,6 @@ class SplitCursesViewHost(CursesViewHost):
             )
             self._safe_addnstr(win, win_h - 2, 2, footer, win_w - 4, curses.A_DIM)
 
-            # Stage modal over the background and commit the full frame once.
             win.noutrefresh()
             curses.doupdate()
 

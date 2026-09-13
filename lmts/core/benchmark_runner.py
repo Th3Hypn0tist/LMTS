@@ -20,7 +20,9 @@ class BenchmarkBatch:
     model_ids: list[str] = field(default_factory=list)
     run_ids: list[str] = field(default_factory=list)
     completed: int = 0
+    passed: int = 0
     failed: int = 0
+    errors: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -31,7 +33,9 @@ class BenchmarkBatch:
             "model_ids": list(self.model_ids),
             "run_ids": list(self.run_ids),
             "completed": self.completed,
+            "passed": self.passed,
             "failed": self.failed,
+            "errors": self.errors,
         }
 
 
@@ -44,14 +48,20 @@ class BenchmarkRunner:
         started_at = utc_now()
         run_ids: list[str] = []
         completed = 0
+        passed = 0
         failed = 0
+        errors = 0
         for model in models:
             run, _ = self.runner.run(test, model, workspace_root / batch_id)
             run_ids.append(run.run_id)
             if run.status == "completed":
                 completed += 1
+                if run.passed is True:
+                    passed += 1
+                else:
+                    failed += 1
             else:
-                failed += 1
+                errors += 1
         return BenchmarkBatch(
             batch_id=batch_id,
             test_ref=f"{test.id}@{test.version}",
@@ -60,5 +70,7 @@ class BenchmarkRunner:
             model_ids=[model.id for model in models],
             run_ids=run_ids,
             completed=completed,
+            passed=passed,
             failed=failed,
+            errors=errors,
         )

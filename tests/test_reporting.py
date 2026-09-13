@@ -1,7 +1,7 @@
 from lmts.reporting import project_matrix_bundle
 
 
-def test_matrix_bundle_projects_generic_report() -> None:
+def test_matrix_bundle_projects_generic_target_report() -> None:
     bundle = {
         'schema_version': 1,
         'export_type': 'lmts.matrix_bundle',
@@ -13,17 +13,24 @@ def test_matrix_bundle_projects_generic_report() -> None:
         },
         'runs': [{
             'run_id': 'run-1',
-            'model_id': 'provider:model',
-            'model_ref': 'model',
-            'provider_ref': 'provider',
+            'executor_id': 'bot.writer',
+            'executor_kind': 'bot',
             'test_ref': 'core.text_generation@1.0.0#text-generation',
             'status': 'completed',
             'passed': True,
             'metrics': {'ttft_ms': 12.5},
+            'score': {'percent': 100.0},
             'error': None,
-            'model_metadata': {
-                'digest': 'abc',
-                'details': {'family': 'test', 'parameter_size': '1B'},
+            'evaluation_subject': {
+                'id': 'bot.writer',
+                'kind': 'bot',
+                'label': 'Writer',
+                'members': [],
+                'configuration': {'mode': 'standalone'},
+                'fingerprint': 'subject-fingerprint',
+            },
+            'execution_metadata': {
+                'runtime_configuration_fingerprint': 'runtime-fingerprint',
             },
         }],
     }
@@ -32,4 +39,6 @@ def test_matrix_bundle_projects_generic_report() -> None:
     assert report['report']['id'] == 'matrix-1'
     assert report['summary']['outcomes']['pass'] == 1
     assert report['records'][0]['metrics']['ttft'] == {'value': 12.5, 'unit': 'ms'}
-    assert report['views'][0]['row_dimension'] == 'model'
+    assert report['records'][0]['metrics']['score_percent'] == {'value': 100.0, 'unit': 'percent'}
+    assert report['views'][0]['row_dimension'] == 'target'
+    assert report['entities']['target']['bot.writer']['properties']['configuration'] == {'mode': 'standalone'}

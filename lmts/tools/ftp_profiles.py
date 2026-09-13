@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
-FTP_PROFILES_SCHEMA_VERSION = 1
+FTP_PROFILES_SCHEMA_VERSION = 2
 DEFAULT_FTP_PROFILES_PATH = Path('.lmts/ftp-profiles.json')
 
 
@@ -18,8 +18,6 @@ class FTPProfile:
     password: str
     root: str
     port: int = 21
-    web_base_url: str = ''
-    publish_key: str = 'lmts'
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -30,15 +28,6 @@ class FTPProfile:
             raise ValueError('FTP username must not be empty')
         if not 1 <= int(self.port) <= 65535:
             raise ValueError('FTP port must be between 1 and 65535')
-
-    @property
-    def report_endpoint(self) -> str:
-        base = self.web_base_url.strip()
-        if not base:
-            base = f'http://{self.host}/benchmark/'
-        if not base.endswith('/'):
-            base += '/'
-        return base + 'api/report.php'
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -90,8 +79,6 @@ def load_ftp_profiles(path: Path = DEFAULT_FTP_PROFILES_PATH) -> FTPProfiles:
             password=str(raw.get('password') or ''),
             root=str(raw.get('root') or '').strip(),
             port=int(raw.get('port') or 21),
-            web_base_url=str(raw.get('web_base_url') or '').strip(),
-            publish_key=str(raw.get('publish_key') or 'lmts'),
         )
         if profile.name in names:
             raise ValueError(f'duplicate FTP profile name: {profile.name}')

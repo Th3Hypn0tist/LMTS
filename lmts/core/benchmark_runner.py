@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from lmts.tests.base import TestModule
+from lmts.tests.base import TestModule, test_ref
 
 from .control import RunControl
 from .models import ModelDescriptor
@@ -73,7 +73,7 @@ class BenchmarkRunner:
     ) -> BenchmarkBatch:
         batch_id = uuid.uuid4().hex
         started_at = utc_now()
-        test_ref = f"{test.id}@{test.version}"
+        resolved_test_ref = test_ref(test)
         run_ids: list[str] = []
         completed = 0
         passed = 0
@@ -92,7 +92,7 @@ class BenchmarkRunner:
                         phase="starting",
                         index=index,
                         total=total,
-                        test_ref=test_ref,
+                        test_ref=resolved_test_ref,
                         model_id=model.id,
                     )
                 )
@@ -108,7 +108,7 @@ class BenchmarkRunner:
                 completed += 1
                 if run.passed is True:
                     passed += 1
-                else:
+                elif run.passed is False:
                     failed += 1
             elif run.status == "cancelled":
                 cancelled += 1
@@ -121,7 +121,7 @@ class BenchmarkRunner:
                         phase="completed",
                         index=index,
                         total=total,
-                        test_ref=test_ref,
+                        test_ref=resolved_test_ref,
                         model_id=model.id,
                         run=run,
                         result_path=result_path,
@@ -133,7 +133,7 @@ class BenchmarkRunner:
 
         return BenchmarkBatch(
             batch_id=batch_id,
-            test_ref=test_ref,
+            test_ref=resolved_test_ref,
             started_at=started_at,
             completed_at=utc_now(),
             model_ids=[model.id for model in models],

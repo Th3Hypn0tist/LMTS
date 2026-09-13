@@ -8,6 +8,7 @@ from typing import Literal
 
 from lmts.tests.base import TestModule
 
+from .control import RunControl
 from .models import ModelDescriptor
 from .run import RunResult, utc_now
 from .runner import TestRunner
@@ -25,6 +26,7 @@ class BenchmarkBatch:
     passed: int = 0
     failed: int = 0
     errors: int = 0
+    cancelled: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -38,6 +40,7 @@ class BenchmarkBatch:
             "passed": self.passed,
             "failed": self.failed,
             "errors": self.errors,
+            "cancelled": self.cancelled,
         }
 
 
@@ -66,6 +69,7 @@ class BenchmarkRunner:
         workspace_root: Path,
         *,
         progress: ProgressCallback | None = None,
+        control: RunControl | None = None,
     ) -> BenchmarkBatch:
         batch_id = uuid.uuid4().hex
         started_at = utc_now()
@@ -75,9 +79,13 @@ class BenchmarkRunner:
         passed = 0
         failed = 0
         errors = 0
+        cancelled = 0
         total = len(models)
 
         for index, model in enumerate(models, start=1):
+            if control is not None and control.cancelled:
+                break
+
             if progress is not None:
                 progress(
                     BenchmarkProgress(
@@ -89,7 +97,12 @@ class BenchmarkRunner:
                     )
                 )
 
-            run, result_path = self.runner.run(test, model, workspace_root / batch_id)
+            run, result_path = self.runner.run(
+                test,
+                model,
+                workspace_root / batch_id,
+                control=control,
+            )
             run_ids.append(run.run_id)
             if run.status == "completed":
                 completed += 1
@@ -97,6 +110,8 @@ class BenchmarkRunner:
                     passed += 1
                 else:
                     failed += 1
+            elif run.status == "cancelled":
+                cancelled += 1
             else:
                 errors += 1
 
@@ -113,6 +128,9 @@ class BenchmarkRunner:
                     )
                 )
 
+            if run.status == "cancelled":
+                break
+
         return BenchmarkBatch(
             batch_id=batch_id,
             test_ref=test_ref,
@@ -124,4 +142,5 @@ class BenchmarkRunner:
             passed=passed,
             failed=failed,
             errors=errors,
+            cancelled=cancelled,
         )

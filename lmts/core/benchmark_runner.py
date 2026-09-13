@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from lmts.tests.base import TestModule
 
 from .models import ModelDescriptor
-from .run import utc_now
+from .run import RunResult, utc_now
 from .runner import TestRunner
 
 
@@ -39,20 +41,55 @@ class BenchmarkBatch:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class BenchmarkProgress:
+    phase: Literal["starting", "completed"]
+    index: int
+    total: int
+    test_ref: str
+    model_id: str
+    run: RunResult | None = None
+    result_path: Path | None = None
+
+
+ProgressCallback = Callable[[BenchmarkProgress], None]
+
+
 class BenchmarkRunner:
     def __init__(self, runner: TestRunner) -> None:
         self.runner = runner
 
-    def run(self, test: TestModule, models: list[ModelDescriptor], workspace_root: Path) -> BenchmarkBatch:
+    def run(
+        self,
+        test: TestModule,
+        models: list[ModelDescriptor],
+        workspace_root: Path,
+        *,
+        progress: ProgressCallback | None = None,
+    ) -> BenchmarkBatch:
         batch_id = uuid.uuid4().hex
         started_at = utc_now()
+        test_ref = f"{test.id}@{test.version}"
         run_ids: list[str] = []
         completed = 0
         passed = 0
         failed = 0
         errors = 0
-        for model in models:
-            run, _ = self.runner.run(test, model, workspace_root / batch_id)
+        total = len(models)
+
+        for index, model in enumerate(models, start=1):
+            if progress is not None:
+                progress(
+                    BenchmarkProgress(
+                        phase="starting",
+                        index=index,
+                        total=total,
+                        test_ref=test_ref,
+                        model_id=model.id,
+                    )
+                )
+
+            run, result_path = self.runner.run(test, model, workspace_root / batch_id)
             run_ids.append(run.run_id)
             if run.status == "completed":
                 completed += 1
@@ -62,9 +99,23 @@ class BenchmarkRunner:
                     failed += 1
             else:
                 errors += 1
+
+            if progress is not None:
+                progress(
+                    BenchmarkProgress(
+                        phase="completed",
+                        index=index,
+                        total=total,
+                        test_ref=test_ref,
+                        model_id=model.id,
+                        run=run,
+                        result_path=result_path,
+                    )
+                )
+
         return BenchmarkBatch(
             batch_id=batch_id,
-            test_ref=f"{test.id}@{test.version}",
+            test_ref=test_ref,
             started_at=started_at,
             completed_at=utc_now(),
             model_ids=[model.id for model in models],

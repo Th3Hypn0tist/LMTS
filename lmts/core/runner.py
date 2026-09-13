@@ -12,6 +12,7 @@ from lmts.tools.profile import DEFAULT_PROFILE_PATH, load_system_profile
 
 from .control import RunCancelled, RunControl
 from .executor import ModelExecutor, TestExecutor
+from .fingerprint import runtime_configuration_fingerprint
 from .models import ModelDescriptor, ResponseStreamChunk
 from .registry import ProviderRegistry
 from .run import RunResult, utc_now
@@ -88,6 +89,12 @@ class TestRunner:
         )
         resolved_test_ref = test_ref(test)
         execution_metadata = dict(executor.metadata)
+        execution_metadata["runtime_configuration_fingerprint"] = runtime_configuration_fingerprint(
+            executor_id=executor.id,
+            executor_kind=executor.kind,
+            subject_fingerprint=evaluation_subject.fingerprint,
+            metadata=dict(executor.metadata),
+        )
 
         common: dict[str, object] = {
             "run_id": run_id,

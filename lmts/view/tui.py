@@ -28,7 +28,19 @@ def run() -> None:
             footer=FOOTER,
         )
 
+        def show_progress() -> None:
+            host.progress_dialog(
+                stdscr,
+                "Test progress",
+                controller.state.progress_lines,
+                lambda: not controller.state.running,
+            )
+            host.message = controller.state.message
+
         def select_models(_stdscr: curses.window) -> None:
+            if controller.state.running:
+                host.message = "test matrix is running"
+                return
             options = [model.id for model in controller.state.models]
             selected = {
                 index
@@ -48,6 +60,9 @@ def run() -> None:
                 host.message = f"selected {len(chosen)} model(s)"
 
         def select_tests(_stdscr: curses.window) -> None:
+            if controller.state.running:
+                host.message = "test matrix is running"
+                return
             options = [f"{test.id}@{test.version}" for test in controller.state.tests]
             selected = {
                 index
@@ -67,16 +82,16 @@ def run() -> None:
                 host.message = f"selected {len(chosen)} test(s)"
 
         def run_selected(_stdscr: curses.window) -> None:
-            host.message = "running selected test matrix..."
-            stdscr.refresh()
-            controller.run_selected()
+            started = controller.run_selected()
             host.message = controller.state.message
+            if started:
+                show_progress()
 
         def test_all(_stdscr: curses.window) -> None:
-            host.message = "running all tests on all models..."
-            stdscr.refresh()
-            controller.test_all()
+            started = controller.test_all()
             host.message = controller.state.message
+            if started:
+                show_progress()
 
         def export_errors(_stdscr: curses.window) -> None:
             path = controller.export_errors("task")

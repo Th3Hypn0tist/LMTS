@@ -44,9 +44,9 @@ class NormalizedTiming:
 
 @dataclass(frozen=True, slots=True)
 class ResponseStreamChunk:
-    """Provider-neutral read-only chunk of a bot response stream."""
+    """Executor-neutral read-only chunk of a response stream."""
 
-    model_id: str
+    source_id: str
     channel: ResponseStreamChannel
     text: str = ""
     data: dict[str, Any] = field(default_factory=dict)

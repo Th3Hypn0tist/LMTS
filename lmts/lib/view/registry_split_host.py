@@ -14,7 +14,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         self,
         title: str,
         render: Callable[[], Sequence[str]],
-        status_segments: Callable[[], Sequence[tuple[str, bool]]],
+        tabs: Callable[[], str],
         monitor_render: Callable[[], Sequence[str]],
         *,
         shortcuts: ShortcutRegistry,
@@ -34,7 +34,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         )
         self.shortcuts = shortcuts
         self.shortcut_scopes = scopes
-        self.status_segments = status_segments
+        self.tabs = tabs
         self.action_handlers: dict[str, Callable[[curses.window], None]] = {}
         self._sequence: tuple[str, ...] = ()
         self._stop_requested = False
@@ -115,23 +115,57 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         if handler is not None:
             handler(stdscr)
 
-    def _draw_status_segments(self, stdscr: curses.window) -> None:
+    def _selected_top_level_label(self) -> str:
+        scopes = self._scopes()
+        if not scopes:
+            raise ValueError("tab scope is required")
+        current = scopes[0]
+        mapping = {
+            "profile": "Profile",
+            "benchmark": "Benchmark",
+            "challenge": "Benchmark",
+            "cw_bench": "Benchmark",
+            "downloader": "Model Downloader",
+            "settings": "Settings",
+        }
+        try:
+            return mapping[current]
+        except KeyError as exc:
+            raise ValueError(f"unknown tab scope: {current}") from exc
+
+    def _tab_segments(self) -> tuple[tuple[str, bool], ...]:
+        value = self.tabs()
+        if not value.startswith("Tabs: "):
+            raise ValueError("tab renderer must return canonical 'Tabs: ...' content")
+        selected = self._selected_top_level_label()
+        items = value[len("Tabs: "):].split(" | ")
+        segments: list[tuple[str, bool]] = [("Tabs: ", False)]
+        for index, item in enumerate(items):
+            if ". " not in item:
+                raise ValueError(f"invalid canonical tab item: {item!r}")
+            label = item.split(". ", 1)[1]
+            segments.append((item, label == selected))
+            if index < len(items) - 1:
+                segments.append((" | ", False))
+        return tuple(segments)
+
+    def _draw_tabs(self, stdscr: curses.window) -> None:
         height, width = stdscr.getmaxyx()
         if height < 2 or width < 2:
             return
         try:
-            stdscr.move(1, 0)
+            stdscr.move(0, 0)
             stdscr.clrtoeol()
         except curses.error:
             return
         x = 0
-        for text, selected in self.status_segments():
+        for text, selected in self._tab_segments():
             if x >= width - 1:
                 break
             remaining = width - 1 - x
             piece = str(text)[:remaining]
             attr = curses.A_REVERSE if selected else curses.A_DIM
-            self._safe_addnstr(stdscr, 1, x, piece, len(piece), attr)
+            self._safe_addnstr(stdscr, 0, x, piece, len(piece), attr)
             x += len(piece)
 
     def draw(self, stdscr: curses.window, *, commit: bool = True) -> None:
@@ -141,7 +175,15 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             self.message = self._sequence_hint()
         try:
             super().draw(stdscr, commit=False)
-            self._draw_status_segments(stdscr)
+            height, width = stdscr.getmaxyx()
+            if height >= 2 and width >= 2:
+                try:
+                    stdscr.move(1, 0)
+                    stdscr.clrtoeol()
+                except curses.error:
+                    pass
+                self._safe_addnstr(stdscr, 1, 0, self.title, width - 1, curses.A_BOLD)
+            self._draw_tabs(stdscr)
             stdscr.noutrefresh()
             if commit:
                 curses.doupdate()

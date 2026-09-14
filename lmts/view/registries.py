@@ -48,7 +48,6 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("benchmark.publish", ("u",), "Publish report", "Benchmark", scope="benchmark", order=190),
     ShortcutDefinition("errors", ("e",), "Errors", "Benchmark", scope="benchmark", order=200),
     ShortcutDefinition("refresh", ("f",), "Refresh", "Benchmark", scope="benchmark", order=210),
-    ShortcutDefinition("benchmark.console", ("+",), "Console", "Benchmark", scope="benchmark", order=220),
 
     ShortcutDefinition("deep.cw_bench", ("z",), "CW Bench", "Deep", scope="deep", order=100),
     ShortcutDefinition("deep.run", ("x",), "Run Deep suite", "Deep", scope="deep", order=110),

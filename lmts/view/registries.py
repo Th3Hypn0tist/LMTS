@@ -10,8 +10,8 @@ TAB_REGISTRY = TabRegistry(
         TabDefinition("root", "AIGM LMTS", parent=None, order=0),
         TabDefinition("profile", "Profile", parent="root", shortcut="1", order=10),
         TabDefinition("benchmark", "Benchmark", parent="root", shortcut="2", order=20),
-        TabDefinition("challenge", "Challenge", parent="benchmark", order=21),
-        TabDefinition("cw_bench", "CW Bench", parent="challenge", order=22),
+        TabDefinition("deep", "Deep", parent="benchmark", order=21),
+        TabDefinition("cw_bench", "CW Bench", parent="deep", order=22),
         TabDefinition("downloader", "Model Downloader", parent="root", shortcut="3", order=30),
         TabDefinition("settings", "Settings", parent="root", shortcut="4", order=40),
     ]
@@ -34,21 +34,24 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("profile.npu", ("v",), "Test NPU", "Profile", scope="profile", order=130),
     ShortcutDefinition("profile.scan", ("p",), "Profile system", "Profile", scope="profile", order=140),
 
-    ShortcutDefinition("benchmark.challenge", ("z",), "Challenge", "Benchmark", scope="benchmark", order=90),
-    ShortcutDefinition("targets", ("m",), "Targets", "Benchmark", scope="benchmark", order=100),
-    ShortcutDefinition("tests", ("t",), "Matrix", "Benchmark", scope="benchmark", order=110),
-    ShortcutDefinition("test.add", ("n",), "Add test", "Benchmark", scope="benchmark", order=120),
-    ShortcutDefinition("test.remove", ("d",), "Remove test", "Benchmark", scope="benchmark", order=130),
-    ShortcutDefinition("run.selected", ("r",), "Run", "Benchmark", scope="benchmark", order=140),
-    ShortcutDefinition("run.all", ("a",), "Run all", "Benchmark", scope="benchmark", order=150),
-    ShortcutDefinition("results", ("v",), "Results", "Benchmark", scope="benchmark", order=160),
-    ShortcutDefinition("benchmark.compare", ("b",), "Compare targets", "Benchmark", scope="benchmark", order=165),
-    ShortcutDefinition("benchmark.publish", ("u",), "Publish report", "Benchmark", scope="benchmark", order=170),
-    ShortcutDefinition("cancel", ("c",), "Cancel", "Benchmark", scope="benchmark", order=180),
-    ShortcutDefinition("errors", ("e",), "Errors", "Benchmark", scope="benchmark", order=190),
-    ShortcutDefinition("refresh", ("x",), "Refresh", "Benchmark", scope="benchmark", order=200),
+    ShortcutDefinition("benchmark.quick", ("z",), "Quick", "Benchmark", scope="benchmark", order=80),
+    ShortcutDefinition("benchmark.moderate", ("x",), "Moderate", "Benchmark", scope="benchmark", order=90),
+    ShortcutDefinition("benchmark.deep", ("c",), "Deep", "Benchmark", scope="benchmark", order=100),
+    ShortcutDefinition("targets", ("m",), "Targets", "Benchmark", scope="benchmark", order=110),
+    ShortcutDefinition("tests", ("t",), "Matrix", "Benchmark", scope="benchmark", order=120),
+    ShortcutDefinition("test.add", ("n",), "Add test", "Benchmark", scope="benchmark", order=130),
+    ShortcutDefinition("test.remove", ("d",), "Remove test", "Benchmark", scope="benchmark", order=140),
+    ShortcutDefinition("run.selected", ("r",), "Run", "Benchmark", scope="benchmark", order=150),
+    ShortcutDefinition("run.all", ("a",), "Run all", "Benchmark", scope="benchmark", order=160),
+    ShortcutDefinition("results", ("v",), "Results", "Benchmark", scope="benchmark", order=170),
+    ShortcutDefinition("benchmark.compare", ("b",), "Compare targets", "Benchmark", scope="benchmark", order=180),
+    ShortcutDefinition("benchmark.publish", ("u",), "Publish report", "Benchmark", scope="benchmark", order=190),
+    ShortcutDefinition("errors", ("e",), "Errors", "Benchmark", scope="benchmark", order=200),
+    ShortcutDefinition("refresh", ("f",), "Refresh", "Benchmark", scope="benchmark", order=210),
 
-    ShortcutDefinition("challenge.cw_bench", ("z",), "CW Bench", "Challenge", scope="challenge", order=100),
+    ShortcutDefinition("deep.cw_bench", ("z",), "CW Bench", "Deep", scope="deep", order=100),
+    ShortcutDefinition("deep.run", ("x",), "Run Deep suite", "Deep", scope="deep", order=110),
+    ShortcutDefinition("deep.results", ("c",), "Results", "Deep", scope="deep", order=120),
 
     ShortcutDefinition("cw.source", ("z",), "CW source", "CW Bench", scope="cw_bench", order=100),
     ShortcutDefinition("cw.language", ("x",), "Output language", "CW Bench", scope="cw_bench", order=110),
@@ -74,7 +77,7 @@ DEFAULT_SHORTCUTS = (
 
 
 def build_shortcut_registry(overrides: dict[str, tuple[str, ...]] | None = None) -> ShortcutRegistry:
-    overrides = overrides or {}
+    overrides = {} if overrides is None else overrides
     known_actions = {definition.action for definition in DEFAULT_SHORTCUTS}
     unknown = sorted(set(overrides) - known_actions)
     if unknown:

@@ -53,6 +53,8 @@ class CWChallengeTest:
     max_workspace_steps: int = 128
     id: str = "challenge.cw_bench"
     version: str = "1.0.0"
+    level: str = "challenge"
+    mandatory: bool = False
     requirements: TestRequirements = TestRequirements(
         text_generation=True,
         workspace_read=True,

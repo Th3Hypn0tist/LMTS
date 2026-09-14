@@ -10,7 +10,7 @@ POLL_MS = 200
 
 
 class SplitCursesViewHost(CursesViewHost):
-    """Curses host with a passive read-only monitor occupying the lower pane."""
+    """Curses host with an optional passive read-only lower pane."""
 
     def __init__(
         self,
@@ -19,7 +19,7 @@ class SplitCursesViewHost(CursesViewHost):
         status: Callable[[], str],
         monitor_render: Callable[[], Sequence[str]],
         *,
-        monitor_title: str = "Response monitor",
+        monitor_title: str = "Console",
         monitor_fraction: float = 1 / 3,
         footer: str = "up/down scroll  q q q quit",
         quit_sequence: str = "qqq",
@@ -28,6 +28,11 @@ class SplitCursesViewHost(CursesViewHost):
         self.monitor_render = monitor_render
         self.monitor_title = monitor_title
         self.monitor_fraction = max(0.2, min(0.5, monitor_fraction))
+        self.monitor_visible = True
+
+    def toggle_monitor(self) -> bool:
+        self.monitor_visible = not self.monitor_visible
+        return self.monitor_visible
 
     @staticmethod
     def _safe_addnstr(win: curses.window, y: int, x: int, text: str, width: int, attr: int = 0) -> None:
@@ -165,21 +170,22 @@ class SplitCursesViewHost(CursesViewHost):
                 col_index = min(len(column_labels) - 1, col_index + 1)
 
     def draw(self, stdscr: curses.window, *, commit: bool = True) -> None:
-        """Render the split layout into curses' virtual screen.
-
-        When commit=False the caller may compose additional windows before one
-        atomic doupdate(), avoiding visible erase/redraw cycles between panes.
-        """
+        """Render the layout into curses' virtual screen."""
         lines = list(self.render())
-        monitor_lines = list(self.monitor_render())
+        monitor_lines = list(self.monitor_render()) if self.monitor_visible else []
         height, width = stdscr.getmaxyx()
 
         footer_rows = 2
         usable = max(4, height - footer_rows)
-        monitor_h = max(4, int(usable * self.monitor_fraction))
-        main_h = max(3, usable - monitor_h)
-        if main_h + monitor_h > usable:
-            monitor_h = max(3, usable - main_h)
+        show_monitor = bool(monitor_lines)
+        if show_monitor:
+            monitor_h = max(4, int(usable * self.monitor_fraction))
+            main_h = max(3, usable - monitor_h)
+            if main_h + monitor_h > usable:
+                monitor_h = max(3, usable - main_h)
+        else:
+            monitor_h = 0
+            main_h = usable
 
         main_content_h = max(1, main_h - 2)
         self.scroll = min(max(0, self.scroll), max(0, len(lines) - main_content_h))
@@ -192,17 +198,18 @@ class SplitCursesViewHost(CursesViewHost):
                 break
             self._safe_addnstr(stdscr, row, 0, str(line), width - 1)
 
-        separator_y = main_h
-        self._safe_addnstr(stdscr, separator_y, 0, "─" * max(1, width - 1), width - 1, curses.A_DIM)
-        title = f" {self.monitor_title} "
-        self._safe_addnstr(stdscr, separator_y, 2, title, min(len(title), max(0, width - 4)), curses.A_BOLD)
+        if show_monitor:
+            separator_y = main_h
+            self._safe_addnstr(stdscr, separator_y, 0, "─" * max(1, width - 1), width - 1, curses.A_DIM)
+            title = f" {self.monitor_title} "
+            self._safe_addnstr(stdscr, separator_y, 2, title, min(len(title), max(0, width - 4)), curses.A_BOLD)
 
-        monitor_body_h = max(1, monitor_h - 1)
-        tail = monitor_lines[-monitor_body_h:]
-        for offset, line in enumerate(tail, start=separator_y + 1):
-            if offset >= height - footer_rows:
-                break
-            self._safe_addnstr(stdscr, offset, 0, str(line), width - 1)
+            monitor_body_h = max(1, monitor_h - 1)
+            tail = monitor_lines[-monitor_body_h:]
+            for offset, line in enumerate(tail, start=separator_y + 1):
+                if offset >= height - footer_rows:
+                    break
+                self._safe_addnstr(stdscr, offset, 0, str(line), width - 1)
 
         quit_hint = ""
         if self._quit:

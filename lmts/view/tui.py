@@ -10,7 +10,7 @@ from lmts.core.result_export import build_matrix_bundle, export_matrix_bundle, e
 from lmts.core.runtime_targets import load_runtime_targets
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, MySQLSettings, load_settings, save_settings
 from lmts.core.store import RunStore
-from lmts.lib.view import RegistrySplitCursesViewHost, choose_directory
+from lmts.lib.view import LayoutPane, RegistrySplitCursesViewHost, choose_directory
 from lmts.reporting import project_matrix_bundle
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
@@ -155,6 +155,7 @@ def run() -> None:
     shortcuts = build_shortcut_registry(shortcut_overrides)
     active_shortcuts = [shortcuts]
     active_tab = ['profile']
+    profile_console: list[str] = []
 
     def current_tab() -> str:
         return active_tab[0]
@@ -218,11 +219,33 @@ def run() -> None:
             return settings_lines()
         raise ValueError(f'unknown TUI tab: {tab}')
 
+    def benchmark_results_lines() -> tuple[str, ...]:
+        lines = list(controller.state.live_matrix_lines())
+        if lines and lines[0] == 'Results matrix':
+            del lines[0]
+        return tuple(lines)
+
+    def layout_panes() -> tuple[LayoutPane, ...]:
+        tab = current_tab()
+        if tab == 'profile':
+            return (
+                LayoutPane(1, 'Main', lambda: _profile_lines(controller), primary=True),
+                LayoutPane(2, 'Console', lambda: tuple(profile_console), title='Console', auto_hide_empty=True, follow_tail=True),
+            )
+        if tab == 'benchmark':
+            return (
+                LayoutPane(1, 'Main', lambda: _benchmark_lines(projector), primary=True),
+                LayoutPane(2, 'Results', benchmark_results_lines, title='Results', auto_hide_empty=True),
+                LayoutPane(3, 'Console', controller.response_monitor.lines, title='Console', auto_hide_empty=True, follow_tail=True),
+            )
+        return (LayoutPane(1, 'Main', render_lines, primary=True),)
+
     def app(stdscr: curses.window) -> None:
         nonlocal settings
         host = RegistrySplitCursesViewHost(
             'AIGM LMTS - Profile', render_lines, tabs_line, controller.response_monitor.lines,
-            shortcuts=active_shortcuts[0], scopes=lambda: (current_tab(),), monitor_title='Bot response', monitor_fraction=1 / 3,
+            shortcuts=active_shortcuts[0], scopes=lambda: (current_tab(),), layout_panes=layout_panes,
+            monitor_title='Console', monitor_fraction=1 / 3,
         )
         if controller.state.profile_required:
             controller.profile()
@@ -319,8 +342,7 @@ def run() -> None:
                 set_message(controller.state.message)
 
         def run_selected(_stdscr: curses.window) -> None:
-            if controller.run_selected():
-                show_progress()
+            controller.run_selected()
             set_message(controller.state.message)
 
         def run_deep_suite(_stdscr: curses.window) -> None:
@@ -333,8 +355,7 @@ def run() -> None:
             set_message(controller.state.message)
 
         def test_all(_stdscr: curses.window) -> None:
-            if controller.test_all():
-                show_progress()
+            controller.test_all()
             set_message(controller.state.message)
 
         def choose_matrix_result(title: str, predicate=None):
@@ -454,19 +475,32 @@ def run() -> None:
             set_message(controller.state.message)
 
         def profile_system(_stdscr: curses.window) -> None:
+            profile_console.clear()
+            profile_console.append('System profile scan started')
+            host.draw(stdscr)
             controller.profile()
+            profile_console.append('System profile scan completed')
             set_message(controller.state.message)
 
         def profile_reference(domain: str) -> None:
+            profile_console.clear()
+            profile_console.append(f'{domain.upper()} reference benchmark started')
+            host.draw(stdscr)
             try:
                 result = benchmark_system_reference(domain, controller.profile_path)
             except NotImplementedError as exc:
+                profile_console.append(f'{domain.upper()} unavailable: {exc}')
                 set_message(str(exc))
                 return
             except (OSError, ValueError) as exc:
+                profile_console.append(f'{domain.upper()} failed: {exc}')
                 set_message(f'{domain.upper()} reference benchmark failed: {exc}')
                 return
             tests = result.get('tests') if isinstance(result.get('tests'), list) else []
+            for test in tests:
+                if isinstance(test, dict):
+                    profile_console.append(f"PASS {test.get('label') or test.get('benchmark_id') or 'test'}")
+            profile_console.append(f'{domain.upper()} reference suite completed: {len(tests)} test(s)')
             set_message(f'{domain.upper()} reference suite completed: {len(tests)} test(s)')
 
         def edit_output_folder(_stdscr: curses.window) -> None:

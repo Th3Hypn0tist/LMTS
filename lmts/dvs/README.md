@@ -2,12 +2,12 @@
 
 DVS is LMTS's generic data-visualization subsystem for turning formal source formats into reusable S3D visualizations without embedding application-specific rendering logic into LMTS or S3D.
 
-Its canonical table boundary has one cell type: **string**. Numeric, categorical, temporal, color and other meanings are declared by visualization interpretation, not stored as alternate table types.
+Its internal projection boundary has one cell type: **string**. Numeric, categorical, temporal, color and other meanings are declared by visualization interpretation, not stored as alternate table types. This projection is an implementation detail, not a public canonical Input Table contract.
 
 ```text
 formal source format
     -> Input Template
-    -> strict generic string table
+    -> internal string-row projection
     -> Visualization Preset
     -> recursive visual generations
     -> S3D visual representation
@@ -24,13 +24,15 @@ formal source format
 | Python DVS host | Complete baseline |
 | Studio | Complete feature baseline |
 | Visualizer | Complete feature baseline |
+| LMTS report Input Template | `lmts.report/1.1` |
+| LMTS benchmark preset | `lmts.benchmark.landscape.v1` |
 | S3D packed visualization integration | Complete baseline |
 | PHP viewer | Portability target |
 | Per-face packed visual channels | Later extension |
 
 ## Input Templates
 
-An Input Template defines how a formalized source format becomes rows, columns and string cells.
+An Input Template defines how a formalized source format becomes rows, columns and string cells for the internal DVS projection boundary.
 
 It declares:
 
@@ -42,11 +44,19 @@ It declares:
 
 Selectors are strict. Missing fields are errors. There is no `on_missing` fallback semantics.
 
-If unavailable data is valid for a source format, the source format must represent it explicitly. For example, `lmts.report/1.0` represents unavailable standard measurements with JSON `null`; DVS then projects that actual source value to the string `"null"`.
+If unavailable data is valid for a source format, the source format must represent it explicitly. `lmts.report/1.1` represents unavailable known measurements with JSON `null`; DVS then projects that actual source value to the string `"null"`.
+
+The LMTS report template is:
+
+```text
+lmts/dvs/templates/lmts-report-v1.1.json
+```
+
+It reads the canonical `lmts.report/1.1` interchange document used by disk export, the result server and DVS. DVS does not maintain a parallel LMTS report model.
 
 ## Visualization Presets
 
-A Visualization Preset defines how table columns become visual structure.
+A Visualization Preset defines how projected columns become visual structure.
 
 It declares:
 
@@ -61,6 +71,23 @@ It declares:
 
 Every binding must reference an actual Input Template column. Recursive child generation IDs are validated and duplicate IDs are rejected.
 
+Application-specific meaning belongs here, not in DVS core. The first LMTS-specific preset is:
+
+```text
+lmts.benchmark.landscape.v1
+```
+
+Its current definition uses:
+
+```text
+target         -> position.x categorical index
+test           -> position.z categorical index
+score_percent  -> scale.y
+result         -> RGB channels
+```
+
+This establishes the first real `LMTS Benchmark Report -> Input Template -> Visualization Preset` chain while keeping DVS and S3D generic. The preset may evolve as LMTS discovers which benchmark metrics distinguish models, bots and compositions most usefully. It is not the future locked AIGM LM Benchmark Report profile.
+
 ## Studio
 
 **Feature baseline: complete.**
@@ -74,13 +101,13 @@ Studio is the authoring and validation surface. Its intended complete feature se
 - edit Visualization Presets
 - inspect Visualization Presets
 - choose source format
-- preview source → table projection
+- preview source -> internal projection
 - inspect projected columns and values
 - create recursive generation hierarchies
 - choose visual primitive per generation
 - bind columns to visual channels
 - configure interpretation and transforms
-- validate preset ↔ template compatibility
+- validate preset <-> template compatibility
 - reject unknown columns and invalid definitions
 - load/save reusable templates and presets
 - manage registered definitions
@@ -96,7 +123,7 @@ Visualizer is the read/inspection surface. Its intended complete feature set is:
 
 - load formal source data
 - choose a compatible Input Template
-- project source data through the strict string-table boundary
+- project source data through the internal string boundary
 - choose a compatible Visualization Preset
 - generate recursive visual structures
 - render through S3D
@@ -129,8 +156,10 @@ GET  /api/input-templates
 GET  /api/input-templates/<id>
 GET  /api/visualization-presets
 GET  /api/visualization-presets/<id>
-POST /api/table
+POST /api/extract
 ```
+
+`POST /api/extract` accepts exactly `input_template_id` and `source` and returns the projected `columns` and `rows`. There is deliberately no `/api/table` compatibility alias: the internal projection is not a public Input Table model.
 
 The viewer-facing API is read-oriented. Studio mutation endpoints belong only to the Python host and may evolve without changing the shared Input Template or Visualization Preset formats.
 
@@ -171,10 +200,11 @@ Alpha currently remains a render/batch property. Per-face channels are the next 
 
 1. DVS does not invent missing source data.
 2. Source formats own missing-value semantics.
-3. The string table is a transport boundary, not an application data model.
+3. The string projection is an internal transport/runtime boundary, not an application data model.
 4. Visualization semantics belong to Visualization Presets.
 5. Input Templates know source structure, not application meaning.
 6. Studio and Visualizer consume the same canonical definitions.
 7. S3D owns generic 3D mechanics; DVS does not build a parallel renderer.
 8. High-density visualization stays packed instead of creating one SceneObject per observation.
 9. Python Studio semantics are not duplicated in viewer-only hosts.
+10. DVS consumes `lmts.report/1.1` directly; it does not create a second LMTS report format.

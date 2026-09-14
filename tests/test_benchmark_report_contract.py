@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from lmts.reporting import REPORT_FORMAT, REPORT_VERSION, project_matrix_bundle
+from lmts.tools.report_contract_php import REPORT_CONTRACT_VALIDATOR_PHP
 from lmts.tools.web_deploy import REPORT_CONTRACT_NAME, REPORT_PHP, APP_JS, web_root_files
 
 
@@ -80,8 +81,12 @@ def test_projector_emits_open_world_benchmark_report_v11() -> None:
 def test_results_server_and_dvs_share_report_v11_contract() -> None:
     files = web_root_files()
     contract_path = f'public/contracts/{REPORT_CONTRACT_NAME}'
+    validator_path = 'public/lib/report_contract.php'
     assert contract_path in files
-    assert 'LMTS_REPORT_VERSION = \'1.1\'' in REPORT_PHP
+    assert validator_path in files
+    assert files[validator_path] == REPORT_CONTRACT_VALIDATOR_PHP
+    assert "require_once dirname(__DIR__) . '/lib/report_contract.php'" in REPORT_PHP
+    assert 'lmts_validate_report_document' in REPORT_PHP
     assert "report?.version !== '1.1'" in APP_JS
     assert 'report id already exists with different content' in REPORT_PHP
     assert 'ON DUPLICATE KEY UPDATE' not in REPORT_PHP

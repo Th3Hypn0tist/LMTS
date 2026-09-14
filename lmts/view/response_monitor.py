@@ -63,6 +63,4 @@ class ResponseMonitor:
             partial = self._partial.get(self._channel, "")
             if partial:
                 output.append(partial)
-            if not output:
-                return ("waiting for bot response...",)
             return tuple(output[-self._max_lines :])

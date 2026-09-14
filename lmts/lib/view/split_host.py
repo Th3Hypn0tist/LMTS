@@ -113,16 +113,17 @@ class SplitCursesViewHost(CursesViewHost):
 
         while True:
             height, width = stdscr.getmaxyx()
+            screen_width = max(0, width - 1)
             stdscr.erase()
-            self._safe_addnstr(stdscr, 0, 0, title, width - 1, curses.A_BOLD)
+            self._safe_addnstr(stdscr, 0, 0, title, screen_width, curses.A_BOLD)
 
             header = f"{'MODEL':<{row_width}}"
             for label in column_labels:
                 header += f"  {str(label):^{col_width}}"
-            self._safe_addnstr(stdscr, 2, 0, header, width - 1, curses.A_BOLD)
+            self._safe_addnstr(stdscr, 2, 0, header, screen_width, curses.A_BOLD)
 
-            separator = "-" * min(len(header), max(1, width - 1))
-            self._safe_addnstr(stdscr, 3, 0, separator, width - 1, curses.A_DIM)
+            separator = "-" * min(len(header), max(1, screen_width))
+            self._safe_addnstr(stdscr, 3, 0, separator, screen_width, curses.A_DIM)
 
             max_rows = max(1, height - 7)
             start_row = min(max(0, row_index - max_rows + 1), max(0, len(row_labels) - max_rows))
@@ -131,22 +132,32 @@ class SplitCursesViewHost(CursesViewHost):
             for screen_offset, row_label in enumerate(visible_rows, start=4):
                 source_row = start_row + screen_offset - 4
                 x = 0
-                self._safe_addnstr(stdscr, screen_offset, x, f"{str(row_label):<{row_width}}", row_width)
+                row_text = f"{str(row_label):<{row_width}}"
+                row_piece = row_text[:screen_width]
+                self._safe_addnstr(stdscr, screen_offset, x, row_piece, len(row_piece))
                 x += row_width
+                if x >= screen_width:
+                    continue
                 for source_col, value in enumerate(values[source_row]):
+                    if x >= screen_width:
+                        break
                     cell = f"  {str(value):^{col_width}}"
+                    remaining = screen_width - x
+                    piece = cell[:remaining]
                     attr = curses.A_REVERSE if source_row == row_index and source_col == col_index else 0
-                    self._safe_addnstr(stdscr, screen_offset, x, cell, len(cell), attr)
+                    self._safe_addnstr(stdscr, screen_offset, x, piece, len(piece), attr)
                     x += len(cell)
+                    if len(piece) < len(cell):
+                        break
 
             if summary:
-                self._safe_addnstr(stdscr, height - 2, 0, summary, width - 1)
+                self._safe_addnstr(stdscr, height - 2, 0, summary, screen_width)
             self._safe_addnstr(
                 stdscr,
                 height - 1,
                 0,
                 "Arrows select  Enter details  Esc back",
-                width - 1,
+                screen_width,
                 curses.A_DIM,
             )
             stdscr.refresh()

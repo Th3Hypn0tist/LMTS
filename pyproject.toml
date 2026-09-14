@@ -21,6 +21,3 @@ include = ["lmts*"]
 "lmts.config" = ["*.php"]
 "lmts.install" = ["*.sh"]
 "lmts.reporting" = ["*.json"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

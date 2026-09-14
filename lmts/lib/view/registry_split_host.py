@@ -123,7 +123,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         mapping = {
             "profile": "Profile",
             "benchmark": "Benchmark",
-            "challenge": "Benchmark",
+            "deep": "Benchmark",
             "cw_bench": "Benchmark",
             "downloader": "Model Downloader",
             "settings": "Settings",

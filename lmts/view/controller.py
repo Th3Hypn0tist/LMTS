@@ -51,6 +51,12 @@ class LMTSViewController:
         self.state.profile_required = payload is None
         self.state.profiled_at = str(payload.get("profiled_at") or "") if payload is not None else ""
 
+    def _clear_live_matrix(self) -> None:
+        self.state.live_target_ids = ()
+        self.state.live_target_kinds = {}
+        self.state.live_test_refs = ()
+        self.state.live_cells = {}
+
     def _sync_matrix_state(self) -> None:
         previous = set(self.state.selected_test_refs)
         self.state.tests = list(self.matrix.tests())
@@ -67,6 +73,7 @@ class LMTSViewController:
         self.state.suite_level = level
         self._sync_matrix_state()
         self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
+        self._clear_live_matrix()
         self.state.message = f"suite level: {level.upper()} ({len(self.state.tests)} configured test(s))"
         return True
 
@@ -144,6 +151,7 @@ class LMTSViewController:
             return None
         self._sync_matrix_state()
         self.state.selected_test_refs.add(configured.ref)
+        self._clear_live_matrix()
         self.state.message = f"added configured test: {configured.ref}"
         return configured
 
@@ -157,34 +165,41 @@ class LMTSViewController:
             self.state.message = str(exc)
             return False
         self._sync_matrix_state()
+        self._clear_live_matrix()
         self.state.message = f"removed configured test: {removed.ref}"
         return True
 
     def select_targets(self, indices: set[int]) -> None:
         if not self.state.running:
             self.state.selected_target_ids = {self.state.targets[index].id for index in sorted(indices) if 0 <= index < len(self.state.targets)}
+            self._clear_live_matrix()
 
     def select_target_ids(self, target_ids: set[str]) -> None:
         if not self.state.running:
             available = {target.id for target in self.state.targets}
             self.state.selected_target_ids = set(target_ids) & available
+            self._clear_live_matrix()
 
     def select_all_targets(self) -> None:
         if not self.state.running:
             self.state.selected_target_ids = {target.id for target in self.state.targets}
+            self._clear_live_matrix()
 
     def select_tests(self, indices: set[int]) -> None:
         if not self.state.running:
             self.state.selected_test_refs = {test_ref(self.state.tests[index]) for index in sorted(indices) if 0 <= index < len(self.state.tests)}
+            self._clear_live_matrix()
 
     def select_test_refs(self, refs: set[str]) -> None:
         if not self.state.running:
             available = {test_ref(test) for test in self.state.tests}
             self.state.selected_test_refs = set(refs) & available
+            self._clear_live_matrix()
 
     def select_all_tests(self) -> None:
         if not self.state.running:
             self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
+            self._clear_live_matrix()
 
     def run_selected(self) -> bool:
         if self.state.running:
@@ -209,8 +224,16 @@ class LMTSViewController:
         self.state.progress_errors = 0
         self.state.progress_cancelled = 0
         self.state.progress_target_id = ""
-        self.state.progress_test_ref = ""
+        self.state.progress_test_ref = test_ref(tests[0])
         self.state.progress_phase = "starting"
+        self.state.live_target_ids = tuple(target.id for target in targets)
+        self.state.live_target_kinds = {target.id: target.kind for target in targets}
+        self.state.live_test_refs = tuple(test_ref(test) for test in tests)
+        self.state.live_cells = {
+            (target.id, test_ref(test)): "-"
+            for target in targets
+            for test in tests
+        }
         self.state.last_result = None
         self.state.message = f"test matrix started: {len(targets)} target(s) x {len(tests)} configured test(s)"
         self.last_errors = []
@@ -255,6 +278,7 @@ class LMTSViewController:
                     self.state.progress_test_ref = event.test_ref
                     if event.phase == "starting":
                         self.response_monitor.reset(event.target_id)
+                        self.state.live_cells[(event.target_id, event.test_ref)] = "RUN"
                     if not self.state.cancel_requested:
                         self.state.progress_phase = event.phase
                     if event.phase == "starting":
@@ -264,6 +288,17 @@ class LMTSViewController:
                     run = event.run
                     if run is None:
                         return
+                    if run.status == "cancelled":
+                        verdict = "CANCEL"
+                    elif run.status != "completed":
+                        verdict = "ERROR"
+                    elif run.passed is True:
+                        verdict = "PASS"
+                    elif run.passed is False:
+                        verdict = "FAIL"
+                    else:
+                        verdict = "?"
+                    self.state.live_cells[(run.executor_id, run.test_ref)] = verdict
                     if event.result_path is not None:
                         matrix_cells.append(
                             MatrixCell(

@@ -107,6 +107,37 @@ def test_queue_is_fifo_and_serial_per_module() -> None:
     assert downloader.max_active == 1
 
 
+def test_queue_rejects_duplicate_live_model_ref() -> None:
+    downloader = ControlledDownloader()
+    queue = ModelDownloadQueue(ModelDownloaderRegistry((downloader,)))
+
+    first = queue.enqueue('fake', 'model-a')
+    _wait_for(lambda: first.state == 'downloading')
+
+    with pytest.raises(ValueError, match='already queued or active'):
+        queue.enqueue('fake', 'model-a')
+
+    downloader.release['model-a'].set()
+    _wait_for(lambda: first.state == 'completed')
+
+
+def test_queue_allows_same_model_ref_after_previous_run_finishes() -> None:
+    downloader = ControlledDownloader()
+    queue = ModelDownloadQueue(ModelDownloaderRegistry((downloader,)))
+
+    first = queue.enqueue('fake', 'model-a')
+    _wait_for(lambda: first.state == 'downloading')
+    downloader.release['model-a'].set()
+    _wait_for(lambda: first.state == 'completed')
+
+    downloader.release['model-a'] = threading.Event()
+    second = queue.enqueue('fake', 'model-a')
+    _wait_for(lambda: second.state == 'downloading')
+    assert second.id != first.id
+    downloader.release['model-a'].set()
+    _wait_for(lambda: second.state == 'completed')
+
+
 def test_queue_cancel_queued_item_never_starts_it() -> None:
     downloader = ControlledDownloader()
     queue = ModelDownloadQueue(ModelDownloaderRegistry((downloader,)))

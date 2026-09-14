@@ -27,6 +27,7 @@ class AIGMosViewAdapter:
             "lmts_owns_render_logic": False,
             "profile_required": self.controller.state.profile_required,
             "running": self.controller.state.running,
+            "suite_level": self.controller.state.suite_level,
             "registry_test_types": len(self.controller.test_types.definitions()),
             "configured_tests": len(self.controller.state.tests),
             "progress_completed": self.controller.state.progress_completed,
@@ -37,11 +38,11 @@ class AIGMosViewAdapter:
         if name == "refresh":
             self.controller.refresh()
             return True
-        if name == "select_models" and isinstance(value, (list, tuple, set)):
-            self.controller.select_model_ids({str(item) for item in value})
+        if name == "select_targets" and isinstance(value, (list, tuple, set)):
+            self.controller.select_target_ids({str(item) for item in value})
             return True
-        if name == "select_all_models":
-            self.controller.select_all_models()
+        if name == "select_all_targets":
+            self.controller.select_all_targets()
             return True
         if name == "select_tests" and isinstance(value, (list, tuple, set)):
             self.controller.select_test_refs({str(item) for item in value})
@@ -49,6 +50,8 @@ class AIGMosViewAdapter:
         if name == "select_all_tests":
             self.controller.select_all_tests()
             return True
+        if name == "set_suite_level" and isinstance(value, str) and value in {"quick", "moderate", "deep"}:
+            return self.controller.set_suite_level(value)
         if name == "add_test" and isinstance(value, dict):
             type_ref = str(value.get("type_ref") or "")
             instance_id = str(value.get("instance_id") or "")
@@ -65,8 +68,9 @@ class AIGMosViewAdapter:
         if name == "cancel":
             return self.controller.cancel()
         if name == "export_errors":
-            task = str(value) if isinstance(value, str) and value.strip() else "task"
-            self.controller.export_errors(task)
+            if not isinstance(value, str) or not value.strip():
+                return False
+            self.controller.export_errors(value)
             return True
         if name == "profile":
             return self.controller.profile() is not None

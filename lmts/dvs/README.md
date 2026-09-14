@@ -22,15 +22,15 @@ formal source format
 | Visualization Preset model | Complete |
 | Registry and validation | Complete |
 | Strict missing-field semantics | Complete |
-| Generic visual-plan runtime | Complete baseline |
+| Recursive visual-plan runtime | Complete baseline |
 | Python DVS host | Complete baseline |
 | Studio | Complete feature baseline |
 | Visualizer | Complete feature baseline |
 | LMTS report Input Template | `lmts.report/1.1` |
 | LMTS benchmark preset | `lmts.benchmark.landscape.v1` |
 | S3D packed visualization integration | Complete baseline |
+| Per-face packed RGBA channels | Complete baseline |
 | PHP viewer | Portability target |
-| Per-face packed visual channels | Later extension |
 
 ## Input Templates
 
@@ -84,9 +84,11 @@ Its current definition uses:
 ```text
 target         -> position.x categorical index
 test           -> position.z categorical index
-score_percent  -> scale.y
-result         -> RGB channels
+score_percent  -> position.y + scale.y
+result         -> uniform RGB channels
 ```
+
+The first LMTS preset deliberately remains uniform RGB. S3D and DVS support per-face RGBA, but the benchmark preset will not assign invented meaning to individual faces before useful benchmark semantics exist.
 
 This establishes the first real `LMTS Benchmark Report -> Input Template -> Visualization Preset` chain while keeping DVS and S3D generic. The preset may evolve as LMTS discovers which benchmark metrics distinguish models, bots and compositions most usefully. It is not the future locked AIGM LM Benchmark Report profile.
 
@@ -107,7 +109,7 @@ Transforms are strict. Unsupported transform fields fail. There is no implicit a
 
 For `number-or-null`, an explicit `null: "not-rendered"` transform marks that visual group `visible: false`. DVS does not manufacture a replacement value.
 
-Recursive child generations are projected recursively and may select a different primitive from their parent generation.
+Recursive child generations are projected using only their parent group's row subset. `source_rows` remains expressed in the original Input Template row index space at every recursion depth. This behavior is regression-tested through a three-level generation tree.
 
 ## Studio
 
@@ -115,12 +117,8 @@ Recursive child generations are projected recursively and may select a different
 
 Studio is the authoring and validation surface. Its intended complete feature set is:
 
-- create Input Templates
-- edit Input Templates
-- inspect Input Templates
-- create Visualization Presets
-- edit Visualization Presets
-- inspect Visualization Presets
+- create, edit and inspect Input Templates
+- create, edit and inspect Visualization Presets
 - choose source format
 - preview source -> internal projection
 - inspect projected columns and values
@@ -140,20 +138,7 @@ Studio is owned by the Python DVS host.
 
 **Feature baseline: complete.**
 
-Visualizer is the read/inspection surface. Its intended complete feature set is:
-
-- load formal source data
-- choose a compatible Input Template
-- project source data through the internal string boundary
-- choose a compatible Visualization Preset
-- generate a generic visual plan
-- generate recursive visual structures
-- render through S3D
-- use packed high-density rendering for observation-heavy visualizations
-- map dimensions independently to position, rotation, scale and RGB channels
-- navigate the 3D scene
-- select and inspect rendered data
-- reuse visualization definitions without application-specific renderer code
+Visualizer is the read/inspection surface. It consumes a generic visual plan recursively and renders through S3D. Current packed bridge support materializes `box` primitives and maps generic channels into S3D packed box instances.
 
 Visualizer never becomes a new source of truth. It consumes source data and reusable visualization definitions.
 
@@ -190,7 +175,7 @@ The viewer-facing API is read-oriented. Studio mutation endpoints belong only to
 
 ## S3D visual channels
 
-The current Statistics-domain visual encoding model supports independent numeric dimension mapping to:
+The uniform box bridge accepts:
 
 ```text
 position.x
@@ -205,21 +190,47 @@ scale.z
 color.r
 color.g
 color.b
+color.a
 ```
 
-Packed box instances currently use 13 floats:
+S3D owns the canonical packed box representation. It currently uses 33 floats:
 
 ```text
-position XYZ   3
-scale XYZ      3
-rotation XYZ   3
-RGB            3
-alpha          1
-----------------
-total         13
+position XYZ                    3
+scale XYZ                       3
+rotation XYZ                    3
+face z- RGBA                    4
+face z+ RGBA                    4
+face x- RGBA                    4
+face x+ RGBA                    4
+face y- RGBA                    4
+face y+ RGBA                    4
+---------------------------------
+total                          33 floats / instance
 ```
 
-Alpha currently remains a render/batch property. Per-face channels are the next packed-model extension.
+The canonical face order belongs to S3D:
+
+```text
+z-, z+, x-, x+, y-, y+
+```
+
+DVS does not duplicate that order as application truth. The visualizer reads `S3D.BOX_FACE_ORDER` from the loaded S3D core.
+
+Generic per-face channels use:
+
+```text
+face.<S3D-face-id>.color.r
+face.<S3D-face-id>.color.g
+face.<S3D-face-id>.color.b
+face.<S3D-face-id>.color.a
+```
+
+Per-face semantics are strict. If any per-face color channel is present, the complete `6 x RGBA` set is required in the face set defined by S3D. Partial face definitions, unknown face IDs and missing S3D face-order metadata are errors. DVS does not fall back to uniform color to fill missing face values.
+
+If no per-face channels are present, the visualizer uses the uniform `color.*` path. S3D replicates that one RGBA value into all six canonical face slots; there is no separate base-color plus override truth.
+
+The S3D Statistics-domain `VisualEncoding` currently exposes RGB channels. That domain contract is separate from the more general DVS -> S3D box bridge, which supports uniform alpha and strict per-face RGBA.
 
 ## Architectural rules
 
@@ -229,8 +240,9 @@ Alpha currently remains a render/batch property. Per-face channels are the next 
 4. Visualization semantics belong to Visualization Presets.
 5. Input Templates know source structure, not application meaning.
 6. Studio and Visualizer consume the same canonical definitions.
-7. S3D owns generic 3D mechanics; DVS does not build a parallel renderer.
+7. S3D owns generic 3D mechanics and packed layout; DVS does not build a parallel renderer or face-order truth.
 8. High-density visualization stays packed instead of creating one SceneObject per observation.
 9. Python Studio semantics are not duplicated in viewer-only hosts.
 10. DVS consumes `lmts.report/1.1` directly; it does not create a second LMTS report format.
 11. Visual plans are generic renderer input, not a second application-data authority.
+12. Per-face channels are all-or-nothing; there is no partial-color fallback semantics.

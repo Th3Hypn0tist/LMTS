@@ -11,6 +11,28 @@ from lmts.tests.modules.workspace_multifile import WorkspaceMultiFileTest
 from lmts.tests.types import TestLevel, TestMatrix, TestParameter, TestTypeDefinition, TestTypeRegistry
 
 
+QUICK_TEST_IDS = {
+    "core.text_generation",
+    "reasoning.carwash_transport",
+    "bot.exact_instruction",
+    "bot.negative_constraint",
+    "bot.missing_information",
+    "bot.contradiction_detection",
+    "bot.no_phantom_action",
+    "bot.evidence_before_claim",
+    "bot.format_compliance",
+    "bot.ambiguity_handling",
+    "bot.stop_condition",
+    "bot.closed_world_unknown",
+    "reasoning.arithmetic_chain",
+    "reasoning.symbolic_logic",
+    "reasoning.ordering",
+    "reasoning.impossible_constraints",
+    "context.single_needle",
+    "robustness.typo_tolerance",
+    "robustness.unicode",
+}
+
 MODERATE_TEST_IDS = {
     "context.carwash_goal_persistence",
     "core.workspace_multifile",
@@ -36,22 +58,51 @@ MANDATORY_TEST_IDS = {
     "context.carwash_goal_persistence",
 }
 
-# Free-prompt is intentionally user-configured. No fabricated default prompt.
+# Free-prompt requires an explicit user prompt and therefore is not auto-configured.
 AUTOMATED_SUITE_EXCLUSIONS = {"research.free_prompt_consistency"}
 
 
 def _minimum_level(test_id: str) -> TestLevel:
-    return "moderate" if test_id in MODERATE_TEST_IDS else "quick"
+    if test_id in QUICK_TEST_IDS:
+        return "quick"
+    if test_id in MODERATE_TEST_IDS:
+        return "moderate"
+    raise ValueError(f"test has no explicit minimum level: {test_id}")
+
+
+def _validate_level_contract(case_ids: set[str]) -> None:
+    overlap = QUICK_TEST_IDS & MODERATE_TEST_IDS
+    if overlap:
+        raise ValueError(f"test level overlap: {', '.join(sorted(overlap))}")
+    classified = QUICK_TEST_IDS | MODERATE_TEST_IDS
+    missing = case_ids - classified
+    unknown = classified - case_ids
+    if missing:
+        raise ValueError(f"unclassified test id(s): {', '.join(sorted(missing))}")
+    if unknown:
+        raise ValueError(f"level classification references unknown test id(s): {', '.join(sorted(unknown))}")
 
 
 def default_test_type_registry() -> TestTypeRegistry:
+    static_case_ids = {
+        "core.text_generation",
+        "context.carwash_goal_persistence",
+        "core.workspace_multifile",
+        "research.free_prompt_consistency",
+        "performance.cold_warm",
+        "performance.repeat_variance",
+        *(case["id"] for case in BOT_CORE_CASES),
+        *(case["id"] for case in ALL_CAPABILITY_CASES),
+    }
+    _validate_level_contract(static_case_ids)
+
     definitions = [
         TestTypeDefinition(
             id="core.text_generation",
             version="1.0.0",
             title="Text generation",
             description="Basic text generation smoke test.",
-            minimum_level="quick",
+            minimum_level=_minimum_level("core.text_generation"),
             requirements=TestRequirements(text_generation=True),
             parameters=(),
             factory=lambda values: TextGenerationTest(),
@@ -61,7 +112,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Carwash goal persistence",
             description="Preserve the goal that the car itself must reach the car wash across a short conversation.",
-            minimum_level="moderate",
+            minimum_level=_minimum_level("context.carwash_goal_persistence"),
             mandatory=True,
             requirements=TestRequirements(text_generation=True),
             parameters=(),
@@ -72,7 +123,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Workspace multifile",
             description="Read input and create exact multi-file output.",
-            minimum_level="moderate",
+            minimum_level=_minimum_level("core.workspace_multifile"),
             requirements=TestRequirements(
                 text_generation=True,
                 workspace_read=True,
@@ -87,7 +138,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Free prompt consistency",
             description="Run one arbitrary prompt repeatedly to measure exact-output consistency.",
-            minimum_level="moderate",
+            minimum_level=_minimum_level("research.free_prompt_consistency"),
             requirements=TestRequirements(text_generation=True),
             parameters=(
                 TestParameter(
@@ -117,7 +168,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Cold and warm inference",
             description="Measure first-call behavior separately from repeated warm inference.",
-            minimum_level="moderate",
+            minimum_level=_minimum_level("performance.cold_warm"),
             requirements=TestRequirements(text_generation=True),
             parameters=(
                 TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly PERF_OK", multiline=True),
@@ -133,7 +184,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Repeat variance",
             description="Measure latency and generation-throughput variance across repeated identical calls.",
-            minimum_level="moderate",
+            minimum_level=_minimum_level("performance.repeat_variance"),
             requirements=TestRequirements(text_generation=True),
             parameters=(
                 TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly VAR_OK", multiline=True),
@@ -182,7 +233,7 @@ def test_matrix_for_level(
     level: TestLevel,
     registry: TestTypeRegistry | None = None,
 ) -> TestMatrix:
-    types = registry or default_test_type_registry()
+    types = registry if registry is not None else default_test_type_registry()
     matrix = TestMatrix()
     for definition in types.definitions_for_level(level):
         if definition.id in AUTOMATED_SUITE_EXCLUSIONS:

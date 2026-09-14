@@ -111,9 +111,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             return (("Actions: -", curses.A_DIM),)
         segments: list[tuple[str, int]] = [("Actions:", curses.A_DIM)]
         for item in definitions:
-            segments.append((" ", 0))
-            segments.append((item.sequence_label, curses.A_REVERSE | curses.A_BOLD))
-            segments.append((" ", 0))
+            segments.append((f" {item.sequence_label} ", curses.A_REVERSE | curses.A_BOLD))
             segments.append((item.label, 0))
         return tuple(segments)
 

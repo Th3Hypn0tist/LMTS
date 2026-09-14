@@ -167,6 +167,32 @@ function require_array_field(array $report, string $name): array {
     return $value;
 }
 
+function canonicalize_json_value(mixed $value): mixed {
+    if (!is_array($value)) return $value;
+    if (array_is_list($value)) {
+        return array_map('canonicalize_json_value', $value);
+    }
+    ksort($value, SORT_STRING);
+    foreach ($value as $key => $item) {
+        $value[$key] = canonicalize_json_value($item);
+    }
+    return $value;
+}
+
+function validate_record(array $record): void {
+    $id = trim((string)($record['id'] ?? ''));
+    if ($id === '') fail_response(400, 'report record id is missing');
+    foreach (['coordinates', 'outcome', 'metrics', 'evidence'] as $field) {
+        if (!isset($record[$field]) || !is_array($record[$field])) {
+            fail_response(400, "report record $id is missing $field");
+        }
+    }
+    if ($record['coordinates'] === []) fail_response(400, "report record $id has no coordinates");
+    if (trim((string)($record['outcome']['status'] ?? '')) === '' || trim((string)($record['outcome']['result'] ?? '')) === '') {
+        fail_response(400, "report record $id has incomplete outcome");
+    }
+}
+
 try {
     $pdo = new PDO($config['dsn'], $config['user'], $config['password'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -206,7 +232,7 @@ try {
     $meta = require_array_field($report, 'report');
     $source = require_array_field($report, 'source');
     $dimensions = require_array_field($report, 'dimensions');
-    require_array_field($report, 'entities');
+    $entities = require_array_field($report, 'entities');
     require_array_field($report, 'metric_definitions');
     $records = require_array_field($report, 'records');
     $summary = require_array_field($report, 'summary');
@@ -216,7 +242,24 @@ try {
     if (!array_is_list($records)) fail_response(400, 'report.records must be an array');
     if (!array_is_list($views)) fail_response(400, 'report.views must be an array');
     if (!isset($summary['records']) || !is_int($summary['records'])) fail_response(400, 'report.summary.records must be an integer');
+    if ($summary['records'] !== count($records)) fail_response(400, 'report.summary.records does not match records array');
     if (!isset($summary['outcomes']) || !is_array($summary['outcomes'])) fail_response(400, 'report.summary.outcomes must be an object');
+    foreach (['pass', 'fail', 'error', 'cancelled', 'unknown'] as $outcomeName) {
+        if (!array_key_exists($outcomeName, $summary['outcomes']) || !is_int($summary['outcomes'][$outcomeName])) {
+            fail_response(400, "report.summary.outcomes.$outcomeName must be an integer");
+        }
+    }
+    foreach ($dimensions as $dimensionId => $dimension) {
+        if (!is_array($dimension)) fail_response(400, "dimension $dimensionId must be an object");
+        $entityType = trim((string)($dimension['entity_type'] ?? ''));
+        if ($entityType === '' || !isset($entities[$entityType]) || !is_array($entities[$entityType])) {
+            fail_response(400, "dimension $dimensionId references missing entity type");
+        }
+    }
+    foreach ($records as $record) {
+        if (!is_array($record)) fail_response(400, 'report.records contains a non-object value');
+        validate_record($record);
+    }
 
     $reportId = trim((string)($meta['id'] ?? ''));
     $reportType = trim((string)($meta['type'] ?? ''));
@@ -229,7 +272,8 @@ try {
 
     $createdAt = new DateTimeImmutable($createdAtRaw);
     $createdAtSql = $createdAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s.u');
-    $reportJson = json_encode($report, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    $canonicalReport = canonicalize_json_value($report);
+    $reportJson = json_encode($canonicalReport, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
     $pdo->beginTransaction();
     $existingStmt = $pdo->prepare('SELECT report_json FROM reports WHERE report_id = ? FOR UPDATE');
@@ -237,7 +281,9 @@ try {
     $existingJson = $existingStmt->fetchColumn();
 
     if ($existingJson !== false) {
-        $same = hash_equals(hash('sha256', (string)$existingJson), hash('sha256', $reportJson));
+        $existingReport = json_decode((string)$existingJson, true, 512, JSON_THROW_ON_ERROR);
+        $existingCanonical = json_encode(canonicalize_json_value($existingReport), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $same = hash_equals(hash('sha256', $existingCanonical), hash('sha256', $reportJson));
         $pdo->commit();
         if (!$same) fail_response(409, 'report id already exists with different content');
         echo json_encode(['ok' => true, 'id' => $reportId, 'version' => LMTS_REPORT_VERSION, 'created' => false], JSON_UNESCAPED_SLASHES);

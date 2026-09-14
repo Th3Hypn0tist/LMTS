@@ -97,11 +97,8 @@ class ModelDownloaderPage:
         if not refs:
             host.message = "enter at least one model reference"
             return
-        if len(refs) != len(set(refs)):
-            host.message = "model reference list contains duplicates"
-            return
         try:
-            items = [self.queue.enqueue(downloader.id, model_ref) for model_ref in refs]
+            items = self.queue.enqueue_many(downloader.id, refs)
         except (KeyError, ValueError, RuntimeError) as exc:
             host.message = f"cannot queue model download: {exc}"
             return
@@ -146,6 +143,14 @@ class ModelDownloaderPage:
         if chosen is None:
             return
         model_ref = self._installed_cache[chosen].model_ref
+        live = {
+            item.model_ref
+            for item in self.queue.items()
+            if item.module_id == downloader.id and item.state in {"queued", "downloading"}
+        }
+        if model_ref in live:
+            host.message = f"cannot delete model while download is queued or active: {model_ref}"
+            return
         confirm = host.choose(stdscr, f"Delete {model_ref}?", ["No", "Delete"], 0)
         if confirm != 1:
             return

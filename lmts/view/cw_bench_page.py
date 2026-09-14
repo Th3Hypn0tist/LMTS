@@ -51,7 +51,7 @@ class CWBenchPage:
             cic_line = f"ERROR: {exc}"
             languages = "<unavailable>"
         return (
-            "Challenge / CW Bench",
+            "Deep / CW Bench",
             "",
             f"CW sources      : {self.sources_root} ({source_status})",
             f"Selected source : {self.source.ref if self.source is not None else '-'}",

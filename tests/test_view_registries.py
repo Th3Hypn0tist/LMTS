@@ -21,7 +21,11 @@ def test_lmts_top_level_tab_order() -> None:
     assert [(item.shortcut, item.id) for item in TAB_REGISTRY.children('root')] == [
         ('1', 'profile'),
         ('2', 'benchmark'),
-        ('3', 'settings'),
+        ('3', 'downloader'),
+        ('4', 'settings'),
+    ]
+    assert [item.id for item in TAB_REGISTRY.path('cw_bench')] == [
+        'root', 'benchmark', 'deep', 'cw_bench'
     ]
 
 
@@ -42,10 +46,12 @@ def test_shortcut_registry_matches_sequences() -> None:
 def test_shortcuts_are_scoped_by_topic_area() -> None:
     benchmark_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('benchmark',))}
     profile_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('profile',))}
+    deep_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('deep',))}
     settings_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('settings',))}
-    assert 'models' in benchmark_actions
-    assert 'models' not in profile_actions
+    assert {'benchmark.quick', 'benchmark.moderate', 'benchmark.deep'} <= benchmark_actions
+    assert 'benchmark.quick' not in profile_actions
     assert 'profile.cpu' in profile_actions
+    assert {'deep.cw_bench', 'deep.run', 'deep.results'} <= deep_actions
     assert 'settings.mysql' in settings_actions
     assert 'settings.mysql' not in benchmark_actions
 

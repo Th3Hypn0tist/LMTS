@@ -141,10 +141,7 @@ class LMTSViewProjector:
             for target in selected_targets:
                 lines.append(f"  {target.kind.upper():11} {target.id}")
 
-        live_matrix = self.state.live_matrix_lines()
-        if live_matrix:
-            lines.extend(["", *live_matrix])
-        elif self.state.tests:
+        if self.state.tests:
             lines.extend(["", "Configured test matrix"])
             level_marker = {"quick": "Q", "moderate": "M", "deep": "D"}
             for test in self.state.tests:

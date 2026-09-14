@@ -117,8 +117,17 @@ class SplitCursesViewHost(CursesViewHost):
             stdscr.erase()
             self._safe_addnstr(stdscr, 0, 0, title, screen_width, curses.A_BOLD)
 
+            cell_width = col_width + 2
+            available_for_cells = max(1, screen_width - row_width)
+            visible_column_count = max(1, available_for_cells // cell_width)
+            start_col = min(
+                max(0, col_index - visible_column_count + 1),
+                max(0, len(column_labels) - visible_column_count),
+            )
+            end_col = min(len(column_labels), start_col + visible_column_count)
+
             header = f"{'MODEL':<{row_width}}"
-            for label in column_labels:
+            for label in column_labels[start_col:end_col]:
                 header += f"  {str(label):^{col_width}}"
             self._safe_addnstr(stdscr, 2, 0, header, screen_width, curses.A_BOLD)
 
@@ -138,7 +147,9 @@ class SplitCursesViewHost(CursesViewHost):
                 x += row_width
                 if x >= screen_width:
                     continue
-                for source_col, value in enumerate(values[source_row]):
+                row_values = values[source_row]
+                for source_col in range(start_col, min(end_col, len(row_values))):
+                    value = row_values[source_col]
                     if x >= screen_width:
                         break
                     cell = f"  {str(value):^{col_width}}"
@@ -150,13 +161,14 @@ class SplitCursesViewHost(CursesViewHost):
                     if len(piece) < len(cell):
                         break
 
-            if summary:
-                self._safe_addnstr(stdscr, height - 2, 0, summary, screen_width)
+            range_hint = f"cols {start_col + 1}-{end_col}/{len(column_labels)}"
+            summary_line = f"{summary}  {range_hint}".strip() if summary else range_hint
+            self._safe_addnstr(stdscr, height - 2, 0, summary_line, screen_width)
             self._safe_addnstr(
                 stdscr,
                 height - 1,
                 0,
-                "Arrows select  Enter details  Esc back",
+                "Arrows select/scroll  Enter details  Esc back",
                 screen_width,
                 curses.A_DIM,
             )

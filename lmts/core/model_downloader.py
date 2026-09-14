@@ -17,6 +17,11 @@ class DownloadedModel:
     size_bytes: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def artifact_id(self) -> str:
+        digest = str(self.metadata.get("digest") or "").strip()
+        return f"{self.module_id}:{digest}" if digest else f"{self.module_id}:{self.model_ref}"
+
 
 @dataclass(frozen=True, slots=True)
 class ModelDownloadProgress:
@@ -56,6 +61,8 @@ class ModelDownloader(Protocol):
         progress: ProgressSink,
         cancel_event: threading.Event,
     ) -> None: ...
+
+    def delete(self, model_ref: str) -> None: ...
 
 
 class ModelDownloaderRegistry:
@@ -110,11 +117,7 @@ class ModelDownloadQueue:
         if not downloader.available():
             raise RuntimeError(f"model downloader is unavailable: {module_id}")
         with self._lock:
-            item = ModelDownloadQueueItem(
-                id=uuid.uuid4().hex,
-                module_id=module_id,
-                model_ref=model_ref,
-            )
+            item = ModelDownloadQueueItem(id=uuid.uuid4().hex, module_id=module_id, model_ref=model_ref)
             self._items.append(item)
             self._ensure_worker_locked(module_id)
             return item
@@ -132,19 +135,11 @@ class ModelDownloadQueue:
 
     def active(self, module_id: str | None = None) -> tuple[ModelDownloadQueueItem, ...]:
         with self._lock:
-            return tuple(
-                item
-                for item in self._items
-                if item.state == "downloading" and (module_id is None or item.module_id == module_id)
-            )
+            return tuple(item for item in self._items if item.state == "downloading" and (module_id is None or item.module_id == module_id))
 
     def queued(self, module_id: str | None = None) -> tuple[ModelDownloadQueueItem, ...]:
         with self._lock:
-            return tuple(
-                item
-                for item in self._items
-                if item.state == "queued" and (module_id is None or item.module_id == module_id)
-            )
+            return tuple(item for item in self._items if item.state == "queued" and (module_id is None or item.module_id == module_id))
 
     def cancel(self, item_id: str) -> None:
         with self._lock:
@@ -177,12 +172,7 @@ class ModelDownloadQueue:
         worker = self._workers.get(module_id)
         if worker is not None and worker.is_alive():
             return
-        worker = threading.Thread(
-            target=self._worker,
-            args=(module_id,),
-            name=f"lmts-download-queue-{module_id}",
-            daemon=True,
-        )
+        worker = threading.Thread(target=self._worker, args=(module_id,), name=f"lmts-download-queue-{module_id}", daemon=True)
         self._workers[module_id] = worker
         worker.start()
 
@@ -260,10 +250,7 @@ class ModelDownloadQueue:
                 if progress.status:
                     lines.append(f"     {progress.status}")
                 if progress.total_bytes is not None:
-                    lines.append(
-                        f"     {self._human_bytes(progress.completed_bytes)} / "
-                        f"{self._human_bytes(progress.total_bytes)}"
-                    )
+                    lines.append(f"     {self._human_bytes(progress.completed_bytes)} / {self._human_bytes(progress.total_bytes)}")
             if item.error:
                 lines.append(f"     ERROR: {item.error}")
         return tuple(lines)

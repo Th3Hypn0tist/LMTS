@@ -6,6 +6,8 @@ from lmts.tests.base import TestModule
 
 
 class TestRegistry:
+    __test__ = False
+
     def __init__(self, tests: Iterable[TestModule] = ()) -> None:
         self._tests: dict[str, TestModule] = {}
         for test in tests:

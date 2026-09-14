@@ -10,10 +10,10 @@ from lmts.core.result_export import build_matrix_bundle, export_matrix_bundle, e
 from lmts.core.runtime_targets import load_runtime_targets
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, MySQLSettings, load_settings, save_settings
 from lmts.core.store import RunStore
-from lmts.lib.view import LayoutPane, RegistrySplitCursesViewHost, choose_directory
+from lmts.lib.view import LayoutPane, RegistrySplitCursesViewHost, choose_directory, choose_with_preview
 from lmts.reporting import project_matrix_bundle
 from lmts.tests.base import test_ref
-from lmts.tests.catalog import default_test_matrix, default_test_type_registry
+from lmts.tests.catalog import default_test_matrix, default_test_type_registry, test_matrix_for_level
 from lmts.tests.types import TestParameter, TestTypeDefinition
 from lmts.tools.ftp_profiles import load_ftp_profiles
 from lmts.tools.mysql_config import deploy_mysql_config
@@ -261,7 +261,7 @@ def run() -> None:
             host.scroll = 0
             set_message('')
 
-        def select_suite(level: str, tab_id: str) -> None:
+        def select_suite(level: str, tab_id: str = 'benchmark') -> None:
             if not controller.set_suite_level(level):
                 set_message(controller.state.message)
                 return
@@ -273,6 +273,9 @@ def run() -> None:
             parent = TAB_REGISTRY.parent(current_tab())
             if parent is None or parent.id == 'root':
                 set_message('already at top level')
+                return
+            if current_tab() == 'cw_bench':
+                open_tab('benchmark')
                 return
             open_tab(parent.id)
 
@@ -352,10 +355,6 @@ def run() -> None:
             controller.select_all_tests()
             if controller.run_selected():
                 show_progress()
-            set_message(controller.state.message)
-
-        def test_all(_stdscr: curses.window) -> None:
-            controller.test_all()
             set_message(controller.state.message)
 
         def choose_matrix_result(title: str, predicate=None):
@@ -600,6 +599,133 @@ def run() -> None:
             controller.refresh()
             set_message(controller.state.message)
 
+        def suite_preview(level: str) -> tuple[str, ...]:
+            matrix = test_matrix_for_level(level, controller.test_types)
+            refs = [test_ref(test) for test in matrix.tests()]
+            current = 'CURRENT' if controller.state.suite_level == level else ''
+            lines = [f'{level.upper()}  {len(refs)} automatic test(s)  {current}'.rstrip(), '']
+            lines.extend(f'  {ref}' for ref in refs)
+            return tuple(lines)
+
+        def tests_dialog(_stdscr: curses.window) -> None:
+            if controller.state.running:
+                set_message('test matrix is running')
+                return
+            options = ['Quick suite', 'Moderate suite', 'Deep suite', 'Select tests', 'Add test', 'Remove test', 'CW Bench']
+            levels = ('quick', 'moderate', 'deep')
+
+            def preview(index: int) -> tuple[str, ...]:
+                if index < 3:
+                    return suite_preview(levels[index])
+                if index == 3:
+                    selected = sorted(controller.state.selected_test_refs)
+                    return (f'{len(selected)} selected / {len(controller.state.tests)} configured', '', *[f'  {ref}' for ref in selected])
+                if index == 4:
+                    return ('Add one configured test instance from the test type registry.',)
+                if index == 5:
+                    return ('Remove one configured test instance from the current suite.',)
+                return (
+                    'CW Bench',
+                    '',
+                    'Generate an implementation from canonical CW, import through CIC,',
+                    'and compare canonical CW against imported canonical CW.',
+                )
+
+            chosen = choose_with_preview(stdscr, 'Tests', options, preview, selected=levels.index(controller.state.suite_level) if controller.state.suite_level in levels else 1)
+            if chosen is None:
+                return
+            if chosen < 3:
+                select_suite(levels[chosen])
+            elif chosen == 3:
+                select_tests(stdscr)
+            elif chosen == 4:
+                add_test(stdscr)
+            elif chosen == 5:
+                remove_test(stdscr)
+            else:
+                open_tab('cw_bench')
+
+        def _start_run_scope(*, all_tests: bool, all_models: bool) -> None:
+            if controller.state.running:
+                set_message('test matrix already running')
+                return
+            original_tests = set(controller.state.selected_test_refs)
+            original_targets = set(controller.state.selected_target_ids)
+            if all_tests:
+                controller.state.selected_test_refs = {test_ref(test) for test in controller.state.tests}
+            if all_models:
+                controller.state.selected_target_ids = {target.id for target in controller.state.targets if target.kind == 'model'}
+            try:
+                controller.run_selected()
+            finally:
+                controller.state.selected_test_refs = original_tests
+                controller.state.selected_target_ids = original_targets
+            set_message(controller.state.message)
+
+        def run_dialog(_stdscr: curses.window) -> None:
+            if controller.state.running:
+                chosen = host.choose(stdscr, 'Run', ['Cancel run'])
+                if chosen == 0:
+                    cancel(stdscr)
+                return
+
+            options = ['Run', 'Run all tests', 'Run all tests to all models']
+
+            def preview(index: int) -> tuple[str, ...]:
+                selected_tests = len(controller.state.selected_tests)
+                all_tests = len(controller.state.tests)
+                selected_targets = len(controller.state.selected_targets)
+                model_targets = sum(1 for target in controller.state.targets if target.kind == 'model')
+                if index == 0:
+                    return (
+                        'Selected tests -> selected targets',
+                        '',
+                        f'Tests   : {selected_tests}',
+                        f'Targets : {selected_targets}',
+                        f'Runs    : {selected_tests * selected_targets}',
+                    )
+                if index == 1:
+                    return (
+                        'All configured tests -> selected targets',
+                        '',
+                        f'Tests   : {all_tests}',
+                        f'Targets : {selected_targets}',
+                        f'Runs    : {all_tests * selected_targets}',
+                    )
+                return (
+                    'All configured tests -> all model targets',
+                    '',
+                    f'Tests   : {all_tests}',
+                    f'Models  : {model_targets}',
+                    f'Runs    : {all_tests * model_targets}',
+                    '',
+                    'Bots and compositions are not included.',
+                )
+
+            chosen = choose_with_preview(stdscr, 'Run', options, preview)
+            if chosen is None:
+                return
+            if chosen == 0:
+                _start_run_scope(all_tests=False, all_models=False)
+            elif chosen == 1:
+                _start_run_scope(all_tests=True, all_models=False)
+            else:
+                _start_run_scope(all_tests=True, all_models=True)
+
+        def output_dialog(_stdscr: curses.window) -> None:
+            options = ['Historical results', 'Compare targets', 'Publish report', 'Export errors']
+            chosen = host.choose(stdscr, 'Output', options)
+            if chosen is None:
+                return
+            if chosen == 0:
+                browse_results(stdscr)
+            elif chosen == 1:
+                compare_targets_action(stdscr)
+            elif chosen == 2:
+                publish_report_action(stdscr)
+            else:
+                export_errors(stdscr)
+
         bindings = {
             'tab.profile': lambda _: open_tab('profile'),
             'tab.benchmark': lambda _: open_tab('benchmark'),
@@ -611,9 +737,11 @@ def run() -> None:
             'profile.memory': lambda _: profile_reference('memory'),
             'profile.gpu': lambda _: profile_reference('gpu'),
             'profile.npu': lambda _: profile_reference('npu'),
-            'benchmark.quick': lambda _: select_suite('quick', 'benchmark'),
-            'benchmark.moderate': lambda _: select_suite('moderate', 'benchmark'),
-            'benchmark.deep': lambda _: select_suite('deep', 'deep'),
+            'benchmark.tests': tests_dialog,
+            'benchmark.targets': select_targets,
+            'benchmark.run': run_dialog,
+            'benchmark.output': output_dialog,
+            'benchmark.refresh': refresh,
             'deep.cw_bench': lambda _: open_tab('cw_bench'),
             'deep.run': run_deep_suite,
             'deep.results': browse_results,
@@ -623,17 +751,6 @@ def run() -> None:
             'cw.run': run_cw_bench,
             'cw.results': browse_cw_results,
             'cw.cancel': cancel,
-            'targets': select_targets,
-            'tests': select_tests,
-            'test.add': add_test,
-            'test.remove': remove_test,
-            'run.selected': run_selected,
-            'run.all': test_all,
-            'results': browse_results,
-            'benchmark.compare': compare_targets_action,
-            'benchmark.publish': publish_report_action,
-            'errors': export_errors,
-            'refresh': refresh,
             'settings.output': edit_output_folder,
             'settings.server': server_setup,
             'settings.mysql': edit_mysql,

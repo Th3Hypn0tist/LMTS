@@ -18,15 +18,29 @@ class DVSTest(unittest.TestCase):
                 {'name': 'id', 'selector': 'id'},
                 {'name': 'number', 'selector': 'value'},
                 {'name': 'flag', 'selector': 'flag'},
-                {'name': 'missing', 'selector': 'missing', 'on_missing': 'null'},
+                {'name': 'explicit_null', 'selector': 'missing'},
             ],
         })
-        table = template.extract({'records': [{'id': 'a', 'value': 42, 'flag': True}]})
-        self.assertEqual(table.columns, ('id', 'number', 'flag', 'missing'))
+        table = template.extract({'records': [{'id': 'a', 'value': 42, 'flag': True, 'missing': None}]})
+        self.assertEqual(table.columns, ('id', 'number', 'flag', 'explicit_null'))
         self.assertEqual(table.rows, (('a', '42', 'true', 'null'),))
         self.assertTrue(all(isinstance(cell, str) for row in table.rows for cell in row))
 
-    def test_missing_field_is_error_without_explicit_on_missing(self) -> None:
+    def test_input_template_rejects_on_missing_semantics(self) -> None:
+        with self.assertRaises(ValueError):
+            InputTemplate.from_dict({
+                'format': 's3d.dvs.input-template',
+                'version': '1.0',
+                'id': 'legacy-fallback',
+                'source_format': 'example/1.0',
+                'reader': 'json',
+                'rows': 'records[*]',
+                'columns': [
+                    {'name': 'missing', 'selector': 'missing', 'on_missing': 'null'},
+                ],
+            })
+
+    def test_missing_field_is_error(self) -> None:
         template = InputTemplate.from_dict({
             'format': 's3d.dvs.input-template',
             'version': '1.0',

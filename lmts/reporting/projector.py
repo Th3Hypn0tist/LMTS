@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -139,6 +140,21 @@ def _record_evidence(run: dict[str, Any]) -> dict[str, Any]:
     return evidence
 
 
+def _system_profiles(runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    profiles: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for run in runs:
+        context = run.get('system_context')
+        if not isinstance(context, dict):
+            continue
+        canonical = json.dumps(context, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        profiles.append(context)
+    return profiles
+
+
 def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     if bundle.get('export_type') != 'lmts.matrix_bundle':
         raise ValueError('source is not an lmts.matrix_bundle export')
@@ -222,6 +238,8 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(created_at, str) or not created_at:
         raise ValueError('matrix must contain completed_at or started_at')
 
+    system_profiles = _system_profiles([run for run in runs if isinstance(run, dict)])
+
     return {
         'format': REPORT_FORMAT,
         'version': REPORT_VERSION,
@@ -256,6 +274,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
             'outcomes': outcomes,
             'targets': len(target_entities),
             'tests': len(test_entities),
+            'system_profiles': system_profiles,
         },
         'views': [{
             'id': 'results',

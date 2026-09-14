@@ -21,14 +21,14 @@ def _context(tmp_path, text: str) -> TestContext:
     )
 
 
-def test_bot_core_cases_are_registered_but_not_default_matrix() -> None:
+def test_bot_core_cases_are_registered_and_in_default_matrix() -> None:
     registry = default_test_type_registry()
     registered = {definition.id for definition in registry.definitions()}
     bot_ids = {case["id"] for case in BOT_CORE_CASES}
     assert bot_ids <= registered
 
     default_ids = {test.id for test in default_test_matrix(registry).tests()}
-    assert not (bot_ids & default_ids)
+    assert bot_ids <= default_ids
 
 
 def test_every_bot_core_case_scores_exact_success(tmp_path) -> None:

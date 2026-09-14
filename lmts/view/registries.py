@@ -10,6 +10,8 @@ TAB_REGISTRY = TabRegistry(
         TabDefinition("root", "AIGM LMTS", parent=None, order=0),
         TabDefinition("profile", "Profile", parent="root", shortcut="1", order=10),
         TabDefinition("benchmark", "Benchmark", parent="root", shortcut="2", order=20),
+        TabDefinition("challenge", "Challenge", parent="benchmark", order=21),
+        TabDefinition("cw_bench", "CW Bench", parent="challenge", order=22),
         TabDefinition("downloader", "Model Downloader", parent="root", shortcut="3", order=30),
         TabDefinition("settings", "Settings", parent="root", shortcut="4", order=40),
     ]
@@ -32,6 +34,7 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("profile.npu", ("v",), "Test NPU", "Profile", scope="profile", order=130),
     ShortcutDefinition("profile.scan", ("p",), "Profile system", "Profile", scope="profile", order=140),
 
+    ShortcutDefinition("benchmark.challenge", ("z",), "Challenge", "Benchmark", scope="benchmark", order=90),
     ShortcutDefinition("targets", ("m",), "Targets", "Benchmark", scope="benchmark", order=100),
     ShortcutDefinition("tests", ("t",), "Matrix", "Benchmark", scope="benchmark", order=110),
     ShortcutDefinition("test.add", ("n",), "Add test", "Benchmark", scope="benchmark", order=120),
@@ -44,6 +47,15 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("cancel", ("c",), "Cancel", "Benchmark", scope="benchmark", order=180),
     ShortcutDefinition("errors", ("e",), "Errors", "Benchmark", scope="benchmark", order=190),
     ShortcutDefinition("refresh", ("x",), "Refresh", "Benchmark", scope="benchmark", order=200),
+
+    ShortcutDefinition("challenge.cw_bench", ("z",), "CW Bench", "Challenge", scope="challenge", order=100),
+
+    ShortcutDefinition("cw.source", ("z",), "CW source", "CW Bench", scope="cw_bench", order=100),
+    ShortcutDefinition("cw.language", ("x",), "Output language", "CW Bench", scope="cw_bench", order=110),
+    ShortcutDefinition("cw.models", ("c",), "Models", "CW Bench", scope="cw_bench", order=120),
+    ShortcutDefinition("cw.run", ("v",), "Run CW Bench", "CW Bench", scope="cw_bench", order=130),
+    ShortcutDefinition("cw.results", ("b",), "Results", "CW Bench", scope="cw_bench", order=140),
+    ShortcutDefinition("cw.cancel", ("n",), "Cancel", "CW Bench", scope="cw_bench", order=150),
 
     ShortcutDefinition("downloader.module", ("m",), "Select module", "Model Downloader", scope="downloader", order=100),
     ShortcutDefinition("downloader.download", ("d",), "Download model", "Model Downloader", scope="downloader", order=110),

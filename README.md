@@ -1,111 +1,386 @@
 # AIGM LMTS
 
-Language Model Test Suite for measuring model capabilities, limits, behavior and execution characteristics across reusable, versioned tests.
+**Local-first evaluation laboratory for models, bots and compositions.**
 
-LMTS is a standalone local-first test harness. Models are discovered through providers, tests are configured independently of models, execution is bounded, and results are stored as canonical records that can be projected into reports and visualizations.
+AIGM LMTS is a testing and evaluation system for measuring capability, behavior, execution characteristics and system-level performance under reusable, versioned tests.
 
-## Core model
+The goal is not to produce a universal leaderboard. LMTS is built to collect reproducible evidence about how an evaluation target behaves on a known system under a known test protocol.
+
+**One evaluation model. Many target types. No duplicate truth.**
+
+LMTS separates target identity, test semantics, execution, canonical evidence and presentation. Providers do not own tests. Views do not own results. Reports do not reconstruct missing evidence. Invalid or missing canonical data is treated as an error instead of being silently replaced with fallback behavior.
+
+## Core architecture
 
 ```text
-Provider
-  -> ModelDescriptor
-  -> ConfiguredTest
-  -> Workspace
-  -> TestRunner
-  -> RunResult
-  -> MatrixRunRecord
-  -> Report / View / Export
+ModelProvider -> ModelDescriptor -> ModelExecutor ---------┐
+                                                          │
+Runtime target -> RuntimeExecutor ------------------------┤
+  bot / composition                                      │
+                                                          v
+                                                EvaluationSubject
+                                             model / bot / composition
+                                                          +
+                                                   ConfiguredTest
+                                                          |
+                                                          v
+                                                     TestRunner
+                                              /           |           \
+                                      Workspace       Telemetry    Response monitor
+                                              \           |           /
+                                                          v
+                                                     RunResult
+                                                          |
+                                                          v
+                                                   MatrixRunRecord
+                                                          |
+                                             +------------+------------+
+                                             |            |            |
+                                            View        Report       Export
 ```
 
 The boundaries are intentional:
 
-- providers own model discovery and generation, not test semantics
-- tests own evaluation semantics, not provider behavior
-- the runner executes tests without test-type-specific knowledge
-- views and reports project canonical data without becoming the source of truth
+- **providers** own model discovery and generation, not test semantics
+- **runtime targets** adapt standalone bots and compositions into the same execution boundary
+- **EvaluationSubject** identifies what is being evaluated independently from how it is executed
+- **test definitions** own evaluation semantics, requirements, parameters and minimum test level
+- **TestRunner** executes tests without target-specific or CW-specific knowledge
+- **canonical stores** own run and matrix evidence
+- **views, reports, SQL and exports** are projections of canonical data
 
-## Current capabilities
+## Evaluation targets
 
-LMTS currently provides:
+LMTS uses one target model for three subject kinds:
 
-- provider and model abstractions
-- local Ollama model discovery
-- normalized generation responses and timing data
-- bounded `input` / `work` / `output` workspaces
-- workspace operation tracing
-- LMTS Workspace Protocol v1 for text-mediated workspace operations
-- modular and versioned test types
-- independently configured test instances
-- multi-model / multi-test matrix execution
-- canonical append-only run records
-- canonical matrix manifests
-- CPU, memory, NVIDIA GPU and environment profiling
-- read-only live model response monitoring
-- matrix-first result browsing with run-level drill-down
-- disk export for individual canonical runs and complete matrix bundles
-- LMTS Report Format v1 projections
-- report publishing to an LMTS results server
-- static/web deployment support for the report viewer
-- disk and FTP output targets with saved FTP profiles
+| Kind | Source | Execution |
+| --- | --- | --- |
+| `model` | model provider | `ModelExecutor` |
+| `bot` | runtime target definition | `RuntimeExecutor` |
+| `composition` | runtime target definition with members | `RuntimeExecutor` |
 
-Current executable test types include:
+Models can be discovered through providers. The current local provider path supports Ollama.
+
+Standalone bots and compositions are configured through `.lmts/runtime-targets.json` and can use either HTTP or subprocess transport. Both transports use LMTS Runtime Protocol v1 and normalize their output into the same response model used by provider-backed models.
+
+A composition has explicit members and roles. Target IDs must be unique across models, bots and compositions.
+
+## Test model
+
+A test type is not tied to a specific model. LMTS separates the reusable test definition from a configured test instance:
 
 ```text
-core.text_generation@1.0.0
-core.workspace_multifile@1.0.0
+TestTypeDefinition
+  -> version
+  -> requirements
+  -> parameters
+  -> minimum_level
+  -> factory
+
+ConfiguredTest
+  -> type_ref
+  -> instance_id
+  -> concrete parameters
+  -> executable test module
 ```
 
-The test system is extensible: these are current test types, not a closed test catalog.
+The default registry currently contains **36 test types** covering core generation, workspace behavior, bot behavior, reasoning, context retention, robustness, performance and free-prompt research.
+
+### Cumulative test levels
+
+LMTS uses three explicit cumulative levels:
+
+| Level | Meaning | Current automatic suite |
+| --- | --- | ---: |
+| **Quick** | tests whose `minimum_level` is `quick` | 19 tests |
+| **Moderate** | Quick + tests whose `minimum_level` is `moderate` | 35 tests |
+| **Deep** | Quick + Moderate + Deep tests and Deep-specific workflows | 35 automatic tests + CW Bench |
+
+`minimum_level` is explicit canonical metadata. A test ID without an explicit level classification is rejected.
+
+The default Benchmark matrix is **Moderate**.
+
+The registry contains one additional user-configured test, `research.free_prompt_consistency@1.0.0`, which is intentionally excluded from automatic suites because LMTS will not invent a prompt on the user's behalf.
+
+Two tests are currently marked mandatory:
+
+```text
+reasoning.carwash_transport@1.0.0
+context.carwash_goal_persistence@1.0.0
+```
+
+## Current test domains
+
+The current catalog includes tests for:
+
+- basic text generation
+- exact instruction following
+- negative constraints and stop conditions
+- missing-information and ambiguity handling
+- contradiction detection
+- evidence-before-claim behavior
+- scope and goal retention
+- multi-constraint behavior and self-correction
+- arithmetic, symbolic and dependency reasoning
+- ordering and impossible constraints
+- single- and multi-needle context retrieval
+- early-context retention and conflict priority
+- distractor resistance
+- typo, Unicode, noisy-input and mixed-language robustness
+- multi-file workspace execution
+- cold vs warm inference behavior
+- repeated-call performance variance
+- user-defined free-prompt consistency research
+
+The catalog is extensible. New test types can be registered independently from providers and target types.
+
+## Deep testing and CW Bench
+
+Deep contains the dedicated **CW Bench** workflow for evaluating how well a model can implement a Canonical Wireframe and preserve its semantics through a code round trip.
+
+```text
+./CW_sources/<source>.json
+          |
+          v
+      Source CW
+          |
+          v
+        Model
+          |
+          v
+Generated implementation
+          |
+          v
+   Structure / CIC import
+          |
+          v
+     Imported CW
+          |
+          v
+Canonical CW comparison
+```
+
+The comparison happens **CW to CW**, not by scoring generated source text directly.
+
+The selected source is loaded from `./CW_sources/` and identified by its canonical identity, version and content digest. The CIC adapter also records the importer identity, Structure/CIC git commit, CIC source digest, IR version and reported language capabilities.
+
+CW Bench uses the LMTS Workspace Protocol to generate the implementation, imports that implementation back through the same Structure/CIC mechanism used for code ingress, and compares the resulting canonical CW against the source CW.
+
+Import failure, an unexpected output file set, unsupported language mapping or semantic mismatch is a test failure. There is no textual fallback evaluator.
+
+The current CW Bench output-file mapping supports:
+
+```text
+python
+javascript
+html
+css
+```
+
+The default CIC root is `../Structure`.
+
+## System profile and runtime evidence
+
+Benchmark execution requires a valid canonical system profile. The TUI profiles the system when the required profile is missing.
+
+The profile covers:
+
+- CPU
+- memory
+- GPU
+- NPU
+- reference performance measurements
+
+Runs can also collect runtime telemetry and normalized response data such as token counts, total time, time to first token and provider-reported performance metrics when available.
+
+System context is stored with the run evidence so result interpretation is not detached from the machine that produced it.
+
+## Workspace isolation
+
+Tests can execute inside a bounded LMTS workspace with separate mounts:
+
+```text
+input/
+work/
+output/
+```
+
+Test input is staged into the workspace, model operations are traced, and write access is constrained to the workspace contract.
+
+LMTS Workspace Protocol v1 provides a common text-mediated workspace interaction model for targets that do not expose native tool calling.
+
+This lets workspace tests use one controlled execution boundary instead of embedding provider-specific file semantics into individual tests.
 
 ## Canonical result storage
 
-Canonical run data is stored by model and configured test:
+Canonical runs are append-only filesystem records.
 
 ```text
 results/
-├── models/
-│   └── <safe-model-id>/
-│       └── tests/
-│           └── <safe-test-ref>/
-│               └── runs/
-│                   └── <run-id>.json
+├── subjects/
+│   └── <kind>/
+│       └── <subject-id>/
+│           └── <subject-fingerprint>/
+│               └── tests/
+│                   └── <test-ref>/
+│                       └── runs/
+│                           └── <run-id>.json
 └── matrices/
     └── <matrix-id>.json
 ```
 
-Canonical data is the source of truth. Exports, reports, SQL records and visualizations are projections of that data and must not reconstruct missing canonical evidence.
+A run record can contain:
 
-## Results and reporting
+- evaluation subject identity and fingerprint
+- executor identity and kind
+- runtime configuration fingerprint
+- system context
+- status and verdict
+- score dimensions
+- metrics
+- artifacts
+- normalized responses
+- workspace trace
+- telemetry
+- structured error evidence
 
-The primary result overview is a matrix:
+Canonical data is the source of truth. Exports, reports, database records and visualizations are projections of that data and must not reconstruct missing canonical evidence.
+
+## Matrix results
+
+The primary overview is target x test:
 
 ```text
-                 Test A   Test B   Test C
-Model A           PASS     FAIL     PASS
-Model B           PASS     PASS     ERROR
-Model C           FAIL     PASS     PASS
+                         Test A   Test B   Test C
+MODEL model-a              PASS     FAIL     PASS
+BOT bot-writer              PASS     PASS     ERROR
+COMPOSITION writer-review   PASS     PASS     PASS
 ```
 
-A matrix cell can be opened for run-level details. Execution state and test verdict remain separate, so a completed run may still have a `FAIL` verdict while protocol or execution failures can be represented as `ERROR`.
+The main matrix is intentionally quick to read. A cell can be opened for run-level detail.
 
-LMTS Report Format v1 provides a generic projection layer based on dimensions, entities, records, outcomes, metrics and views. The frontend consumes that report format rather than depending directly on canonical storage or SQL structure.
+Execution state and evaluation verdict remain separate. A run may execute successfully and still receive `FAIL`, while execution or protocol failures can be represented as `ERROR`.
 
-## Workspace isolation
+LMTS also supports target-to-target comparison from canonical matrix evidence.
 
-The workspace protocol is intentionally bounded. Test input is staged as immutable input, while model writes are limited to isolated `work` and `output` mounts. This provides a common execution baseline even for models and providers without native tool calling.
+## Results, exports and reporting
 
-## Runtime
+LMTS currently provides:
 
-LMTS uses the Python standard library for its runtime and has no third-party Python runtime dependencies.
+- matrix-first result browsing
+- run-level drill-down
+- export of an individual canonical run
+- export of a complete matrix bundle
+- LMTS Report Format v1 projection
+- report publishing through the report API path
+- static/web report deployment support
+- disk and FTP output targets
+- saved FTP and report profiles
+- MySQL configuration as a projection/integration path, not canonical storage
 
-Start the TUI from the repository root:
+The live response monitor is read-only. It shows execution output without becoming part of test control or result ownership.
+
+## TUI
+
+Start the application from the repository root:
 
 ```bash
 python3 -m lmts
 ```
 
-The repository also exposes CLI entry points for model discovery, profiling, test execution and other lower-level operations.
+Top-level tabs are registry-driven:
 
-## Design principle
+```text
+1. Profile | 2. Benchmark | 3. Model Downloader | 4. Settings
+```
 
-LMTS separates execution, canonical evidence, test semantics, providers, projections and presentation so each layer can evolve without duplicating truth or leaking responsibilities across boundaries.
+Benchmark exposes cumulative suite selection directly:
+
+```text
+z. Quick
+x. Moderate
+c. Deep
+```
+
+Deep contains its own page with CW Bench, Deep-suite execution and result browsing.
+
+Application shortcuts are defined through the shortcut registry and can be overridden through `.lmts/shortcuts.json`. Invalid or ambiguous shortcut configuration is rejected rather than silently replaced with defaults.
+
+Global navigation includes:
+
+```text
+Esc Esc   Back
+q q q     Quit
+```
+
+## Model Downloader
+
+LMTS includes a modular downloader core with:
+
+- downloader registry
+- installed-model descriptors
+- FIFO download queues
+- one active transfer per downloader module
+- progress reporting
+- cancellation
+- digest-aware artifact IDs when the backend provides a digest
+- a downloader contract for listing, downloading and deleting models
+
+The current Ollama adapter implements availability checks, installed-model discovery through `/api/tags`, and streamed model pulls through `/api/pull` with progress reporting and cancellation.
+
+**Current implementation boundary:** the Model Downloader TUI tab exists, but its end-to-end operations are not yet wired into the TUI controller. The Ollama adapter also does not yet implement the downloader contract's delete operation. The README intentionally does not present those paths as completed features.
+
+## AIGMos View compatibility
+
+LMTS also exposes an AIGMos View adapter at:
+
+```text
+|lmts:view
+```
+
+The adapter projects LMTS state while leaving render ownership to the AIGMos layout system. LMTS provides the view data; it does not duplicate the host's rendering logic.
+
+## Runtime
+
+LMTS requires Python 3.11 or newer.
+
+The Python runtime has **zero third-party runtime dependencies**:
+
+```toml
+dependencies = []
+```
+
+The repository exposes command-line entry points for the main CLI, TUI and standalone view surface.
+
+## Repository structure
+
+```text
+lmts/
+├── core/        canonical execution, subjects, stores, matrices, downloader and CW Bench core
+├── providers/   model provider adapters
+├── tests/       test contracts, catalog and executable test modules
+├── tools/       profiling, telemetry, downloader and deployment utilities
+├── view/        TUI, controller, projections and AIGMos View adapter
+├── reporting/   report projection and schemas
+├── lib/         shared bounded runtime and view primitives
+├── config/      server/database configuration assets
+└── install/     deployment helpers
+
+tests/           repository-level verification tests
+```
+
+`./CW_sources/` is a runtime source directory for user-provided Canonical Wireframes and is not required to exist until CW Bench is used.
+
+## Design rules
+
+LMTS is built around a small set of architectural constraints:
+
+1. **Canonical evidence first.** Results are stored before they are projected.
+2. **No duplicate truth.** Views, reports and databases do not become alternate result authorities.
+3. **No silent fallback.** Missing protocol data, invalid configuration and failed imports remain visible failures.
+4. **Tests are provider-neutral.** Providers generate; tests evaluate.
+5. **Targets are broader than models.** Models, bots and compositions share one evaluation architecture.
+6. **System context matters.** Benchmark evidence stays attached to the machine and runtime context that produced it.
+7. **Execution is bounded.** Workspace and runtime boundaries are explicit rather than implied.
+
+LMTS is therefore not just a collection of prompts. It is a controlled evaluation runtime for producing evidence that can be compared, inspected, exported and reused without losing the structure that produced it.

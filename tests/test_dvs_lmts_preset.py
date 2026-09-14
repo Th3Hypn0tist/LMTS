@@ -5,15 +5,40 @@ from pathlib import Path
 
 from lmts.dvs.model import InputTemplate, VisualizationPreset
 from lmts.dvs.registry import DVSRegistry
+from lmts.dvs.runtime import project_visualization
 
 
 TEMPLATE_PATH = Path('lmts/dvs/templates/lmts-report-v1.1.json')
 PRESET_PATH = Path('lmts/dvs/presets/lmts-benchmark-landscape-v1.json')
 
 
-def test_lmts_report_template_and_benchmark_preset_are_compatible() -> None:
+def _template_and_preset() -> tuple[InputTemplate, VisualizationPreset]:
     template = InputTemplate.from_dict(json.loads(TEMPLATE_PATH.read_text(encoding='utf-8')))
     preset = VisualizationPreset.from_dict(json.loads(PRESET_PATH.read_text(encoding='utf-8')))
+    return template, preset
+
+
+def _record(run_id: str, target: str, test: str, result: str, score: float | None) -> dict:
+    return {
+        'id': run_id,
+        'coordinates': {'target': target, 'test': test},
+        'timing': {'started_at': None, 'completed_at': None},
+        'outcome': {'status': 'completed', 'result': result, 'passed': result == 'pass'},
+        'metrics': {
+            'input_tokens': {'value': None},
+            'output_tokens': {'value': None},
+            'ttft': {'value': None},
+            'total_time': {'value': None},
+            'score_percent': {'value': score},
+            'workspace_protocol_steps': {'value': None},
+            'output_file_count': {'value': None},
+            'exact_output_match': {'value': None},
+        },
+    }
+
+
+def test_lmts_report_template_and_benchmark_preset_are_compatible() -> None:
+    template, preset = _template_and_preset()
     preset.validate_against(template)
 
     assert template.source_format == 'lmts.report/1.1'
@@ -33,27 +58,73 @@ def test_default_dvs_registry_loads_lmts_benchmark_preset() -> None:
 
 
 def test_lmts_report_input_template_projects_explicit_null_as_string() -> None:
-    template = InputTemplate.from_dict(json.loads(TEMPLATE_PATH.read_text(encoding='utf-8')))
-    report = {
-        'records': [{
-            'id': 'run-1',
-            'coordinates': {'target': 'model-a', 'test': 'test-a'},
-            'timing': {'started_at': None, 'completed_at': None},
-            'outcome': {'status': 'completed', 'result': 'pass', 'passed': True},
-            'metrics': {
-                'input_tokens': {'value': None},
-                'output_tokens': {'value': None},
-                'ttft': {'value': None},
-                'total_time': {'value': None},
-                'score_percent': {'value': 100.0},
-                'workspace_protocol_steps': {'value': None},
-                'output_file_count': {'value': None},
-                'exact_output_match': {'value': None},
-            },
-        }],
-    }
+    template, _ = _template_and_preset()
+    report = {'records': [_record('run-1', 'model-a', 'test-a', 'pass', 100.0)]}
     table = template.extract(report)
     row = dict(zip(table.columns, table.rows[0], strict=True))
     assert row['score_percent'] == '100.0'
     assert row['ttft_ms'] == 'null'
     assert row['started_at'] == 'null'
+
+
+def test_lmts_benchmark_visual_plan_maps_categories_score_and_result() -> None:
+    template, preset = _template_and_preset()
+    report = {
+        'records': [
+            _record('run-1', 'model-a', 'test-a', 'pass', 100.0),
+            _record('run-2', 'model-b', 'test-b', 'fail', 50.0),
+        ],
+    }
+
+    plan = project_visualization(report, template, preset)
+    generation = plan['generations'][0]
+    first, second = generation['groups']
+
+    assert plan['format'] == 's3d.dvs.visual-plan'
+    assert plan['source_format'] == 'lmts.report/1.1'
+    assert plan['row_count'] == 2
+
+    assert first['key'] == {'target': 'model-a', 'test': 'test-a'}
+    assert first['source_rows'] == [0]
+    assert first['visible'] is True
+    assert first['channels']['position.x'] == 0.0
+    assert first['channels']['position.z'] == 0.0
+    assert first['channels']['scale.y'] == 3.0
+    assert first['channels']['color.r'] == 0.15
+    assert first['channels']['color.g'] == 0.85
+    assert first['channels']['color.b'] == 0.30
+
+    assert second['key'] == {'target': 'model-b', 'test': 'test-b'}
+    assert second['source_rows'] == [1]
+    assert second['visible'] is True
+    assert second['channels']['position.x'] == 2.0
+    assert second['channels']['position.z'] == 2.0
+    assert second['channels']['scale.y'] == 1.55
+    assert second['channels']['color.r'] == 0.95
+    assert second['channels']['color.g'] == 0.45
+    assert second['channels']['color.b'] == 0.10
+
+
+def test_lmts_benchmark_visual_plan_preserves_explicit_null_as_not_rendered() -> None:
+    template, preset = _template_and_preset()
+    report = {'records': [_record('run-null', 'model-a', 'test-a', 'unknown', None)]}
+
+    plan = project_visualization(report, template, preset)
+    group = plan['generations'][0]['groups'][0]
+
+    assert group['visible'] is False
+    assert 'scale.y' not in group['channels']
+    assert group['channels']['position.x'] == 0.0
+    assert group['channels']['position.z'] == 0.0
+
+
+def test_lmts_benchmark_visual_plan_rejects_unknown_result_category() -> None:
+    template, preset = _template_and_preset()
+    report = {'records': [_record('run-invalid', 'model-a', 'test-a', 'future-result', 20.0)]}
+
+    try:
+        project_visualization(report, template, preset)
+    except ValueError as exc:
+        assert "map has no value for category 'future-result'" in str(exc)
+    else:
+        raise AssertionError('unknown category must not fall back to an invented color')

@@ -29,7 +29,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             render,
             lambda: "",
             self._scoped_monitor_lines,
-            monitor_title=monitor_title,
+            monitor_title="Console",
             monitor_fraction=monitor_fraction,
             footer="",
             quit_sequence="qqq",

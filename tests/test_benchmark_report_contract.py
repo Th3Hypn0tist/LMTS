@@ -116,6 +116,13 @@ def test_results_server_and_dvs_share_report_v11_contract() -> None:
     assert '"const": "1.1"' in files[contract_path]
 
 
+def test_result_viewer_consumes_report_system_profile_index() -> None:
+    assert 'report.summary?.system_profiles' in APP_JS
+    assert "text: 'System Profiles'" in APP_JS
+    assert "['Systems', systemProfiles.length]" in APP_JS
+    assert "JSON.stringify(profile, null, 2)" in APP_JS
+
+
 def test_dvs_input_template_targets_same_report_contract() -> None:
     path = Path('lmts/dvs/templates/lmts-report-v1.1.json')
     text = path.read_text(encoding='utf-8')

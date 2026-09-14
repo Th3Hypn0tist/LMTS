@@ -52,10 +52,11 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("cw.cancel", ("n",), "Cancel", "CW Bench", scope="cw_bench", order=150),
 
     ShortcutDefinition("downloader.module", ("m",), "Select module", "Model Downloader", scope="downloader", order=100),
-    ShortcutDefinition("downloader.download", ("d",), "Download model", "Model Downloader", scope="downloader", order=110),
-    ShortcutDefinition("downloader.progress", ("p",), "Download progress", "Model Downloader", scope="downloader", order=120),
-    ShortcutDefinition("downloader.refresh", ("r",), "Refresh", "Model Downloader", scope="downloader", order=130),
-    ShortcutDefinition("downloader.cancel", ("c",), "Cancel download", "Model Downloader", scope="downloader", order=140),
+    ShortcutDefinition("downloader.download", ("d",), "Queue models", "Model Downloader", scope="downloader", order=110),
+    ShortcutDefinition("downloader.delete", ("x",), "Delete model", "Model Downloader", scope="downloader", order=120),
+    ShortcutDefinition("downloader.progress", ("p",), "Download progress", "Model Downloader", scope="downloader", order=130),
+    ShortcutDefinition("downloader.refresh", ("r",), "Refresh", "Model Downloader", scope="downloader", order=140),
+    ShortcutDefinition("downloader.cancel", ("c",), "Cancel download", "Model Downloader", scope="downloader", order=150),
 
     ShortcutDefinition("settings.output", ("o",), "Output folder", "Settings", scope="settings", order=100),
     ShortcutDefinition("settings.server", ("i",), "Server setup", "Settings", scope="settings", order=110),

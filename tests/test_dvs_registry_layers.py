@@ -80,11 +80,10 @@ def test_registry_rejects_cross_layer_id_shadowing(tmp_path: Path) -> None:
 
 
 def test_registry_rejects_duplicate_root_configuration(tmp_path: Path) -> None:
-    same = tmp_path / 'same'
-    studio_root = tmp_path
+    studio_root = tmp_path / 'studio'
     with pytest.raises(ValueError, match='roots must be unique'):
         DVSRegistry(
-            templates_root=same,
+            templates_root=studio_root / 'templates',
             presets_root=tmp_path / 'presets',
             studio_root=studio_root,
         )

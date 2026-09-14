@@ -42,12 +42,40 @@ function getPath(object, path) {
   return path.split('.').reduce((value, key) => value?.[key], object);
 }
 
+function systemProfileLabel(profile, index) {
+  return String(profile?.profile_id ?? profile?.id ?? `System profile ${index + 1}`);
+}
+
+function renderSystemProfiles(report) {
+  const profiles = Array.isArray(report.summary?.system_profiles) ? report.summary.system_profiles : [];
+  if (!profiles.length) return null;
+
+  const items = profiles.map((profile, index) => {
+    const meta = [];
+    if (profile?.profiled_at) meta.push(String(profile.profiled_at));
+    return h('details', { className: 'system-profile' }, [
+      h('summary', {}, [
+        h('strong', { text: systemProfileLabel(profile, index) }),
+        ...(meta.length ? [h('span', { className: 'profile-meta', text: meta.join(' · ') })] : []),
+      ]),
+      h('pre', { className: 'profile-json', text: JSON.stringify(profile, null, 2) }),
+    ]);
+  });
+
+  return h('section', { className: 'panel' }, [
+    h('h2', { text: 'System Profiles' }),
+    h('p', { className: 'panel-note', text: 'Canonical system contexts recorded for runs in this report.' }),
+    h('div', { className: 'profile-list' }, items),
+  ]);
+}
+
 function render(report) {
   if (report?.format !== 'lmts.report' || report?.version !== '1.1') {
     throw new Error('Unsupported LMTS benchmark report format');
   }
 
   const summary = report.summary?.outcomes ?? {};
+  const systemProfiles = Array.isArray(report.summary?.system_profiles) ? report.summary.system_profiles : [];
   const blocks = [
     h('header', { className: 'header' }, [
       h('div', { className: 'eyebrow', text: 'LMTS BENCHMARK REPORT' }),
@@ -58,6 +86,7 @@ function render(report) {
       ['Records', report.summary.records],
       ['Targets', report.summary.targets ?? Object.keys(report.entities?.target ?? {}).length],
       ['Tests', report.summary.tests ?? Object.keys(report.entities?.test ?? {}).length],
+      ['Systems', systemProfiles.length],
       ['Pass', summary.pass ?? 0],
       ['Fail', summary.fail ?? 0],
       ['Error', summary.error ?? 0],
@@ -67,6 +96,9 @@ function render(report) {
       h('span', { text: label }),
     ]))),
   ];
+
+  const profiles = renderSystemProfiles(report);
+  if (profiles) blocks.push(profiles);
 
   for (const view of report.views ?? []) {
     if (view.type !== 'matrix') continue;
@@ -130,6 +162,12 @@ h1,h2 { margin:.25rem 0 .5rem; }
 .card strong { font-size:24px; }
 .card span { color:#8e9aa7; font-size:12px; text-transform:uppercase; }
 .panel { margin-top:16px; }
+.panel-note { color:#8e9aa7; margin:.25rem 0 1rem; }
+.profile-list { display:grid; gap:8px; }
+.system-profile { border:1px solid #2a3139; border-radius:8px; background:#0e1217; }
+.system-profile summary { display:flex; justify-content:space-between; gap:16px; cursor:pointer; padding:10px 12px; }
+.profile-meta { color:#8e9aa7; font-size:12px; font-weight:400; }
+.profile-json { margin:0; padding:12px; border-top:1px solid #2a3139; overflow:auto; max-height:420px; white-space:pre; }
 .scroll { overflow:auto; }
 .matrix { width:100%; min-width:720px; border-collapse:collapse; }
 .matrix th,.matrix td { padding:10px 12px; border:1px solid #2a3139; text-align:center; }
@@ -142,7 +180,7 @@ h1,h2 { margin:.25rem 0 .5rem; }
 .result-cancelled { color:#9a8ee8; }
 .result-unknown { color:#88939d; }
 .fatal { color:#ef7373; white-space:pre-wrap; }
-@media (max-width:700px) { .summary { grid-template-columns:repeat(2,1fr); } }
+@media (max-width:700px) { .summary { grid-template-columns:repeat(2,1fr); } .system-profile summary { flex-direction:column; gap:4px; } }
 '''
 
 REPORT_PHP = r'''<?php

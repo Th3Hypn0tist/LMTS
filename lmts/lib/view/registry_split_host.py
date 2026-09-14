@@ -3,7 +3,7 @@ from __future__ import annotations
 import curses
 from collections.abc import Callable, Iterable, Sequence
 
-from .shortcut_registry import ShortcutRegistry
+from .shortcut_registry import ShortcutDefinition, ShortcutRegistry
 from .split_host import POLL_MS, SplitCursesViewHost
 
 
@@ -19,25 +19,31 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         *,
         shortcuts: ShortcutRegistry,
         scopes: Callable[[], Iterable[str]],
-        monitor_title: str = "Response monitor",
+        monitor_title: str = "Console",
         monitor_fraction: float = 1 / 3,
     ) -> None:
+        self.shortcut_scopes = scopes
+        self._monitor_source = monitor_render
         super().__init__(
             title,
             render,
             lambda: "",
-            monitor_render,
+            self._scoped_monitor_lines,
             monitor_title=monitor_title,
             monitor_fraction=monitor_fraction,
             footer="",
             quit_sequence="qqq",
         )
         self.shortcuts = shortcuts
-        self.shortcut_scopes = scopes
         self.tabs = tabs
         self.action_handlers: dict[str, Callable[[curses.window], None]] = {}
         self._sequence: tuple[str, ...] = ()
         self._stop_requested = False
+
+    def _scoped_monitor_lines(self) -> Sequence[str]:
+        if "benchmark" not in self._scopes():
+            return ()
+        return self._monitor_source()
 
     @staticmethod
     def key_token(key: object) -> str | None:
@@ -84,17 +90,51 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         }
         return " ".join(labels.get(token, token) for token in sequence)
 
-    def _footer(self) -> str:
-        definitions = [
+    def _action_definitions(self) -> tuple[ShortcutDefinition, ...]:
+        return tuple(
             item
             for item in self.shortcuts.definitions(self._scopes())
             if item.topic != "Tabs"
-        ]
+        )
+
+    def _footer(self) -> str:
+        definitions = self._action_definitions()
         if not definitions:
             return "Actions: -"
         return "Actions: " + " | ".join(
-            f"{item.sequence_label}. {item.label}" for item in definitions
+            f"{item.sequence_label}{item.label}" for item in definitions
         )
+
+    def _footer_segments(self) -> tuple[tuple[str, int], ...]:
+        definitions = self._action_definitions()
+        if not definitions:
+            return (("Actions: -", curses.A_DIM),)
+        segments: list[tuple[str, int]] = [("Actions: ", curses.A_DIM)]
+        for index, item in enumerate(definitions):
+            segments.append((item.sequence_label, curses.A_REVERSE | curses.A_BOLD))
+            segments.append((item.label, 0))
+            if index < len(definitions) - 1:
+                segments.append((" | ", curses.A_DIM))
+        return tuple(segments)
+
+    def _draw_footer(self, stdscr: curses.window) -> None:
+        height, width = stdscr.getmaxyx()
+        if height < 1 or width < 2:
+            return
+        y = height - 1
+        try:
+            stdscr.move(y, 0)
+            stdscr.clrtoeol()
+        except curses.error:
+            return
+        x = 0
+        for text, attr in self._footer_segments():
+            if x >= width - 1:
+                break
+            remaining = width - 1 - x
+            piece = str(text)[:remaining]
+            self._safe_addnstr(stdscr, y, x, piece, len(piece), attr)
+            x += len(piece)
 
     def _sequence_hint(self) -> str:
         if not self._sequence:
@@ -110,6 +150,9 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             return
         if action == "app.quit":
             self._stop_requested = True
+            return
+        if action == "benchmark.console":
+            self.toggle_monitor()
             return
         handler = self.action_handlers.get(action)
         if handler is not None:
@@ -184,6 +227,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
                     pass
                 self._safe_addnstr(stdscr, 1, 0, self.title, width - 1, curses.A_BOLD)
             self._draw_tabs(stdscr)
+            self._draw_footer(stdscr)
             stdscr.noutrefresh()
             if commit:
                 curses.doupdate()

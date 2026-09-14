@@ -5,6 +5,9 @@ from pathlib import Path
 from .output import OutputTarget, write_files
 
 
+REPORT_CONTRACT_NAME = 'LMTS_Benchmark_Report_Template_v1.1.schema.json'
+
+
 INDEX_HTML = '''<!doctype html>
 <html lang="en">
 <head>
@@ -39,19 +42,21 @@ function getPath(object, path) {
 }
 
 function render(report) {
-  if (report?.format !== 'lmts.report' || report?.version !== '1.0') {
-    throw new Error('Unsupported LMTS report format');
+  if (report?.format !== 'lmts.report' || report?.version !== '1.1') {
+    throw new Error('Unsupported LMTS benchmark report format');
   }
 
   const summary = report.summary?.outcomes ?? {};
   const blocks = [
     h('header', { className: 'header' }, [
-      h('div', { className: 'eyebrow', text: 'LMTS REPORT' }),
+      h('div', { className: 'eyebrow', text: 'LMTS BENCHMARK REPORT' }),
       h('h1', { text: report.report.title }),
-      h('div', { className: 'meta', text: `${report.report.id} · ${report.report.created_at}` }),
+      h('div', { className: 'meta', text: `${report.report.id} · ${report.report.created_at} · lmts.report/${report.version}` }),
     ]),
     h('div', { className: 'summary' }, [
       ['Records', report.summary.records],
+      ['Targets', report.summary.targets ?? Object.keys(report.entities?.target ?? {}).length],
+      ['Tests', report.summary.tests ?? Object.keys(report.entities?.test ?? {}).length],
       ['Pass', summary.pass ?? 0],
       ['Fail', summary.fail ?? 0],
       ['Error', summary.error ?? 0],
@@ -118,7 +123,7 @@ body { margin:0; background:#0b0d10; }
 .header { margin-bottom:20px; }
 .eyebrow,.meta { color:#8e9aa7; font-size:12px; }
 h1,h2 { margin:.25rem 0 .5rem; }
-.summary { display:grid; grid-template-columns:repeat(5,minmax(100px,1fr)); gap:10px; margin:20px 0; }
+.summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; margin:20px 0; }
 .card,.panel { border:1px solid #2a3139; background:#12161b; border-radius:10px; padding:14px; }
 .card { display:flex; flex-direction:column; gap:4px; }
 .card strong { font-size:24px; }
@@ -143,12 +148,23 @@ REPORT_PHP = r'''<?php
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+header('X-Content-Type-Options: nosniff');
 $config = require dirname(__DIR__, 2) . '/config/db.php';
+
+const LMTS_REPORT_FORMAT = 'lmts.report';
+const LMTS_REPORT_VERSION = '1.1';
 
 function fail_response(int $status, string $message): never {
     http_response_code($status);
-    echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_SLASHES);
+    echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+function require_array_field(array $report, string $name): array {
+    $value = $report[$name] ?? null;
+    if (!is_array($value)) fail_response(400, "report.$name must be an object or array");
+    return $value;
 }
 
 try {
@@ -181,15 +197,26 @@ try {
     }
 
     $raw = file_get_contents('php://input');
-    if ($raw === false || $raw === '') fail_response(400, 'empty request body');
+    if ($raw === false || trim($raw) === '') fail_response(400, 'empty request body');
     $report = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
-    if (!is_array($report) || ($report['format'] ?? null) !== 'lmts.report' || ($report['version'] ?? null) !== '1.0') {
-        fail_response(400, 'unsupported report format');
+    if (!is_array($report) || ($report['format'] ?? null) !== LMTS_REPORT_FORMAT || ($report['version'] ?? null) !== LMTS_REPORT_VERSION) {
+        fail_response(400, 'unsupported benchmark report format');
     }
 
-    $meta = $report['report'] ?? null;
-    $source = $report['source'] ?? null;
-    if (!is_array($meta) || !is_array($source)) fail_response(400, 'report metadata is missing');
+    $meta = require_array_field($report, 'report');
+    $source = require_array_field($report, 'source');
+    $dimensions = require_array_field($report, 'dimensions');
+    require_array_field($report, 'entities');
+    require_array_field($report, 'metric_definitions');
+    $records = require_array_field($report, 'records');
+    $summary = require_array_field($report, 'summary');
+    $views = require_array_field($report, 'views');
+
+    if ($dimensions === []) fail_response(400, 'report.dimensions must not be empty');
+    if (!array_is_list($records)) fail_response(400, 'report.records must be an array');
+    if (!array_is_list($views)) fail_response(400, 'report.views must be an array');
+    if (!isset($summary['records']) || !is_int($summary['records'])) fail_response(400, 'report.summary.records must be an integer');
+    if (!isset($summary['outcomes']) || !is_array($summary['outcomes'])) fail_response(400, 'report.summary.outcomes must be an object');
 
     $reportId = trim((string)($meta['id'] ?? ''));
     $reportType = trim((string)($meta['type'] ?? ''));
@@ -204,18 +231,32 @@ try {
     $createdAtSql = $createdAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s.u');
     $reportJson = json_encode($report, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
-    $stmt = $pdo->prepare(
+    $pdo->beginTransaction();
+    $existingStmt = $pdo->prepare('SELECT report_json FROM reports WHERE report_id = ? FOR UPDATE');
+    $existingStmt->execute([$reportId]);
+    $existingJson = $existingStmt->fetchColumn();
+
+    if ($existingJson !== false) {
+        $same = hash_equals(hash('sha256', (string)$existingJson), hash('sha256', $reportJson));
+        $pdo->commit();
+        if (!$same) fail_response(409, 'report id already exists with different content');
+        echo json_encode(['ok' => true, 'id' => $reportId, 'version' => LMTS_REPORT_VERSION, 'created' => false], JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    $insert = $pdo->prepare(
         'INSERT INTO reports (report_id, report_type, created_at, source_type, source_id, report_json)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE report_type=VALUES(report_type), created_at=VALUES(created_at),
-         source_type=VALUES(source_type), source_id=VALUES(source_id), report_json=VALUES(report_json),
-         imported_at=CURRENT_TIMESTAMP(6)'
+         VALUES (?, ?, ?, ?, ?, ?)'
     );
-    $stmt->execute([$reportId, $reportType, $createdAtSql, $sourceType, $sourceId, $reportJson]);
-    echo json_encode(['ok' => true, 'id' => $reportId], JSON_UNESCAPED_SLASHES);
+    $insert->execute([$reportId, $reportType, $createdAtSql, $sourceType, $sourceId, $reportJson]);
+    $pdo->commit();
+    http_response_code(201);
+    echo json_encode(['ok' => true, 'id' => $reportId, 'version' => LMTS_REPORT_VERSION, 'created' => true], JSON_UNESCAPED_SLASHES);
 } catch (JsonException | DateException $e) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) $pdo->rollBack();
     fail_response(400, $e->getMessage());
 } catch (Throwable $e) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) $pdo->rollBack();
     fail_response(500, 'server error');
 }
 '''
@@ -224,6 +265,8 @@ REPORTS_PHP = r'''<?php
 
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+header('X-Content-Type-Options: nosniff');
 $config = require dirname(__DIR__, 2) . '/config/db.php';
 
 try {
@@ -232,8 +275,10 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
     $rows = $pdo->query(
-        'SELECT report_id, report_type, created_at, source_type, source_id, imported_at
-         FROM reports ORDER BY created_at DESC, imported_at DESC LIMIT 100'
+        "SELECT report_id, report_type, created_at, source_type, source_id,
+                JSON_UNQUOTE(JSON_EXTRACT(report_json, '$.version')) AS report_version,
+                imported_at
+         FROM reports ORDER BY created_at DESC, imported_at DESC LIMIT 100"
     )->fetchAll();
     echo json_encode(['reports' => $rows], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
@@ -244,13 +289,16 @@ try {
 
 
 def web_root_files() -> dict[str, str]:
-    db_config = (Path(__file__).resolve().parent.parent / 'config' / 'db.php').read_text(encoding='utf-8')
+    package_root = Path(__file__).resolve().parent.parent
+    db_config = (package_root / 'config' / 'db.php').read_text(encoding='utf-8')
+    report_contract = (package_root / 'reporting' / REPORT_CONTRACT_NAME).read_text(encoding='utf-8')
     return {
         'public/index.html': INDEX_HTML,
         'public/app.js': APP_JS,
         'public/assets/lmts.css': CSS,
         'public/api/report.php': REPORT_PHP,
         'public/api/reports.php': REPORTS_PHP,
+        f'public/contracts/{REPORT_CONTRACT_NAME}': report_contract,
         'config/db.php': db_config,
     }
 

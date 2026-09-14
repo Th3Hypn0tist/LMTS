@@ -19,6 +19,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         *,
         shortcuts: ShortcutRegistry,
         scopes: Callable[[], Iterable[str]],
+        status_segments: Callable[[], Sequence[tuple[str, bool]]] | None = None,
         monitor_title: str = "Response monitor",
         monitor_fraction: float = 1 / 3,
     ) -> None:
@@ -34,6 +35,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         )
         self.shortcuts = shortcuts
         self.shortcut_scopes = scopes
+        self.status_segments = status_segments
         self.action_handlers: dict[str, Callable[[curses.window], None]] = {}
         self._sequence: tuple[str, ...] = ()
         self._stop_requested = False
@@ -114,13 +116,41 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         if handler is not None:
             handler(stdscr)
 
+    def _draw_status_segments(self, stdscr: curses.window) -> None:
+        if self.status_segments is None:
+            return
+        height, width = stdscr.getmaxyx()
+        if height < 2 or width < 2:
+            return
+        try:
+            stdscr.move(1, 0)
+            stdscr.clrtoeol()
+        except curses.error:
+            return
+        x = 0
+        for text, selected in self.status_segments():
+            if x >= width - 1:
+                break
+            remaining = width - 1 - x
+            piece = str(text)[:remaining]
+            attr = curses.A_REVERSE if selected else curses.A_DIM
+            self._safe_addnstr(stdscr, 1, x, piece, len(piece), attr)
+            x += len(piece)
+
     def draw(self, stdscr: curses.window, *, commit: bool = True) -> None:
         self.footer = self._footer()
         original_message = self.message
         if not original_message and self._sequence:
             self.message = self._sequence_hint()
         try:
-            super().draw(stdscr, commit=commit)
+            if self.status_segments is None:
+                super().draw(stdscr, commit=commit)
+                return
+            super().draw(stdscr, commit=False)
+            self._draw_status_segments(stdscr)
+            stdscr.noutrefresh()
+            if commit:
+                curses.doupdate()
         finally:
             self.message = original_message
 

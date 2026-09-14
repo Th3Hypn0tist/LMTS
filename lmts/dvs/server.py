@@ -16,6 +16,8 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = (PACKAGE_DIR / 'static').resolve()
 HOST = os.environ.get('LMTS_DVS_HOST', '127.0.0.1')
 PORT = int(os.environ.get('LMTS_DVS_PORT', '8775'))
+S3D_ROOT_VALUE = os.environ.get('LMTS_S3D_ROOT', '').strip()
+S3D_ROOT = Path(S3D_ROOT_VALUE).expanduser().resolve() if S3D_ROOT_VALUE else None
 REGISTRY = DVSRegistry()
 
 
@@ -40,6 +42,18 @@ def content_type(path: Path) -> str:
     if guessed and guessed.startswith('text/'):
         return f'{guessed}; charset=utf-8'
     return guessed or 'application/octet-stream'
+
+
+def s3d_status() -> dict[str, Any]:
+    if S3D_ROOT is None:
+        return {'configured': False, 'ready': False}
+    entrypoint = S3D_ROOT / 's3d.js'
+    return {
+        'configured': True,
+        'ready': S3D_ROOT.is_dir() and entrypoint.is_file(),
+        'root': str(S3D_ROOT),
+        'entrypoint': '/s3d/s3d.js',
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -79,8 +93,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(safe_asset_path(STATIC_DIR, 'index.html'))
             if path.startswith('/static/'):
                 return self._file(safe_asset_path(STATIC_DIR, path.removeprefix('/static/')))
+            if path.startswith('/s3d/'):
+                if S3D_ROOT is None:
+                    return self._json({'ok': False, 'error': 's3d_not_configured'}, 503)
+                return self._file(safe_asset_path(S3D_ROOT, path.removeprefix('/s3d/')))
             if path == '/api/health':
-                return self._json({'ok': True, 'service': 'LMTS DVS', 'host_role': 'studio+viewer', 'version': '1.0'})
+                return self._json({
+                    'ok': True,
+                    'service': 'LMTS DVS',
+                    'host_role': 'studio+viewer',
+                    'version': '1.0',
+                    's3d': s3d_status(),
+                })
             if path == '/api/input-templates':
                 return self._json({'input_templates': [item.to_dict() for item in REGISTRY.templates.list()]})
             if path.startswith('/api/input-templates/'):
@@ -137,6 +161,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     REGISTRY.reload()
+    status = s3d_status()
+    if status['configured'] and not status['ready']:
+        raise RuntimeError(f"LMTS_S3D_ROOT is invalid or missing s3d.js: {S3D_ROOT}")
     print(f'LMTS DVS -> http://{HOST}:{PORT}')
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 

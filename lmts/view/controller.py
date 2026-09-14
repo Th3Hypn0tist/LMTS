@@ -16,7 +16,8 @@ from lmts.core.runtime_targets import executor_from_definition, load_runtime_tar
 from lmts.core.store import RunStore
 from lmts.lib.errorlog import export_error_log
 from lmts.tests.base import test_ref
-from lmts.tests.types import ConfiguredTest, TestMatrix, TestTypeRegistry
+from lmts.tests.catalog import test_matrix_for_level
+from lmts.tests.types import ConfiguredTest, TestLevel, TestMatrix, TestTypeRegistry
 from lmts.tools.profile import DEFAULT_PROFILE_PATH, load_system_profile, save_system_profile, scan_system_profile
 
 from .projector import LMTSViewState
@@ -32,7 +33,7 @@ class LMTSViewController:
         self.workspace_root = workspace_root
         self.logs_root = logs_root
         self.profile_path = profile_path
-        self.state = LMTSViewState(tests=list(matrix.tests()))
+        self.state = LMTSViewState(tests=list(matrix.tests()), suite_level="moderate")
         self.response_monitor = ResponseMonitor()
         self.last_errors: list[dict[str, object]] = []
         self._run_thread: threading.Thread | None = None
@@ -57,6 +58,17 @@ class LMTSViewController:
         self.state.selected_test_refs = previous & available
         if not self.state.selected_test_refs and self.state.tests:
             self.state.selected_test_refs = set(available)
+
+    def set_suite_level(self, level: TestLevel) -> bool:
+        if self.state.running:
+            self.state.message = "cannot change suite while test matrix is running"
+            return False
+        self.matrix = test_matrix_for_level(level, self.test_types)
+        self.state.suite_level = level
+        self._sync_matrix_state()
+        self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
+        self.state.message = f"suite level: {level.upper()} ({len(self.state.tests)} configured test(s))"
+        return True
 
     def _discover_targets(self) -> list[TestExecutor]:
         targets: list[TestExecutor] = []
@@ -90,8 +102,8 @@ class LMTSViewController:
         counts = {kind: sum(1 for target in self.state.targets if target.kind == kind) for kind in ("model", "bot", "composition")}
         self.state.message = (
             f"discovered {len(self.state.targets)} target(s): {counts['model']} model, {counts['bot']} bot, "
-            f"{counts['composition']} composition; matrix has {len(self.state.tests)} configured test(s), "
-            f"registry has {len(self.test_types.definitions())} test type(s)"
+            f"{counts['composition']} composition; {self.state.suite_level.upper()} suite has "
+            f"{len(self.state.tests)} configured test(s), registry has {len(self.test_types.definitions())} test type(s)"
         )
         if self.state.profile_required:
             self.state.message += "; system profile required before testing"
@@ -299,6 +311,7 @@ class LMTSViewController:
             )
             matrix_path = matrix_store.append(record)
             self.state.last_result = {
+                "suite_level": self.state.suite_level,
                 "matrix": f"{len(targets)} target(s) x {len(tests)} configured test(s)",
                 "matrix_id": matrix_id,
                 "matrix_path": str(matrix_path),

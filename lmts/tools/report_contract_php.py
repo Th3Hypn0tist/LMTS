@@ -135,7 +135,7 @@ function lmts_type_matches(mixed $value, string $type): bool {
 }
 
 function lmts_validate_datetime(string $value, string $path): void {
-    if (!preg_match('/^\\d{4}-\\d{2}-\\d{2}T/', $value)) lmts_contract_error($path, 'must be an RFC 3339 date-time');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}T/', $value)) lmts_contract_error($path, 'must be an RFC 3339 date-time');
     try {
         new DateTimeImmutable($value);
     } catch (Throwable $error) {

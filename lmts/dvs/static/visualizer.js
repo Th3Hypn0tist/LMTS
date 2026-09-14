@@ -58,6 +58,16 @@ function visitGroups(generations, visitor) {
   }
 }
 
+function visitRenderableGroups(generations, visitor) {
+  visitGroups(generations, (group, generation) => {
+    if (group.visible === false || group.primitive === 'group') return;
+    if (group.primitive !== 'box') {
+      throw new Error(`S3D visual-plan bridge does not support primitive: ${group.primitive}`);
+    }
+    visitor(group, generation);
+  });
+}
+
 class S3DVisualPlanRenderer {
   constructor(canvas, s3d) {
     if (!(canvas instanceof HTMLCanvasElement)) throw new Error('S3D visualizer requires a canvas');
@@ -96,8 +106,7 @@ class S3DVisualPlanRenderer {
 
   fitCamera(plan) {
     const points = [];
-    visitGroups(plan.generations, group => {
-      if (group.visible === false) return;
+    visitRenderableGroups(plan.generations, group => {
       const position = channelVector(group.channels ?? {}, 'position', [0, 0, 0]);
       const scale = channelVector(group.channels ?? {}, 'scale', [0.35, 0.35, 0.35]);
       points.push({ position, scale });
@@ -134,11 +143,7 @@ class S3DVisualPlanRenderer {
     const aspect = this.resize();
     const vp = this.camera.viewProjection(aspect);
     this.renderer.begin(vp);
-    visitGroups(this.plan?.generations ?? [], group => {
-      if (group.visible === false) return;
-      if (group.primitive !== 'box') {
-        throw new Error(`S3D visual-plan bridge does not support primitive: ${group.primitive}`);
-      }
+    visitRenderableGroups(this.plan?.generations ?? [], group => {
       const channels = group.channels ?? {};
       const position = channelVector(channels, 'position', [0, 0, 0]);
       const rotation = channelVector(channels, 'rotation', [0, 0, 0]);
@@ -180,4 +185,5 @@ export {
   channelVector,
   perFaceColorChannelKeys,
   visitGroups,
+  visitRenderableGroups,
 };

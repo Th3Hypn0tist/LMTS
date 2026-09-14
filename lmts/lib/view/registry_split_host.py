@@ -116,9 +116,33 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         if handler is not None:
             handler(stdscr)
 
+    def _selected_top_level_scope(self) -> str | None:
+        scopes = self._scopes()
+        if not scopes:
+            return None
+        current = scopes[0]
+        if current in {"profile", "benchmark", "downloader", "settings"}:
+            return current
+        if current in {"challenge", "cw_bench"}:
+            return "benchmark"
+        return None
+
+    def _plain_status_segments(self) -> tuple[tuple[str, bool], ...]:
+        value = str(self.status())
+        if not value.startswith("Tabs: "):
+            return ((value, False),)
+        selected_scope = self._selected_top_level_scope()
+        segments: list[tuple[str, bool]] = [("Tabs: ", False)]
+        items = value[len("Tabs: "):].split(" | ")
+        for index, item in enumerate(items):
+            label = item.split(". ", 1)[1] if ". " in item else item
+            is_selected = selected_scope is not None and label.casefold().replace(" ", "_") == selected_scope.casefold()
+            segments.append((item, is_selected))
+            if index < len(items) - 1:
+                segments.append((" | ", False))
+        return tuple(segments)
+
     def _draw_status_segments(self, stdscr: curses.window) -> None:
-        if self.status_segments is None:
-            return
         height, width = stdscr.getmaxyx()
         if height < 2 or width < 2:
             return
@@ -127,8 +151,9 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             stdscr.clrtoeol()
         except curses.error:
             return
+        segments = self.status_segments() if self.status_segments is not None else self._plain_status_segments()
         x = 0
-        for text, selected in self.status_segments():
+        for text, selected in segments:
             if x >= width - 1:
                 break
             remaining = width - 1 - x
@@ -143,9 +168,6 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         if not original_message and self._sequence:
             self.message = self._sequence_hint()
         try:
-            if self.status_segments is None:
-                super().draw(stdscr, commit=commit)
-                return
             super().draw(stdscr, commit=False)
             self._draw_status_segments(stdscr)
             stdscr.noutrefresh()

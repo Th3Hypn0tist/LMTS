@@ -42,6 +42,14 @@ class CapabilityTextTest:
 
 REASONING_CASES: tuple[dict[str, str], ...] = (
     {
+        "id": "reasoning.carwash_transport",
+        "title": "Carwash transport",
+        "description": "Preserve the actual task goal: the car itself must reach the car wash.",
+        "dimension": "goal_context_reasoning",
+        "expected": "DRIVE",
+        "prompt": "I'm taking car to carwash. It is on the other side of the road. Should I drive or walk? Reply exactly DRIVE or WALK.",
+    },
+    {
         "id": "reasoning.arithmetic_chain",
         "title": "Arithmetic chain",
         "description": "Carry a short deterministic arithmetic chain without losing intermediate state.",

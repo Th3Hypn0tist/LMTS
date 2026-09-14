@@ -76,6 +76,29 @@ def test_projector_emits_open_world_benchmark_report_v11() -> None:
     assert report['records'][0]['evidence']['system_context'] == {'profile_id': 'profile-a'}
     assert report['summary']['targets'] == 1
     assert report['summary']['tests'] == 1
+    assert report['summary']['system_profiles'] == [{'profile_id': 'profile-a'}]
+
+
+def test_report_system_profile_index_deduplicates_exact_context_only() -> None:
+    bundle = _bundle()
+    first = bundle['runs'][0]
+    duplicate = dict(first)
+    duplicate['run_id'] = 'run-contract-2'
+    duplicate['system_context'] = {'profile_id': 'profile-a'}
+    different_same_id = dict(first)
+    different_same_id['run_id'] = 'run-contract-3'
+    different_same_id['system_context'] = {
+        'profile_id': 'profile-a',
+        'profile': {'cpu': {'model_name': 'CPU B'}},
+    }
+    bundle['runs'] = [first, duplicate, different_same_id]
+
+    report = project_matrix_bundle(bundle)
+
+    assert report['summary']['system_profiles'] == [
+        {'profile_id': 'profile-a'},
+        {'profile_id': 'profile-a', 'profile': {'cpu': {'model_name': 'CPU B'}}},
+    ]
 
 
 def test_results_server_and_dvs_share_report_v11_contract() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from lmts.tests.base import TestRequirements
 from lmts.tests.modules.bot_core import BOT_CORE_CASES, bot_core_test
 from lmts.tests.modules.capability_cases import ALL_CAPABILITY_CASES, capability_test
+from lmts.tests.modules.carwash_context import CarwashContextRetentionTest
 from lmts.tests.modules.free_prompt import FreePromptConsistencyTest
 from lmts.tests.modules.performance import ColdWarmPerformanceTest, RepeatVarianceTest
 from lmts.tests.modules.text_generation import TextGenerationTest
@@ -21,6 +22,17 @@ def default_test_type_registry() -> TestTypeRegistry:
             requirements=TestRequirements(text_generation=True),
             parameters=(),
             factory=lambda values: TextGenerationTest(),
+        ),
+        TestTypeDefinition(
+            id="context.carwash_goal_persistence",
+            version="1.0.0",
+            title="Carwash goal persistence",
+            description="Preserve the goal that the car itself must reach the car wash across a short conversation.",
+            level="quick",
+            mandatory=True,
+            requirements=TestRequirements(text_generation=True),
+            parameters=(),
+            factory=lambda values: CarwashContextRetentionTest(),
         ),
         TestTypeDefinition(
             id="core.workspace_multifile",
@@ -135,5 +147,6 @@ def default_test_matrix(registry: TestTypeRegistry | None = None) -> TestMatrix:
     types = registry or default_test_type_registry()
     matrix = TestMatrix()
     matrix.add(types.get("core.text_generation@1.0.0").configure("text-generation"))
+    matrix.add(types.get("context.carwash_goal_persistence@1.0.0").configure("carwash-goal-persistence"))
     matrix.add(types.get("core.workspace_multifile@1.0.0").configure("workspace-multifile"))
     return matrix

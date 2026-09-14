@@ -5,7 +5,7 @@ from typing import Any
 
 
 REPORT_FORMAT = 'lmts.report'
-REPORT_VERSION = '1.0'
+REPORT_VERSION = '1.1'
 
 _TEST_REF_RE = re.compile(r'^(?P<namespace>[A-Za-z0-9_.-]+)@(?P<version>[^#]+)#(?P<instance>.+)$')
 
@@ -25,17 +25,24 @@ _STANDARD_REPORT_METRICS: dict[str, str | None] = {
 _STANDARD_REPORT_METRICS['score_percent'] = 'percent'
 
 
-def _test_entity(test_ref: str) -> dict[str, Any]:
+def _human_label(value: str) -> str:
+    return value.replace('_', ' ').replace('-', ' ').strip().capitalize()
+
+
+def _test_entity(test_ref: str, run: dict[str, Any]) -> dict[str, Any]:
     match = _TEST_REF_RE.fullmatch(test_ref)
     if match is None:
         raise ValueError(f'invalid canonical test_ref: {test_ref!r}')
     instance = match.group('instance')
+    metadata = run.get('execution_metadata') if isinstance(run.get('execution_metadata'), dict) else {}
     return {
-        'label': instance.replace('-', ' ').replace('_', ' ').strip().capitalize(),
+        'label': _human_label(instance),
         'properties': {
             'namespace': match.group('namespace'),
             'version': match.group('version'),
             'instance': instance,
+            'minimum_level': metadata.get('test_minimum_level'),
+            'mandatory': metadata.get('test_mandatory'),
         },
     }
 
@@ -51,12 +58,15 @@ def _target_entity(run: dict[str, Any]) -> dict[str, Any]:
         'kind': target_kind,
         'subject_fingerprint': subject.get('fingerprint'),
         'runtime_configuration_fingerprint': metadata.get('runtime_configuration_fingerprint'),
+        'capabilities': metadata.get('capabilities'),
     }
     if target_kind == 'model':
         model_metadata = run.get('model_metadata') if isinstance(run.get('model_metadata'), dict) else {}
         details = model_metadata.get('details') if isinstance(model_metadata.get('details'), dict) else {}
         properties.update({
             'provider': run.get('provider_ref'),
+            'model_id': run.get('model_id'),
+            'model_ref': run.get('model_ref'),
             'digest': model_metadata.get('digest'),
             'size_bytes': model_metadata.get('size'),
             'family': details.get('family'),
@@ -76,7 +86,7 @@ def _target_entity(run: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _outcome(run: dict[str, Any]) -> dict[str, str]:
+def _outcome(run: dict[str, Any]) -> dict[str, Any]:
     status = str(run.get('status', 'unknown'))
     if status == 'cancelled':
         result = 'cancelled'
@@ -88,7 +98,7 @@ def _outcome(run: dict[str, Any]) -> dict[str, str]:
         result = 'fail'
     else:
         result = 'unknown'
-    return {'status': status, 'result': result}
+    return {'status': status, 'result': result, 'passed': run.get('passed')}
 
 
 def _empty_standard_metrics() -> dict[str, dict[str, Any]]:
@@ -99,6 +109,34 @@ def _empty_standard_metrics() -> dict[str, dict[str, Any]]:
             metric['unit'] = unit
         metrics[name] = metric
     return metrics
+
+
+def _standard_metric_definitions() -> dict[str, dict[str, Any]]:
+    definitions: dict[str, dict[str, Any]] = {}
+    for name, unit in _STANDARD_REPORT_METRICS.items():
+        definition: dict[str, Any] = {
+            'label': _human_label(name),
+            'value_type': 'number_or_null' if name != 'exact_output_match' else 'boolean_or_null',
+        }
+        if unit is not None:
+            definition['unit'] = unit
+        definitions[name] = definition
+    return definitions
+
+
+def _record_evidence(run: dict[str, Any]) -> dict[str, Any]:
+    evidence: dict[str, Any] = {}
+    for key in (
+        'execution_metadata',
+        'artifacts',
+        'responses',
+        'workspace_trace',
+        'system_context',
+        'telemetry',
+    ):
+        if key in run:
+            evidence[key] = run[key]
+    return evidence
 
 
 def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
@@ -116,6 +154,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
 
     target_entities: dict[str, Any] = {}
     test_entities: dict[str, Any] = {}
+    metric_definitions = _standard_metric_definitions()
     records: list[dict[str, Any]] = []
     outcomes = {'pass': 0, 'fail': 0, 'error': 0, 'cancelled': 0, 'unknown': 0}
 
@@ -127,33 +166,46 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"run {run.get('run_id')!r} missing required field: {key}")
         run_id = str(run['run_id'])
         target_id = str(run['executor_id'])
-        test_ref = str(run['test_ref'])
+        resolved_test_ref = str(run['test_ref'])
         if target_id not in target_entities:
             target_entities[target_id] = _target_entity(run)
-        if test_ref not in test_entities:
-            test_entities[test_ref] = _test_entity(test_ref)
+        if resolved_test_ref not in test_entities:
+            test_entities[resolved_test_ref] = _test_entity(resolved_test_ref, run)
 
         raw_metrics = run['metrics']
         if not isinstance(raw_metrics, dict):
             raise ValueError(f'run {run_id!r} metrics must be an object')
         metrics = _empty_standard_metrics()
-        for name, value in raw_metrics.items():
-            projected_name, unit = _METRIC_UNITS.get(str(name), (str(name), None))
+        for raw_name, value in raw_metrics.items():
+            projected_name, unit = _METRIC_UNITS.get(str(raw_name), (str(raw_name), None))
             metric: dict[str, Any] = {'value': value}
             if unit is not None:
                 metric['unit'] = unit
             metrics[projected_name] = metric
+            if projected_name not in metric_definitions:
+                metric_definitions[projected_name] = {
+                    'label': _human_label(projected_name),
+                    'value_type': type(value).__name__ if value is not None else 'unknown',
+                    **({'unit': unit} if unit is not None else {}),
+                }
+
         score = run.get('score')
         if isinstance(score, dict) and isinstance(score.get('percent'), (int, float)):
             metrics['score_percent'] = {'value': float(score['percent']), 'unit': 'percent'}
 
         outcome = _outcome(run)
-        outcomes[outcome['result']] += 1
+        outcomes[str(outcome['result'])] += 1
         record: dict[str, Any] = {
             'id': run_id,
-            'coordinates': {'target': target_id, 'test': test_ref},
+            'coordinates': {'target': target_id, 'test': resolved_test_ref},
+            'timing': {
+                'started_at': run.get('started_at'),
+                'completed_at': run.get('completed_at'),
+            },
             'outcome': outcome,
+            'score': score,
             'metrics': metrics,
+            'evidence': _record_evidence(run),
         }
         raw_error = run.get('error')
         if raw_error is not None:
@@ -162,6 +214,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
             record['error'] = {
                 'type': str(raw_error.get('type') or 'Error'),
                 'message': str(raw_error.get('message') or ''),
+                **({'traceback': raw_error['traceback']} if raw_error.get('traceback') is not None else {}),
             }
         records.append(record)
 
@@ -174,9 +227,16 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
         'version': REPORT_VERSION,
         'report': {
             'id': matrix_id,
-            'type': 'test_matrix',
-            'title': 'LMTS Test Matrix',
+            'type': 'benchmark',
+            'title': 'LMTS Benchmark Report',
             'created_at': created_at,
+            'benchmark': {
+                'status': matrix.get('status'),
+                'started_at': matrix.get('started_at'),
+                'completed_at': matrix.get('completed_at'),
+                'target_ids': list(matrix.get('target_ids') or []),
+                'test_refs': list(matrix.get('test_refs') or []),
+            },
         },
         'source': {
             'type': 'lmts.matrix_bundle',
@@ -189,8 +249,14 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
             'test': {'label': 'Test', 'entity_type': 'test'},
         },
         'entities': {'target': target_entities, 'test': test_entities},
+        'metric_definitions': metric_definitions,
         'records': records,
-        'summary': {'records': len(records), 'outcomes': outcomes},
+        'summary': {
+            'records': len(records),
+            'outcomes': outcomes,
+            'targets': len(target_entities),
+            'tests': len(test_entities),
+        },
         'views': [{
             'id': 'results',
             'type': 'matrix',

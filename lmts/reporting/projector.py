@@ -19,6 +19,11 @@ _METRIC_UNITS: dict[str, tuple[str, str | None]] = {
     'exact_output_match': ('exact_output_match', None),
 }
 
+_STANDARD_REPORT_METRICS: dict[str, str | None] = {
+    projected_name: unit for projected_name, unit in _METRIC_UNITS.values()
+}
+_STANDARD_REPORT_METRICS['score_percent'] = 'percent'
+
 
 def _test_entity(test_ref: str) -> dict[str, Any]:
     match = _TEST_REF_RE.fullmatch(test_ref)
@@ -86,6 +91,16 @@ def _outcome(run: dict[str, Any]) -> dict[str, str]:
     return {'status': status, 'result': result}
 
 
+def _empty_standard_metrics() -> dict[str, dict[str, Any]]:
+    metrics: dict[str, dict[str, Any]] = {}
+    for name, unit in _STANDARD_REPORT_METRICS.items():
+        metric: dict[str, Any] = {'value': None}
+        if unit is not None:
+            metric['unit'] = unit
+        metrics[name] = metric
+    return metrics
+
+
 def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     if bundle.get('export_type') != 'lmts.matrix_bundle':
         raise ValueError('source is not an lmts.matrix_bundle export')
@@ -121,7 +136,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
         raw_metrics = run['metrics']
         if not isinstance(raw_metrics, dict):
             raise ValueError(f'run {run_id!r} metrics must be an object')
-        metrics: dict[str, Any] = {}
+        metrics = _empty_standard_metrics()
         for name, value in raw_metrics.items():
             projected_name, unit = _METRIC_UNITS.get(str(name), (str(name), None))
             metric: dict[str, Any] = {'value': value}

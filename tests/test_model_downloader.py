@@ -107,6 +107,49 @@ def test_queue_is_fifo_and_serial_per_module() -> None:
     assert downloader.max_active == 1
 
 
+def test_enqueue_many_adds_all_items_before_worker_runs() -> None:
+    downloader = ControlledDownloader()
+    queue = ModelDownloadQueue(ModelDownloaderRegistry((downloader,)))
+
+    items = queue.enqueue_many('fake', ['model-a', 'model-b', 'model-c'])
+
+    assert [item.model_ref for item in items] == ['model-a', 'model-b', 'model-c']
+    assert [item.model_ref for item in queue.items()] == ['model-a', 'model-b', 'model-c']
+    _wait_for(lambda: items[0].state == 'downloading')
+    assert items[1].state == 'queued'
+    assert items[2].state == 'queued'
+
+    for item in items:
+        downloader.release[item.model_ref].set()
+        _wait_for(lambda item=item: item.state == 'completed')
+
+
+def test_enqueue_many_is_atomic_when_one_ref_conflicts() -> None:
+    downloader = ControlledDownloader()
+    queue = ModelDownloadQueue(ModelDownloaderRegistry((downloader,)))
+    existing = queue.enqueue('fake', 'model-b')
+    _wait_for(lambda: existing.state == 'downloading')
+    before_ids = tuple(item.id for item in queue.items())
+
+    with pytest.raises(ValueError, match='already queued or active'):
+        queue.enqueue_many('fake', ['model-a', 'model-b', 'model-c'])
+
+    assert tuple(item.id for item in queue.items()) == before_ids
+    assert {item.model_ref for item in queue.items()} == {'model-b'}
+    downloader.release['model-b'].set()
+    _wait_for(lambda: existing.state == 'completed')
+
+
+def test_enqueue_many_rejects_input_duplicates_without_side_effects() -> None:
+    downloader = ControlledDownloader()
+    queue = ModelDownloadQueue(ModelDownloaderRegistry((downloader,)))
+
+    with pytest.raises(ValueError, match='contains duplicates'):
+        queue.enqueue_many('fake', ['model-a', 'model-a'])
+
+    assert queue.items() == ()
+
+
 def test_queue_rejects_duplicate_live_model_ref() -> None:
     downloader = ControlledDownloader()
     queue = ModelDownloadQueue(ModelDownloaderRegistry((downloader,)))

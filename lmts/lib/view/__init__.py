@@ -1,6 +1,7 @@
 """Host-neutral view primitives."""
 
 from .curses_host import CursesViewHost
+from .layout import LayoutPane
 from .model import ViewFrame, ViewItem
 from .path_dialog import choose_directory
 from .registry_split_host import RegistrySplitCursesViewHost
@@ -12,6 +13,7 @@ __all__ = [
     "CursesViewHost",
     "SplitCursesViewHost",
     "RegistrySplitCursesViewHost",
+    "LayoutPane",
     "ViewFrame",
     "ViewItem",
     "choose_directory",

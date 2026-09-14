@@ -4,9 +4,13 @@ from lmts.core.model_downloader import ModelDownloadQueue, ModelDownloaderRegist
 from lmts.tools.ollama_downloader import OllamaModelDownloader
 
 
+def default_model_downloader_registry() -> ModelDownloaderRegistry:
+    return ModelDownloaderRegistry((OllamaModelDownloader(),))
+
+
 class ModelDownloaderPage:
-    def __init__(self) -> None:
-        self.registry = ModelDownloaderRegistry((OllamaModelDownloader(),))
+    def __init__(self, registry: ModelDownloaderRegistry | None = None) -> None:
+        self.registry = registry if registry is not None else default_model_downloader_registry()
         self.queue = ModelDownloadQueue(self.registry)
         downloaders = self.registry.downloaders()
         self.module_id = downloaders[0].id if downloaders else None

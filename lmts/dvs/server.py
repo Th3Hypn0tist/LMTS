@@ -101,13 +101,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
-            if path == '/api/table':
+            if path == '/api/extract':
                 payload = self._body()
                 if set(payload) != {'input_template_id', 'source'}:
-                    raise ValueError('/api/table requires exactly input_template_id and source')
+                    raise ValueError('/api/extract requires exactly input_template_id and source')
                 template = REGISTRY.templates.get(str(payload['input_template_id']))
-                table = template.extract(payload['source'])
-                return self._json({'ok': True, 'input_template_id': template.id, 'table': table.to_dict()})
+                extracted = template.extract(payload['source'])
+                return self._json({
+                    'ok': True,
+                    'input_template_id': template.id,
+                    'columns': list(extracted.columns),
+                    'rows': [list(row) for row in extracted.rows],
+                })
             return self._json({'ok': False, 'error': 'not_found'}, 404)
         except KeyError as exc:
             return self._json({'ok': False, 'error': str(exc)}, 404)

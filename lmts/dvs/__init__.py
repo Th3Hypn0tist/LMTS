@@ -5,6 +5,7 @@ from .model import (
     VisualizationPreset,
 )
 from .registry import DVSRegistry
+from .runtime import project_visualization
 
 __all__ = [
     'DVS_INPUT_TEMPLATE_FORMAT',
@@ -12,4 +13,5 @@ __all__ = [
     'InputTemplate',
     'VisualizationPreset',
     'DVSRegistry',
+    'project_visualization',
 ]

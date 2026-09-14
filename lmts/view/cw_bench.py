@@ -5,7 +5,7 @@ from pathlib import Path
 
 from lmts.core.control import RunControl
 from lmts.core.cw_bench import CICAdapter, CWSource
-from lmts.tests.modules.cw_challenge import CWChallengeTest
+from lmts.tests.modules.cw_deep import CWDeepTest
 
 
 def available_cw_languages(cic_root: Path) -> tuple[str, ...]:
@@ -36,7 +36,7 @@ def start_cw_bench(
         controller.state.message = "select at least one model for CW Bench"
         return False
 
-    test = CWChallengeTest(
+    test = CWDeepTest(
         source=source,
         output_language=output_language,
         cic_root=cic_root,

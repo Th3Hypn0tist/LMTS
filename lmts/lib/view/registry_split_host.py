@@ -377,6 +377,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             if self._footer_mode == "layout":
                 if len(token) == 1 and token in "0123456789":
                     self._toggle_layout_slot(int(token))
+                    self._footer_mode = "actions"
                 self._sequence = ()
                 continue
             match = self.shortcuts.match(self._sequence, token, self._scopes())

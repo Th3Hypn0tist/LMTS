@@ -7,6 +7,7 @@ from typing import Any, Literal
 from lmts.tests.base import TestContext, TestModule, TestRequirements, TestResult
 
 ParameterKind = Literal["text", "integer", "boolean", "choice"]
+TestLevel = Literal["quick", "standard", "challenge"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,9 +57,11 @@ class TestTypeDefinition:
     version: str
     title: str
     description: str
+    level: TestLevel
     requirements: TestRequirements
     parameters: tuple[TestParameter, ...]
     factory: Factory
+    mandatory: bool = False
 
     @property
     def ref(self) -> str:
@@ -88,6 +91,8 @@ class TestTypeDefinition:
             instance_id=instance_id,
             type_ref=self.ref,
             title=self.title,
+            level=self.level,
+            mandatory=self.mandatory,
             params=normalized,
             module=module,
         )
@@ -98,6 +103,8 @@ class ConfiguredTest:
     instance_id: str
     type_ref: str
     title: str
+    level: TestLevel
+    mandatory: bool
     params: dict[str, object]
     module: TestModule
 

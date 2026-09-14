@@ -86,44 +86,36 @@ def stringify_cell(value: Any) -> str:
 class InputColumn:
     name: str
     selector: str
-    on_missing: str | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> 'InputColumn':
         payload = _object(payload, 'InputColumn')
-        _require_keys(payload, {'name', 'selector'}, {'name', 'selector', 'on_missing'}, 'InputColumn')
-        on_missing = payload.get('on_missing')
-        if on_missing is not None and not isinstance(on_missing, str):
-            raise ValueError('InputColumn.on_missing must be a string when present')
+        _require_keys(payload, {'name', 'selector'}, {'name', 'selector'}, 'InputColumn')
         return cls(
             name=_text(payload['name'], 'InputColumn.name'),
             selector=_text(payload['selector'], 'InputColumn.selector'),
-            on_missing=on_missing,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        result: dict[str, Any] = {'name': self.name, 'selector': self.selector}
-        if self.on_missing is not None:
-            result['on_missing'] = self.on_missing
-        return result
+        return {'name': self.name, 'selector': self.selector}
 
 
 @dataclass(frozen=True, slots=True)
-class GenericStringTable:
+class _StringTable:
     columns: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
 
     def __post_init__(self) -> None:
         if not self.columns or any(not isinstance(value, str) or not value for value in self.columns):
-            raise ValueError('GenericStringTable requires non-empty string column names')
+            raise ValueError('runtime string table requires non-empty string column names')
         if len(set(self.columns)) != len(self.columns):
-            raise ValueError('GenericStringTable column names must be unique')
+            raise ValueError('runtime string table column names must be unique')
         width = len(self.columns)
         for row in self.rows:
             if len(row) != width:
-                raise ValueError('GenericStringTable row width must match columns')
+                raise ValueError('runtime string table row width must match columns')
             if any(not isinstance(value, str) for value in row):
-                raise ValueError('GenericStringTable cells must be strings')
+                raise ValueError('runtime string table cells must be strings')
 
     def to_dict(self) -> dict[str, Any]:
         return {'columns': list(self.columns), 'rows': [list(row) for row in self.rows]}
@@ -181,7 +173,7 @@ class InputTemplate:
             'columns': [column.to_dict() for column in self.columns],
         }
 
-    def extract(self, source: Any) -> GenericStringTable:
+    def extract(self, source: Any) -> _StringTable:
         rows = select_many(source, self.rows_selector)
         projected: list[tuple[str, ...]] = []
         for row_index, row in enumerate(rows):
@@ -189,15 +181,13 @@ class InputTemplate:
             for column in self.columns:
                 try:
                     raw_value = select_one(row, column.selector)
-                    values.append(stringify_cell(raw_value))
                 except KeyError as exc:
-                    if column.on_missing is None:
-                        raise ValueError(
-                            f'InputTemplate {self.id!r} row {row_index} column {column.name!r}: {exc}'
-                        ) from exc
-                    values.append(column.on_missing)
+                    raise ValueError(
+                        f'InputTemplate {self.id!r} row {row_index} column {column.name!r}: {exc}'
+                    ) from exc
+                values.append(stringify_cell(raw_value))
             projected.append(tuple(values))
-        return GenericStringTable(tuple(column.name for column in self.columns), tuple(projected))
+        return _StringTable(tuple(column.name for column in self.columns), tuple(projected))
 
 
 @dataclass(frozen=True, slots=True)

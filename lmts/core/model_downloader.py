@@ -110,28 +110,43 @@ class ModelDownloadQueue:
         self._cancel_events: dict[str, threading.Event] = {}
 
     def enqueue(self, module_id: str, model_ref: str) -> ModelDownloadQueueItem:
+        return self.enqueue_many(module_id, (model_ref,))[0]
+
+    def enqueue_many(
+        self,
+        module_id: str,
+        model_refs: list[str] | tuple[str, ...],
+    ) -> tuple[ModelDownloadQueueItem, ...]:
         downloader = self.registry.get(module_id)
-        model_ref = model_ref.strip()
-        if not model_ref:
+        refs = tuple(str(value).strip() for value in model_refs)
+        if not refs:
+            raise ValueError("at least one model reference is required")
+        if any(not value for value in refs):
             raise ValueError("model reference must be non-empty")
+        if len(refs) != len(set(refs)):
+            raise ValueError("model reference list contains duplicates")
         if not downloader.available():
             raise RuntimeError(f"model downloader is unavailable: {module_id}")
+
         with self._lock:
-            duplicate = next(
-                (
-                    item for item in self._items
-                    if item.module_id == module_id
-                    and item.model_ref == model_ref
-                    and item.state in {"queued", "downloading"}
-                ),
-                None,
+            live_refs = {
+                item.model_ref
+                for item in self._items
+                if item.module_id == module_id and item.state in {"queued", "downloading"}
+            }
+            conflicts = [model_ref for model_ref in refs if model_ref in live_refs]
+            if conflicts:
+                raise ValueError(
+                    "model download already queued or active: "
+                    + ", ".join(f"{module_id}:{model_ref}" for model_ref in conflicts)
+                )
+            items = tuple(
+                ModelDownloadQueueItem(id=uuid.uuid4().hex, module_id=module_id, model_ref=model_ref)
+                for model_ref in refs
             )
-            if duplicate is not None:
-                raise ValueError(f"model download already queued or active: {module_id}:{model_ref}")
-            item = ModelDownloadQueueItem(id=uuid.uuid4().hex, module_id=module_id, model_ref=model_ref)
-            self._items.append(item)
+            self._items.extend(items)
             self._ensure_worker_locked(module_id)
-            return item
+            return items
 
     def items(self) -> tuple[ModelDownloadQueueItem, ...]:
         with self._lock:

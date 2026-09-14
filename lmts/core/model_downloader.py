@@ -117,6 +117,17 @@ class ModelDownloadQueue:
         if not downloader.available():
             raise RuntimeError(f"model downloader is unavailable: {module_id}")
         with self._lock:
+            duplicate = next(
+                (
+                    item for item in self._items
+                    if item.module_id == module_id
+                    and item.model_ref == model_ref
+                    and item.state in {"queued", "downloading"}
+                ),
+                None,
+            )
+            if duplicate is not None:
+                raise ValueError(f"model download already queued or active: {module_id}:{model_ref}")
             item = ModelDownloadQueueItem(id=uuid.uuid4().hex, module_id=module_id, model_ref=model_ref)
             self._items.append(item)
             self._ensure_worker_locked(module_id)

@@ -6,6 +6,8 @@ from lmts.core.executor import TestExecutor
 from lmts.lib.view import ViewFrame, ViewItem
 from lmts.tests.base import TestModule, test_ref
 
+from .live_matrix import LiveResultsMatrixView
+
 
 @dataclass(slots=True)
 class LMTSViewState:
@@ -30,6 +32,11 @@ class LMTSViewState:
     progress_target_id: str = ""
     progress_test_ref: str = ""
     progress_phase: str = "idle"
+
+    live_target_ids: tuple[str, ...] = ()
+    live_target_kinds: dict[str, str] = field(default_factory=dict)
+    live_test_refs: tuple[str, ...] = ()
+    live_cells: dict[tuple[str, str], str] = field(default_factory=dict)
 
     @property
     def selected_targets(self) -> list[TestExecutor]:
@@ -67,6 +74,17 @@ class LMTSViewState:
             f"errors   : {self.progress_errors}",
             f"cancelled: {self.progress_cancelled}",
         )
+
+    def live_matrix_lines(self) -> tuple[str, ...]:
+        if not self.live_target_ids or not self.live_test_refs:
+            return ()
+        return LiveResultsMatrixView(
+            target_ids=self.live_target_ids,
+            target_kinds=self.live_target_kinds,
+            test_refs=self.live_test_refs,
+            cells=self.live_cells,
+            current_test_ref=self.progress_test_ref,
+        ).lines()
 
 
 class LMTSViewProjector:
@@ -123,7 +141,10 @@ class LMTSViewProjector:
             for target in selected_targets:
                 lines.append(f"  {target.kind.upper():11} {target.id}")
 
-        if self.state.tests:
+        live_matrix = self.state.live_matrix_lines()
+        if live_matrix:
+            lines.extend(["", *live_matrix])
+        elif self.state.tests:
             lines.extend(["", "Configured test matrix"])
             level_marker = {"quick": "Q", "moderate": "M", "deep": "D"}
             for test in self.state.tests:

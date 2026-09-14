@@ -17,14 +17,14 @@ def _context(tmp_path, text: str) -> TestContext:
     return TestContext(executor=executor, workspace=Workspace(tmp_path / "workspace"))
 
 
-def test_capability_cases_are_registered_but_not_default_matrix() -> None:
+def test_capability_cases_are_registered_and_in_default_matrix() -> None:
     registry = default_test_type_registry()
     registered = {definition.id for definition in registry.definitions()}
     capability_ids = {case["id"] for case in ALL_CAPABILITY_CASES}
     assert capability_ids <= registered
 
     default_ids = {test.id for test in default_test_matrix(registry).tests()}
-    assert not (capability_ids & default_ids)
+    assert capability_ids <= default_ids
 
 
 def test_every_capability_case_has_deterministic_full_score(tmp_path) -> None:

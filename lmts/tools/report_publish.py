@@ -4,13 +4,15 @@ import json
 from typing import Any
 from urllib.request import Request, urlopen
 
+from lmts.reporting import REPORT_FORMAT, REPORT_VERSION
+
 from .report_profiles import ReportProfile
 
 
 def publish_report(report: dict[str, Any], profile: ReportProfile, *, timeout: float = 20.0) -> str:
     report_meta = report.get('report')
-    if report.get('format') != 'lmts.report' or report.get('version') != '1.0' or not isinstance(report_meta, dict):
-        raise ValueError('payload is not an LMTS Report v1.0 document')
+    if report.get('format') != REPORT_FORMAT or report.get('version') != REPORT_VERSION or not isinstance(report_meta, dict):
+        raise ValueError(f'payload is not an LMTS Benchmark Report {REPORT_VERSION} document')
     report_id = str(report_meta.get('id') or '').strip()
     if not report_id:
         raise ValueError('LMTS report is missing report.id')

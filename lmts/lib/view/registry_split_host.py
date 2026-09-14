@@ -101,20 +101,20 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         definitions = self._action_definitions()
         if not definitions:
             return "Actions: -"
-        return "Actions: " + " | ".join(
-            f"{item.sequence_label}{item.label}" for item in definitions
+        return "Actions:" + "".join(
+            f" {item.sequence_label} {item.label}" for item in definitions
         )
 
     def _footer_segments(self) -> tuple[tuple[str, int], ...]:
         definitions = self._action_definitions()
         if not definitions:
             return (("Actions: -", curses.A_DIM),)
-        segments: list[tuple[str, int]] = [("Actions: ", curses.A_DIM)]
-        for index, item in enumerate(definitions):
+        segments: list[tuple[str, int]] = [("Actions:", curses.A_DIM)]
+        for item in definitions:
+            segments.append((" ", 0))
             segments.append((item.sequence_label, curses.A_REVERSE | curses.A_BOLD))
+            segments.append((" ", 0))
             segments.append((item.label, 0))
-            if index < len(definitions) - 1:
-                segments.append((" | ", curses.A_DIM))
         return tuple(segments)
 
     def _draw_footer(self, stdscr: curses.window) -> None:

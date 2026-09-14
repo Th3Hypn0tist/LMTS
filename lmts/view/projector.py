@@ -13,6 +13,7 @@ class LMTSViewState:
     tests: list[TestModule] = field(default_factory=list)
     selected_target_ids: set[str] = field(default_factory=set)
     selected_test_refs: set[str] = field(default_factory=set)
+    suite_level: str = "moderate"
     message: str = ""
     last_result: dict[str, object] | None = None
 
@@ -97,7 +98,8 @@ class LMTSViewProjector:
         run_count = len(selected_targets) * len(selected_tests)
         profile_text = "REQUIRED" if self.state.profile_required else "ready"
         status = (
-            f"profile={profile_text}  targets={len(selected_targets)}/{len(self.state.targets)}  "
+            f"profile={profile_text}  suite={self.state.suite_level.upper()}  "
+            f"targets={len(selected_targets)}/{len(self.state.targets)}  "
             f"tests={len(selected_tests)}/{len(self.state.tests)}  runs={run_count}"
         )
         if self.state.running:
@@ -107,6 +109,7 @@ class LMTSViewProjector:
             "LMTS evaluation laboratory",
             "",
             f"Profile: {profile_text}",
+            f"Suite  : {self.state.suite_level.upper()} cumulative",
             f"Targets: {target_text}",
             f"Tests  : {test_text}",
             f"Matrix : {len(selected_targets)} x {len(selected_tests)} = {run_count} run(s)",
@@ -122,12 +125,18 @@ class LMTSViewProjector:
 
         if self.state.tests:
             lines.extend(["", "Configured test matrix"])
+            level_marker = {"quick": "Q", "moderate": "M", "deep": "D"}
             for test in self.state.tests:
                 marker = "x" if test_ref(test) in self.state.selected_test_refs else " "
+                minimum_level = getattr(test, "minimum_level", None)
+                if minimum_level not in level_marker:
+                    raise ValueError(f"configured test missing canonical minimum_level: {test_ref(test)}")
+                tier = level_marker[minimum_level]
                 title = getattr(test, "title", test.id)
                 params = getattr(test, "params", {})
                 suffix = f"  params={params}" if params else ""
-                lines.append(f"  [{marker}] {test_ref(test)}  {title}{suffix}")
+                mandatory = " !" if bool(getattr(test, "mandatory", False)) else ""
+                lines.append(f"  [{marker}] [{tier}]{mandatory} {test_ref(test)}  {title}{suffix}")
 
         if len(selected_targets) == 1:
             target = selected_targets[0]
@@ -163,6 +172,7 @@ class LMTSViewProjector:
             lines=tuple(lines),
             items=(
                 ViewItem("profile", "Profile", profile_text),
+                ViewItem("suite", "Suite", self.state.suite_level),
                 ViewItem("targets", "Targets", target_text),
                 ViewItem("tests", "Configured tests", test_text),
                 ViewItem("runs", "Runs", str(run_count)),

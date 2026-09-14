@@ -4,6 +4,7 @@ from .curses_host import CursesViewHost
 from .layout import LayoutPane
 from .model import ViewFrame, ViewItem
 from .path_dialog import choose_directory
+from .preview_dialog import choose_with_preview
 from .registry_split_host import RegistrySplitCursesViewHost
 from .shortcut_registry import ShortcutDefinition, ShortcutMatch, ShortcutRegistry
 from .split_host import SplitCursesViewHost
@@ -17,6 +18,7 @@ __all__ = [
     "ViewFrame",
     "ViewItem",
     "choose_directory",
+    "choose_with_preview",
     "ShortcutDefinition",
     "ShortcutMatch",
     "ShortcutRegistry",

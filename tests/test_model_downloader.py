@@ -88,6 +88,7 @@ def test_queue_is_fifo_and_serial_per_module() -> None:
     second = queue.enqueue('fake', 'model-b')
 
     _wait_for(lambda: first.state == 'downloading')
+    _wait_for(lambda: first.progress is not None and first.progress.percent == 50.0)
     assert second.state == 'queued'
     assert downloader.started == ['model-a']
     assert downloader.max_active == 1

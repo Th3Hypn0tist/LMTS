@@ -30,11 +30,9 @@ def test_lmts_top_level_tab_order() -> None:
 
 
 def test_shortcut_registry_matches_sequences() -> None:
-    first = SHORTCUT_REGISTRY.match((), 'esc', ('benchmark',))
-    assert first.kind == 'prefix'
-    second = SHORTCUT_REGISTRY.match(first.buffer, 'esc', ('benchmark',))
-    assert second.kind == 'exact'
-    assert second.shortcut.action == 'nav.back'
+    back = SHORTCUT_REGISTRY.match((), 'esc', ('benchmark',))
+    assert back.kind == 'exact'
+    assert back.shortcut.action == 'nav.back'
 
     first = SHORTCUT_REGISTRY.match((), 'q', ('benchmark',))
     second = SHORTCUT_REGISTRY.match(first.buffer, 'q', ('benchmark',))
@@ -47,11 +45,27 @@ def test_shortcuts_are_scoped_by_topic_area() -> None:
     benchmark_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('benchmark',))}
     profile_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('profile',))}
     deep_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('deep',))}
+    downloader_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('downloader',))}
     settings_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('settings',))}
-    assert {'benchmark.quick', 'benchmark.moderate', 'benchmark.deep'} <= benchmark_actions
-    assert 'benchmark.quick' not in profile_actions
+
+    assert {
+        'benchmark.tests',
+        'benchmark.targets',
+        'benchmark.run',
+        'benchmark.output',
+        'benchmark.refresh',
+    } <= benchmark_actions
+    assert 'benchmark.tests' not in profile_actions
     assert 'profile.cpu' in profile_actions
     assert {'deep.cw_bench', 'deep.run', 'deep.results'} <= deep_actions
+    assert {
+        'downloader.module',
+        'downloader.download',
+        'downloader.delete',
+        'downloader.progress',
+        'downloader.refresh',
+        'downloader.cancel',
+    } <= downloader_actions
     assert 'settings.mysql' in settings_actions
     assert 'settings.mysql' not in benchmark_actions
 

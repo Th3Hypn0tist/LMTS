@@ -10,6 +10,7 @@ formal source format
     -> internal string-row projection
     -> Visualization Preset
     -> recursive visual generations
+    -> generic visual plan
     -> S3D visual representation
 ```
 
@@ -21,6 +22,7 @@ formal source format
 | Visualization Preset model | Complete |
 | Registry and validation | Complete |
 | Strict missing-field semantics | Complete |
+| Generic visual-plan runtime | Complete baseline |
 | Python DVS host | Complete baseline |
 | Studio | Complete feature baseline |
 | Visualizer | Complete feature baseline |
@@ -88,6 +90,25 @@ result         -> RGB channels
 
 This establishes the first real `LMTS Benchmark Report -> Input Template -> Visualization Preset` chain while keeping DVS and S3D generic. The preset may evolve as LMTS discovers which benchmark metrics distinguish models, bots and compositions most usefully. It is not the future locked AIGM LM Benchmark Report profile.
 
+## Generic visual plan
+
+`project_visualization()` applies an Input Template and Visualization Preset to source data and emits a generic `s3d.dvs.visual-plan/1.0` document. It contains only primitive, visibility, visual-channel, grouping and source-row information. It does not contain LMTS-specific renderer logic.
+
+Current generic interpretations are:
+
+```text
+categorical-index
+number
+number-or-null
+category-channel
+```
+
+Transforms are strict. Unsupported transform fields fail. There is no implicit aggregation inside a generation group: if a binding resolves to several different source values, projection fails instead of guessing an aggregate.
+
+For `number-or-null`, an explicit `null: "not-rendered"` transform marks that visual group `visible: false`. DVS does not manufacture a replacement value.
+
+Recursive child generations are projected recursively and may select a different primitive from their parent generation.
+
 ## Studio
 
 **Feature baseline: complete.**
@@ -125,6 +146,7 @@ Visualizer is the read/inspection surface. Its intended complete feature set is:
 - choose a compatible Input Template
 - project source data through the internal string boundary
 - choose a compatible Visualization Preset
+- generate a generic visual plan
 - generate recursive visual structures
 - render through S3D
 - use packed high-density rendering for observation-heavy visualizations
@@ -157,9 +179,12 @@ GET  /api/input-templates/<id>
 GET  /api/visualization-presets
 GET  /api/visualization-presets/<id>
 POST /api/extract
+POST /api/visualize
 ```
 
 `POST /api/extract` accepts exactly `input_template_id` and `source` and returns the projected `columns` and `rows`. There is deliberately no `/api/table` compatibility alias: the internal projection is not a public Input Table model.
+
+`POST /api/visualize` accepts exactly `input_template_id`, `visualization_preset_id` and `source`, validates template/preset compatibility and returns the generic visual plan consumed by the visualization layer.
 
 The viewer-facing API is read-oriented. Studio mutation endpoints belong only to the Python host and may evolve without changing the shared Input Template or Visualization Preset formats.
 
@@ -208,3 +233,4 @@ Alpha currently remains a render/batch property. Per-face channels are the next 
 8. High-density visualization stays packed instead of creating one SceneObject per observation.
 9. Python Studio semantics are not duplicated in viewer-only hosts.
 10. DVS consumes `lmts.report/1.1` directly; it does not create a second LMTS report format.
+11. Visual plans are generic renderer input, not a second application-data authority.

@@ -10,7 +10,8 @@ TAB_REGISTRY = TabRegistry(
         TabDefinition("root", "AIGM LMTS", parent=None, order=0),
         TabDefinition("profile", "Profile", parent="root", shortcut="1", order=10),
         TabDefinition("benchmark", "Benchmark", parent="root", shortcut="2", order=20),
-        TabDefinition("settings", "Settings", parent="root", shortcut="3", order=30),
+        TabDefinition("downloader", "Model Downloader", parent="root", shortcut="3", order=30),
+        TabDefinition("settings", "Settings", parent="root", shortcut="4", order=40),
     ]
 )
 
@@ -18,7 +19,8 @@ TAB_REGISTRY = TabRegistry(
 DEFAULT_SHORTCUTS = (
     ShortcutDefinition("tab.profile", ("1",), "Profile", "Tabs", order=10),
     ShortcutDefinition("tab.benchmark", ("2",), "Benchmark", "Tabs", order=20),
-    ShortcutDefinition("tab.settings", ("3",), "Settings", "Tabs", order=30),
+    ShortcutDefinition("tab.downloader", ("3",), "Model Downloader", "Tabs", order=30),
+    ShortcutDefinition("tab.settings", ("4",), "Settings", "Tabs", order=40),
     ShortcutDefinition("nav.back", ("esc", "esc"), "Back", "Navigation", order=900),
     ShortcutDefinition("scroll.up", ("up",), "Scroll up", "Navigation", order=910),
     ShortcutDefinition("scroll.down", ("down",), "Scroll down", "Navigation", order=920),
@@ -42,6 +44,12 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("cancel", ("c",), "Cancel", "Benchmark", scope="benchmark", order=180),
     ShortcutDefinition("errors", ("e",), "Errors", "Benchmark", scope="benchmark", order=190),
     ShortcutDefinition("refresh", ("x",), "Refresh", "Benchmark", scope="benchmark", order=200),
+
+    ShortcutDefinition("downloader.module", ("m",), "Select module", "Model Downloader", scope="downloader", order=100),
+    ShortcutDefinition("downloader.download", ("d",), "Download model", "Model Downloader", scope="downloader", order=110),
+    ShortcutDefinition("downloader.progress", ("p",), "Download progress", "Model Downloader", scope="downloader", order=120),
+    ShortcutDefinition("downloader.refresh", ("r",), "Refresh", "Model Downloader", scope="downloader", order=130),
+    ShortcutDefinition("downloader.cancel", ("c",), "Cancel download", "Model Downloader", scope="downloader", order=140),
 
     ShortcutDefinition("settings.output", ("o",), "Output folder", "Settings", scope="settings", order=100),
     ShortcutDefinition("settings.server", ("i",), "Server setup", "Settings", scope="settings", order=110),

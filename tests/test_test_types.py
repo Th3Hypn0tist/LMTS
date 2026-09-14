@@ -1,4 +1,8 @@
-from lmts.tests.catalog import default_test_matrix, default_test_type_registry, test_matrix_for_level
+from lmts.tests.catalog import (
+    default_test_matrix,
+    default_test_type_registry,
+    test_matrix_for_level as matrix_for_level,
+)
 
 
 def test_registry_and_matrix_are_separate() -> None:
@@ -31,9 +35,9 @@ def test_registry_and_matrix_are_separate() -> None:
 
 def test_suite_levels_are_cumulative() -> None:
     registry = default_test_type_registry()
-    quick = {test.type_ref for test in test_matrix_for_level("quick", registry).tests()}
-    moderate = {test.type_ref for test in test_matrix_for_level("moderate", registry).tests()}
-    deep = {test.type_ref for test in test_matrix_for_level("deep", registry).tests()}
+    quick = {test.type_ref for test in matrix_for_level("quick", registry).tests()}
+    moderate = {test.type_ref for test in matrix_for_level("moderate", registry).tests()}
+    deep = {test.type_ref for test in matrix_for_level("deep", registry).tests()}
 
     assert quick < moderate
     assert moderate <= deep

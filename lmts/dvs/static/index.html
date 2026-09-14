@@ -9,17 +9,58 @@
 <body>
   <main>
     <header>
-      <h1>S3D Data Visualizer Studio</h1>
-      <p>LMTS Python host: Studio + Viewer</p>
+      <div>
+        <h1>S3D Data Visualizer Studio</h1>
+        <p>Python host: Studio + Visualizer</p>
+      </div>
+      <div id="status" class="status">Loading…</div>
     </header>
+
+    <section class="workspace">
+      <aside class="panel controls">
+        <h2>Source</h2>
+        <label>
+          Input Template
+          <select id="template"></select>
+        </label>
+        <label>
+          Visualization Preset
+          <select id="preset"></select>
+        </label>
+        <label>
+          JSON file
+          <input id="source-file" type="file" accept="application/json,.json">
+        </label>
+        <label>
+          Source JSON
+          <textarea id="source" spellcheck="false" placeholder="Paste a formal source document here"></textarea>
+        </label>
+        <div class="actions">
+          <button id="extract" type="button">Extract</button>
+          <button id="visualize" type="button">Visualize</button>
+        </div>
+        <p class="hint">S3D viewer: right-drag to orbit, wheel to zoom.</p>
+      </aside>
+
+      <section class="panel viewer-panel">
+        <h2>Visualizer</h2>
+        <canvas id="viewer"></canvas>
+        <div id="viewer-message" class="viewer-message">No visual plan loaded.</div>
+      </section>
+    </section>
+
     <section class="panel">
-      <h2>Input Templates</h2>
+      <h2>Projection / Visual Plan</h2>
+      <pre id="output">No output.</pre>
+    </section>
+
+    <details class="panel registry">
+      <summary>Registered definitions</summary>
+      <h3>Input Templates</h3>
       <pre id="templates">Loading…</pre>
-    </section>
-    <section class="panel">
-      <h2>Visualization Presets</h2>
+      <h3>Visualization Presets</h3>
       <pre id="presets">Loading…</pre>
-    </section>
+    </details>
   </main>
   <script type="module" src="/static/dvs.js"></script>
 </body>

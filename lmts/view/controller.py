@@ -201,15 +201,13 @@ class LMTSViewController:
             self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
             self._clear_live_matrix()
 
-    def run_selected(self) -> bool:
+    def _start_run(self, targets: list[TestExecutor], tests: list[ConfiguredTest]) -> bool:
         if self.state.running:
             self.state.message = "test matrix already running"
             return False
         if self.state.profile_required:
             self.state.message = "system profile required before testing"
             return False
-        targets = list(self.state.selected_targets)
-        tests = list(self.state.selected_tests)
         if not targets or not tests:
             self.state.message = "select at least one target and one configured test"
             return False
@@ -240,6 +238,16 @@ class LMTSViewController:
         self._run_thread = threading.Thread(target=self._run_matrix, args=(targets, tests, self._run_control), name="lmts-test-matrix", daemon=True)
         self._run_thread.start()
         return True
+
+    def run_selected(self) -> bool:
+        return self._start_run(list(self.state.selected_targets), list(self.state.selected_tests))
+
+    def run_all_tests(self) -> bool:
+        return self._start_run(list(self.state.selected_targets), list(self.state.tests))
+
+    def run_all_tests_to_all_models(self) -> bool:
+        models = [target for target in self.state.targets if target.kind == "model"]
+        return self._start_run(models, list(self.state.tests))
 
     def cancel(self) -> bool:
         if not self.state.running or self._run_control is None:
@@ -386,9 +394,7 @@ class LMTSViewController:
         if self.state.running:
             self.state.message = "test matrix already running"
             return False
-        self.select_all_targets()
-        self.select_all_tests()
-        return self.run_selected()
+        return self._start_run(list(self.state.targets), list(self.state.tests))
 
     def profile(self) -> Path | None:
         if self.state.running:

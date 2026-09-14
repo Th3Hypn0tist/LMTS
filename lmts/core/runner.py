@@ -98,9 +98,9 @@ class TestRunner:
             subject_fingerprint=evaluation_subject.fingerprint,
             metadata=dict(executor.metadata),
         )
-        test_level = getattr(test, "level", None)
-        if test_level is not None:
-            execution_metadata["test_level"] = test_level
+        minimum_level = getattr(test, "minimum_level", None)
+        if minimum_level is not None:
+            execution_metadata["test_minimum_level"] = minimum_level
         test_mandatory = getattr(test, "mandatory", None)
         if test_mandatory is not None:
             execution_metadata["test_mandatory"] = bool(test_mandatory)

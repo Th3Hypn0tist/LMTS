@@ -5,6 +5,7 @@ import {
   channelColor,
   channelFaceColors,
   perFaceColorChannelKeys,
+  visitRenderableGroups,
 } from '../../lmts/dvs/static/visualizer.js';
 
 const FACE_ORDER = ['z-', 'z+', 'x-', 'x+', 'y-', 'y+'];
@@ -59,5 +60,36 @@ test('per-face DVS colors require S3D to provide canonical face order', () => {
   assert.throws(
     () => channelFaceColors(completeFaceChannels(), null),
     /S3D BOX_FACE_ORDER is required/,
+  );
+});
+
+test('structural group generations recurse without becoming render primitives', () => {
+  const generations = [{
+    id: 'targets',
+    groups: [{
+      primitive: 'group',
+      visible: true,
+      children: [{
+        id: 'tests',
+        groups: [
+          { primitive: 'box', visible: true, channels: { 'position.x': 1 } },
+          { primitive: 'box', visible: false, channels: { 'position.x': 2 } },
+        ],
+      }],
+    }],
+  }];
+  const seen = [];
+  visitRenderableGroups(generations, group => seen.push(group.channels['position.x']));
+  assert.deepEqual(seen, [1]);
+});
+
+test('unknown render primitives fail instead of silently disappearing', () => {
+  const generations = [{
+    id: 'unknown',
+    groups: [{ primitive: 'sphere', visible: true, channels: {} }],
+  }];
+  assert.throws(
+    () => visitRenderableGroups(generations, () => {}),
+    /does not support primitive: sphere/,
   );
 });

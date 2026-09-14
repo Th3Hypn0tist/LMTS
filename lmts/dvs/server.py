@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .registry import DVSRegistry
+from .runtime import project_visualization
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -113,6 +114,17 @@ class Handler(BaseHTTPRequestHandler):
                     'columns': list(extracted.columns),
                     'rows': [list(row) for row in extracted.rows],
                 })
+            if path == '/api/visualize':
+                payload = self._body()
+                required = {'input_template_id', 'visualization_preset_id', 'source'}
+                if set(payload) != required:
+                    raise ValueError(
+                        '/api/visualize requires exactly input_template_id, visualization_preset_id and source'
+                    )
+                template = REGISTRY.templates.get(str(payload['input_template_id']))
+                preset = REGISTRY.presets.get(str(payload['visualization_preset_id']))
+                plan = project_visualization(payload['source'], template, preset)
+                return self._json({'ok': True, 'visual_plan': plan})
             return self._json({'ok': False, 'error': 'not_found'}, 404)
         except KeyError as exc:
             return self._json({'ok': False, 'error': str(exc)}, 404)

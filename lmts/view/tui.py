@@ -143,18 +143,6 @@ def _benchmark_lines(projector: LMTSViewProjector) -> tuple[str, ...]:
     return tuple(lines)
 
 
-def _challenge_lines() -> tuple[str, ...]:
-    return (
-        'Challenge',
-        '',
-        'Deep evaluations may use long context, long generation and significant runtime.',
-        '',
-        'CW Bench',
-        '  Generate an implementation from one selected CW source, import it back through CIC,',
-        '  and compare the imported CW against the source inside the canonical CW frame.',
-    )
-
-
 def run() -> None:
     test_types = default_test_type_registry()
     matrix = default_test_matrix(test_types)
@@ -163,12 +151,8 @@ def run() -> None:
     projector = LMTSViewProjector(controller.state)
     cw_bench_page = CWBenchPage(controller)
     settings = load_settings(DEFAULT_SETTINGS_PATH)
-    try:
-        shortcut_overrides = load_shortcut_overrides(DEFAULT_SHORTCUT_SETTINGS_PATH)
-        shortcuts = build_shortcut_registry(shortcut_overrides)
-    except (OSError, ValueError):
-        shortcut_overrides = {}
-        shortcuts = build_shortcut_registry()
+    shortcut_overrides = load_shortcut_overrides(DEFAULT_SHORTCUT_SETTINGS_PATH)
+    shortcuts = build_shortcut_registry(shortcut_overrides)
     active_shortcuts = [shortcuts]
     active_tab = ['profile']
 
@@ -176,13 +160,33 @@ def run() -> None:
         return active_tab[0]
 
     def shortcut_label(action: str) -> str:
-        for definition in active_shortcuts[0].definitions((current_tab(),)):
-            if definition.action == action:
-                return definition.sequence_label
-        return '-'
+        definitions = [
+            definition
+            for definition in active_shortcuts[0].definitions((current_tab(),))
+            if definition.action == action
+        ]
+        if len(definitions) != 1:
+            raise ValueError(f'exactly one active shortcut required for {action}: found {len(definitions)}')
+        return definitions[0].sequence_label
 
     def tabs_line() -> str:
         return 'Tabs: ' + ' | '.join(f"{shortcut_label(f'tab.{tab.id}')}. {tab.label}" for tab in TAB_REGISTRY.children('root'))
+
+    def deep_lines() -> tuple[str, ...]:
+        return (
+            'Deep',
+            '',
+            'Cumulative suite: Quick + Moderate + Deep.',
+            f'Automatic suite tests: {len(controller.state.tests)}',
+            '',
+            'Options',
+            f"  {shortcut_label('deep.cw_bench')}. CW Bench",
+            f"  {shortcut_label('deep.run')}. Run Deep suite",
+            f"  {shortcut_label('deep.results')}. Results",
+            '',
+            'CW Bench generates an implementation from one selected CW source, imports the output',
+            'back through CIC, and compares canonical CW against imported canonical CW.',
+        )
 
     def settings_lines() -> tuple[str, ...]:
         ftp_count = len(load_ftp_profiles().profiles)
@@ -199,17 +203,20 @@ def run() -> None:
         )
 
     def render_lines() -> tuple[str, ...]:
-        if current_tab() == 'profile':
+        tab = current_tab()
+        if tab == 'profile':
             return _profile_lines(controller)
-        if current_tab() == 'benchmark':
+        if tab == 'benchmark':
             return _benchmark_lines(projector)
-        if current_tab() == 'challenge':
-            return _challenge_lines()
-        if current_tab() == 'cw_bench':
+        if tab == 'deep':
+            return deep_lines()
+        if tab == 'cw_bench':
             return cw_bench_page.lines()
-        if current_tab() == 'settings':
+        if tab == 'downloader':
+            return ('Model Downloader', '', 'Use the Actions row to select a downloader module and model operation.')
+        if tab == 'settings':
             return settings_lines()
-        return ()
+        raise ValueError(f'unknown TUI tab: {tab}')
 
     def app(stdscr: curses.window) -> None:
         nonlocal settings
@@ -230,6 +237,14 @@ def run() -> None:
             host.title = f'AIGM LMTS - {tab.label}'
             host.scroll = 0
             set_message('')
+
+        def select_suite(level: str, tab_id: str) -> None:
+            if not controller.set_suite_level(level):
+                set_message(controller.state.message)
+                return
+            message = controller.state.message
+            open_tab(tab_id)
+            set_message(message)
 
         def back(_stdscr: curses.window) -> None:
             parent = TAB_REGISTRY.parent(current_tab())
@@ -257,7 +272,7 @@ def run() -> None:
             if controller.state.running:
                 set_message('test matrix is running')
                 return
-            options = [test_ref(test) for test in controller.state.tests]
+            options = [f"[{str(getattr(test, 'minimum_level')).upper()}] {test_ref(test)}" for test in controller.state.tests]
             selected = {i for i, test in enumerate(controller.state.tests) if test_ref(test) in controller.state.selected_test_refs}
             chosen = host.choose_many(stdscr, 'Configured test matrix', options, selected, include_all=True, all_label='All configured tests')
             if chosen is not None:
@@ -282,7 +297,7 @@ def run() -> None:
                 set_message('test matrix is running')
                 return
             definitions = controller.test_types.definitions()
-            chosen = host.choose(stdscr, 'Test type registry', [f'{d.ref}  {d.title}' for d in definitions])
+            chosen = host.choose(stdscr, 'Test type registry', [f'[{d.minimum_level.upper()}] {d.ref}  {d.title}' for d in definitions])
             if chosen is None:
                 return
             definition = definitions[chosen]
@@ -304,6 +319,15 @@ def run() -> None:
                 set_message(controller.state.message)
 
         def run_selected(_stdscr: curses.window) -> None:
+            if controller.run_selected():
+                show_progress()
+            set_message(controller.state.message)
+
+        def run_deep_suite(_stdscr: curses.window) -> None:
+            if not controller.set_suite_level('deep'):
+                set_message(controller.state.message)
+                return
+            controller.select_all_tests()
             if controller.run_selected():
                 show_progress()
             set_message(controller.state.message)
@@ -377,7 +401,7 @@ def run() -> None:
             view_matrix_result(
                 choose_matrix_result(
                     'CW Bench results (newest first)',
-                    lambda data: 'challenge.cw_bench@1.0.0' in [str(value) for value in (data.get('test_refs') or [])],
+                    lambda data: 'deep.cw_bench@1.0.0' in [str(value) for value in (data.get('test_refs') or [])],
                 )
             )
 
@@ -497,7 +521,7 @@ def run() -> None:
                 set_message(f'server deploy failed: {exc}')
 
         def shortcut_editor(_stdscr: curses.window) -> None:
-            definitions = list(active_shortcuts[0].definitions(('profile', 'benchmark', 'challenge', 'cw_bench', 'downloader', 'settings')))
+            definitions = list(active_shortcuts[0].definitions(('profile', 'benchmark', 'deep', 'cw_bench', 'downloader', 'settings')))
             options = ['Reset all to defaults', *[f'[{item.topic}] {item.sequence_label}  {item.label}' for item in definitions]]
             chosen = host.choose(stdscr, 'Shortcut editor', options)
             if chosen is None:
@@ -543,21 +567,45 @@ def run() -> None:
             set_message(controller.state.message)
 
         bindings = {
-            'tab.profile': lambda _: open_tab('profile'), 'tab.benchmark': lambda _: open_tab('benchmark'), 'tab.settings': lambda _: open_tab('settings'),
-            'nav.back': back, 'profile.scan': profile_system,
-            'profile.cpu': lambda _: profile_reference('cpu'), 'profile.memory': lambda _: profile_reference('memory'),
-            'profile.gpu': lambda _: profile_reference('gpu'), 'profile.npu': lambda _: profile_reference('npu'),
-            'benchmark.challenge': lambda _: open_tab('challenge'), 'challenge.cw_bench': lambda _: open_tab('cw_bench'),
+            'tab.profile': lambda _: open_tab('profile'),
+            'tab.benchmark': lambda _: open_tab('benchmark'),
+            'tab.downloader': lambda _: open_tab('downloader'),
+            'tab.settings': lambda _: open_tab('settings'),
+            'nav.back': back,
+            'profile.scan': profile_system,
+            'profile.cpu': lambda _: profile_reference('cpu'),
+            'profile.memory': lambda _: profile_reference('memory'),
+            'profile.gpu': lambda _: profile_reference('gpu'),
+            'profile.npu': lambda _: profile_reference('npu'),
+            'benchmark.quick': lambda _: select_suite('quick', 'benchmark'),
+            'benchmark.moderate': lambda _: select_suite('moderate', 'benchmark'),
+            'benchmark.deep': lambda _: select_suite('deep', 'deep'),
+            'deep.cw_bench': lambda _: open_tab('cw_bench'),
+            'deep.run': run_deep_suite,
+            'deep.results': browse_results,
             'cw.source': lambda _: cw_bench_page.choose_source(host, stdscr),
             'cw.language': lambda _: cw_bench_page.choose_language(host, stdscr),
             'cw.models': lambda _: cw_bench_page.choose_models(host, stdscr),
-            'cw.run': run_cw_bench, 'cw.results': browse_cw_results, 'cw.cancel': cancel,
-            'targets': select_targets, 'tests': select_tests, 'test.add': add_test, 'test.remove': remove_test,
-            'run.selected': run_selected, 'run.all': test_all, 'results': browse_results,
-            'benchmark.compare': compare_targets_action, 'benchmark.publish': publish_report_action,
-            'cancel': cancel, 'errors': export_errors, 'refresh': refresh,
-            'settings.output': edit_output_folder, 'settings.server': server_setup, 'settings.mysql': edit_mysql,
-            'settings.ftp': ftp_settings, 'settings.report': report_settings, 'settings.targets': runtime_target_settings,
+            'cw.run': run_cw_bench,
+            'cw.results': browse_cw_results,
+            'cw.cancel': cancel,
+            'targets': select_targets,
+            'tests': select_tests,
+            'test.add': add_test,
+            'test.remove': remove_test,
+            'run.selected': run_selected,
+            'run.all': test_all,
+            'results': browse_results,
+            'benchmark.compare': compare_targets_action,
+            'benchmark.publish': publish_report_action,
+            'errors': export_errors,
+            'refresh': refresh,
+            'settings.output': edit_output_folder,
+            'settings.server': server_setup,
+            'settings.mysql': edit_mysql,
+            'settings.ftp': ftp_settings,
+            'settings.report': report_settings,
+            'settings.targets': runtime_target_settings,
             'settings.shortcuts': shortcut_editor,
         }
         for action, handler in bindings.items():

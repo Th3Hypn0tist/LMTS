@@ -23,6 +23,7 @@ from lmts.tools.report_publish import publish_report
 from lmts.tools.web_deploy import deploy_web_root
 
 from .controller import LMTSViewController
+from .cw_bench_page import CWBenchPage
 from .output_dialog import choose_output_target, choose_report_profile, manage_ftp_profiles, manage_report_profiles
 from .projector import LMTSViewProjector
 from .registries import TAB_REGISTRY, build_shortcut_registry
@@ -142,12 +143,25 @@ def _benchmark_lines(projector: LMTSViewProjector) -> tuple[str, ...]:
     return tuple(lines)
 
 
+def _challenge_lines() -> tuple[str, ...]:
+    return (
+        'Challenge',
+        '',
+        'Deep evaluations may use long context, long generation and significant runtime.',
+        '',
+        'CW Bench',
+        '  Generate an implementation from one selected CW source, import it back through CIC,',
+        '  and compare the imported CW against the source inside the canonical CW frame.',
+    )
+
+
 def run() -> None:
     test_types = default_test_type_registry()
     matrix = default_test_matrix(test_types)
     controller = LMTSViewController(default_provider_registry(), test_types, matrix)
     controller.refresh()
     projector = LMTSViewProjector(controller.state)
+    cw_bench_page = CWBenchPage(controller)
     settings = load_settings(DEFAULT_SETTINGS_PATH)
     try:
         shortcut_overrides = load_shortcut_overrides(DEFAULT_SHORTCUT_SETTINGS_PATH)
@@ -189,6 +203,10 @@ def run() -> None:
             return _profile_lines(controller)
         if current_tab() == 'benchmark':
             return _benchmark_lines(projector)
+        if current_tab() == 'challenge':
+            return _challenge_lines()
+        if current_tab() == 'cw_bench':
+            return cw_bench_page.lines()
         if current_tab() == 'settings':
             return settings_lines()
         return ()
@@ -295,8 +313,10 @@ def run() -> None:
                 show_progress()
             set_message(controller.state.message)
 
-        def choose_matrix_result(title: str):
+        def choose_matrix_result(title: str, predicate=None):
             matrices = controller.recent_matrices()
+            if predicate is not None:
+                matrices = [item for item in matrices if predicate(item[1])]
             if not matrices:
                 set_message('no canonical matrix results found')
                 return None
@@ -305,8 +325,7 @@ def run() -> None:
             selected = host.choose(stdscr, title, [matrix_label(data, path) for path, data in matrices])
             return None if selected is None else matrices[selected]
 
-        def browse_results(_stdscr: curses.window) -> None:
-            chosen = choose_matrix_result('Matrix results (newest first)')
+        def view_matrix_result(chosen) -> None:
             if chosen is None:
                 return
             matrix_path, matrix_data = chosen
@@ -351,6 +370,17 @@ def run() -> None:
                 return
             host.text_viewer(stdscr, f"Run result: {cell.get('run_id', result_path.stem)}", format_run_result(run_data, result_path))
 
+        def browse_results(_stdscr: curses.window) -> None:
+            view_matrix_result(choose_matrix_result('Matrix results (newest first)'))
+
+        def browse_cw_results(_stdscr: curses.window) -> None:
+            view_matrix_result(
+                choose_matrix_result(
+                    'CW Bench results (newest first)',
+                    lambda data: 'challenge.cw_bench@1.0.0' in [str(value) for value in (data.get('test_refs') or [])],
+                )
+            )
+
         def compare_targets_action(_stdscr: curses.window) -> None:
             chosen = choose_matrix_result('Compare targets from matrix')
             if chosen is None:
@@ -393,6 +423,11 @@ def run() -> None:
                 set_message(f'published report: {report_id}')
             except (OSError, ValueError, RuntimeError) as exc:
                 set_message(f'report publish failed: {exc}')
+
+        def run_cw_bench(_stdscr: curses.window) -> None:
+            if cw_bench_page.run(host):
+                show_progress()
+            set_message(controller.state.message)
 
         def profile_system(_stdscr: curses.window) -> None:
             controller.profile()
@@ -462,7 +497,7 @@ def run() -> None:
                 set_message(f'server deploy failed: {exc}')
 
         def shortcut_editor(_stdscr: curses.window) -> None:
-            definitions = list(active_shortcuts[0].definitions(('profile', 'benchmark', 'settings')))
+            definitions = list(active_shortcuts[0].definitions(('profile', 'benchmark', 'challenge', 'cw_bench', 'downloader', 'settings')))
             options = ['Reset all to defaults', *[f'[{item.topic}] {item.sequence_label}  {item.label}' for item in definitions]]
             chosen = host.choose(stdscr, 'Shortcut editor', options)
             if chosen is None:
@@ -512,6 +547,11 @@ def run() -> None:
             'nav.back': back, 'profile.scan': profile_system,
             'profile.cpu': lambda _: profile_reference('cpu'), 'profile.memory': lambda _: profile_reference('memory'),
             'profile.gpu': lambda _: profile_reference('gpu'), 'profile.npu': lambda _: profile_reference('npu'),
+            'benchmark.challenge': lambda _: open_tab('challenge'), 'challenge.cw_bench': lambda _: open_tab('cw_bench'),
+            'cw.source': lambda _: cw_bench_page.choose_source(host, stdscr),
+            'cw.language': lambda _: cw_bench_page.choose_language(host, stdscr),
+            'cw.models': lambda _: cw_bench_page.choose_models(host, stdscr),
+            'cw.run': run_cw_bench, 'cw.results': browse_cw_results, 'cw.cancel': cancel,
             'targets': select_targets, 'tests': select_tests, 'test.add': add_test, 'test.remove': remove_test,
             'run.selected': run_selected, 'run.all': test_all, 'results': browse_results,
             'benchmark.compare': compare_targets_action, 'benchmark.publish': publish_report_action,

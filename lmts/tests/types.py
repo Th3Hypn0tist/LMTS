@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import Literal
 
 from lmts.tests.base import TestContext, TestModule, TestRequirements, TestResult
 
 ParameterKind = Literal["text", "integer", "boolean", "choice"]
-TestLevel = Literal["quick", "standard", "challenge"]
+TestLevel = Literal["quick", "moderate", "deep"]
+TEST_LEVEL_ORDER: dict[TestLevel, int] = {"quick": 0, "moderate": 1, "deep": 2}
+
+
+def includes_level(requested: TestLevel, minimum_level: TestLevel) -> bool:
+    return TEST_LEVEL_ORDER[minimum_level] <= TEST_LEVEL_ORDER[requested]
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +62,7 @@ class TestTypeDefinition:
     version: str
     title: str
     description: str
-    level: TestLevel
+    minimum_level: TestLevel
     requirements: TestRequirements
     parameters: tuple[TestParameter, ...]
     factory: Factory
@@ -91,7 +96,7 @@ class TestTypeDefinition:
             instance_id=instance_id,
             type_ref=self.ref,
             title=self.title,
-            level=self.level,
+            minimum_level=self.minimum_level,
             mandatory=self.mandatory,
             params=normalized,
             module=module,
@@ -103,7 +108,7 @@ class ConfiguredTest:
     instance_id: str
     type_ref: str
     title: str
-    level: TestLevel
+    minimum_level: TestLevel
     mandatory: bool
     params: dict[str, object]
     module: TestModule
@@ -147,6 +152,13 @@ class TestTypeRegistry:
 
     def definitions(self) -> tuple[TestTypeDefinition, ...]:
         return tuple(self._definitions[key] for key in sorted(self._definitions))
+
+    def definitions_for_level(self, level: TestLevel) -> tuple[TestTypeDefinition, ...]:
+        return tuple(
+            definition
+            for definition in self.definitions()
+            if includes_level(level, definition.minimum_level)
+        )
 
 
 class TestMatrix:

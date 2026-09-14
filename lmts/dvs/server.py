@@ -10,6 +10,7 @@ from typing import Any
 
 from .registry import DVSRegistry
 from .runtime import project_visualization
+from .studio import DVSStudioStore
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -18,7 +19,12 @@ HOST = os.environ.get('LMTS_DVS_HOST', '127.0.0.1')
 PORT = int(os.environ.get('LMTS_DVS_PORT', '8775'))
 S3D_ROOT_VALUE = os.environ.get('LMTS_S3D_ROOT', '').strip()
 S3D_ROOT = Path(S3D_ROOT_VALUE).expanduser().resolve() if S3D_ROOT_VALUE else None
-REGISTRY = DVSRegistry()
+STUDIO_ROOT_VALUE = os.environ.get('LMTS_DVS_STUDIO_ROOT', '.lmts/dvs').strip()
+if not STUDIO_ROOT_VALUE:
+    raise ValueError('LMTS_DVS_STUDIO_ROOT must not be empty')
+STUDIO_ROOT = Path(STUDIO_ROOT_VALUE).expanduser().resolve()
+REGISTRY = DVSRegistry(studio_root=STUDIO_ROOT)
+STUDIO = DVSStudioStore(REGISTRY)
 
 
 def safe_asset_path(root: Path, relative_path: str) -> Path:
@@ -86,6 +92,13 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError('JSON request body must be an object')
         return payload
 
+    def _error(self, exc: Exception) -> None:
+        if isinstance(exc, PermissionError):
+            return self._json({'ok': False, 'error': str(exc)}, 403)
+        if isinstance(exc, (FileNotFoundError, KeyError)):
+            return self._json({'ok': False, 'error': str(exc)}, 404)
+        return self._json({'ok': False, 'error': str(exc)}, 400)
+
     def do_GET(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
@@ -104,6 +117,10 @@ class Handler(BaseHTTPRequestHandler):
                     'host_role': 'studio+viewer',
                     'version': '1.0',
                     's3d': s3d_status(),
+                    'studio': {
+                        'root': str(STUDIO_ROOT),
+                        'write_api': True,
+                    },
                 })
             if path == '/api/input-templates':
                 return self._json({'input_templates': [item.to_dict() for item in REGISTRY.templates.list()]})
@@ -116,16 +133,18 @@ class Handler(BaseHTTPRequestHandler):
                 item_id = urllib.parse.unquote(path.removeprefix('/api/visualization-presets/'))
                 return self._json({'visualization_preset': REGISTRY.presets.get(item_id).to_dict()})
             return self._json({'ok': False, 'error': 'not_found'}, 404)
-        except FileNotFoundError as exc:
-            return self._json({'ok': False, 'error': str(exc)}, 404)
-        except KeyError as exc:
-            return self._json({'ok': False, 'error': str(exc)}, 404)
         except Exception as exc:
-            return self._json({'ok': False, 'error': str(exc)}, 400)
+            return self._error(exc)
 
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
+            if path == '/api/studio/input-templates':
+                item = STUDIO.create_input_template(self._body())
+                return self._json({'ok': True, 'input_template': item.to_dict()}, 201)
+            if path == '/api/studio/visualization-presets':
+                item = STUDIO.create_visualization_preset(self._body())
+                return self._json({'ok': True, 'visualization_preset': item.to_dict()}, 201)
             if path == '/api/extract':
                 payload = self._body()
                 if set(payload) != {'input_template_id', 'source'}:
@@ -150,10 +169,31 @@ class Handler(BaseHTTPRequestHandler):
                 plan = project_visualization(payload['source'], template, preset)
                 return self._json({'ok': True, 'visual_plan': plan})
             return self._json({'ok': False, 'error': 'not_found'}, 404)
-        except KeyError as exc:
-            return self._json({'ok': False, 'error': str(exc)}, 404)
         except Exception as exc:
-            return self._json({'ok': False, 'error': str(exc)}, 400)
+            return self._error(exc)
+
+    def do_PUT(self) -> None:
+        path = urllib.parse.urlparse(self.path).path
+        try:
+            template_prefix = '/api/studio/input-templates/'
+            if path.startswith(template_prefix):
+                item_id = urllib.parse.unquote(path.removeprefix(template_prefix))
+                if not item_id:
+                    raise ValueError('Input Template id is required')
+                item = STUDIO.update_input_template(item_id, self._body())
+                return self._json({'ok': True, 'input_template': item.to_dict()})
+
+            preset_prefix = '/api/studio/visualization-presets/'
+            if path.startswith(preset_prefix):
+                item_id = urllib.parse.unquote(path.removeprefix(preset_prefix))
+                if not item_id:
+                    raise ValueError('Visualization Preset id is required')
+                item = STUDIO.update_visualization_preset(item_id, self._body())
+                return self._json({'ok': True, 'visualization_preset': item.to_dict()})
+
+            return self._json({'ok': False, 'error': 'not_found'}, 404)
+        except Exception as exc:
+            return self._error(exc)
 
     def log_message(self, fmt: str, *args) -> None:
         print(f'[lmts-dvs] {self.address_string()} {fmt % args}')
@@ -165,6 +205,7 @@ def main() -> None:
     if status['configured'] and not status['ready']:
         raise RuntimeError(f"LMTS_S3D_ROOT is invalid or missing s3d.js: {S3D_ROOT}")
     print(f'LMTS DVS -> http://{HOST}:{PORT}')
+    print(f'DVS Studio -> {STUDIO_ROOT}')
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 

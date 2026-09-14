@@ -154,12 +154,12 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             segments: list[tuple[str, int]] = [("Layout:", curses.A_DIM)]
             all_enabled = bool(panes) and all(self._pane_is_enabled(pane) for pane in panes)
             segments.append((" 0 ", curses.A_REVERSE | curses.A_BOLD))
-            segments.append((" ", 0))
             segments.append(("All", 0 if all_enabled else curses.A_DIM))
+            segments.append((" ", 0))
             for pane in panes:
                 segments.append((f" {pane.slot} ", curses.A_REVERSE | curses.A_BOLD))
-                segments.append((" ", 0))
                 segments.append((pane.label, 0 if self._pane_is_enabled(pane) else curses.A_DIM))
+                segments.append((" ", 0))
             return tuple(segments)
 
         definitions = self._action_definitions()
@@ -168,8 +168,8 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         segments = [("Actions:", curses.A_DIM)]
         for item in definitions:
             segments.append((f" {item.sequence_label} ", curses.A_REVERSE | curses.A_BOLD))
-            segments.append((" ", 0))
             segments.append((item.label, 0))
+            segments.append((" ", 0))
         return tuple(segments)
 
     def _draw_footer(self, stdscr: curses.window) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
 
@@ -81,85 +82,151 @@ class ModelDownloaderRegistry:
         return tuple(self._downloaders[key] for key in sorted(self._downloaders))
 
 
-class ModelDownloadJob:
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._cancel_event = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._running = False
-        self._state = "idle"
-        self._module_id = ""
-        self._model_ref = ""
-        self._progress: ModelDownloadProgress | None = None
-        self._error: str | None = None
+@dataclass(slots=True)
+class ModelDownloadQueueItem:
+    id: str
+    module_id: str
+    model_ref: str
+    state: str = "queued"
+    progress: ModelDownloadProgress | None = None
+    error: str | None = None
 
-    @property
-    def running(self) -> bool:
-        with self._lock:
-            return self._running
 
-    @property
-    def state(self) -> str:
-        with self._lock:
-            return self._state
+class ModelDownloadQueue:
+    """FIFO download queues with at most one active transfer per downloader module."""
 
-    @property
-    def error(self) -> str | None:
-        with self._lock:
-            return self._error
+    def __init__(self, registry: ModelDownloaderRegistry) -> None:
+        self.registry = registry
+        self._lock = threading.RLock()
+        self._items: list[ModelDownloadQueueItem] = []
+        self._workers: dict[str, threading.Thread] = {}
+        self._cancel_events: dict[str, threading.Event] = {}
 
-    def start(self, downloader: ModelDownloader, model_ref: str) -> None:
+    def enqueue(self, module_id: str, model_ref: str) -> ModelDownloadQueueItem:
+        downloader = self.registry.get(module_id)
         model_ref = model_ref.strip()
         if not model_ref:
             raise ValueError("model reference must be non-empty")
+        if not downloader.available():
+            raise RuntimeError(f"model downloader is unavailable: {module_id}")
         with self._lock:
-            if self._running:
-                raise RuntimeError("model download already running")
-            self._cancel_event = threading.Event()
-            self._running = True
-            self._state = "running"
-            self._module_id = downloader.id
-            self._model_ref = model_ref
-            self._progress = ModelDownloadProgress(downloader.id, model_ref, "starting")
-            self._error = None
-        self._thread = threading.Thread(
-            target=self._run,
-            args=(downloader, model_ref),
-            name=f"lmts-download-{downloader.id}",
+            item = ModelDownloadQueueItem(
+                id=uuid.uuid4().hex,
+                module_id=module_id,
+                model_ref=model_ref,
+            )
+            self._items.append(item)
+            self._ensure_worker_locked(module_id)
+            return item
+
+    def items(self) -> tuple[ModelDownloadQueueItem, ...]:
+        with self._lock:
+            return tuple(self._items)
+
+    def get(self, item_id: str) -> ModelDownloadQueueItem:
+        with self._lock:
+            for item in self._items:
+                if item.id == item_id:
+                    return item
+        raise KeyError(f"unknown model download queue item: {item_id}")
+
+    def active(self, module_id: str | None = None) -> tuple[ModelDownloadQueueItem, ...]:
+        with self._lock:
+            return tuple(
+                item
+                for item in self._items
+                if item.state == "downloading" and (module_id is None or item.module_id == module_id)
+            )
+
+    def queued(self, module_id: str | None = None) -> tuple[ModelDownloadQueueItem, ...]:
+        with self._lock:
+            return tuple(
+                item
+                for item in self._items
+                if item.state == "queued" and (module_id is None or item.module_id == module_id)
+            )
+
+    def cancel(self, item_id: str) -> None:
+        with self._lock:
+            item = self.get(item_id)
+            if item.state == "queued":
+                item.state = "cancelled"
+                return
+            if item.state != "downloading":
+                return
+            event = self._cancel_events.get(item_id)
+            if event is not None:
+                event.set()
+
+    def cancel_active(self, module_id: str | None = None) -> int:
+        with self._lock:
+            items = list(self.active(module_id))
+            for item in items:
+                event = self._cancel_events.get(item.id)
+                if event is not None:
+                    event.set()
+            return len(items)
+
+    def clear_finished(self) -> int:
+        with self._lock:
+            before = len(self._items)
+            self._items = [item for item in self._items if item.state in {"queued", "downloading"}]
+            return before - len(self._items)
+
+    def _ensure_worker_locked(self, module_id: str) -> None:
+        worker = self._workers.get(module_id)
+        if worker is not None and worker.is_alive():
+            return
+        worker = threading.Thread(
+            target=self._worker,
+            args=(module_id,),
+            name=f"lmts-download-queue-{module_id}",
             daemon=True,
         )
-        self._thread.start()
+        self._workers[module_id] = worker
+        worker.start()
 
-    def _run(self, downloader: ModelDownloader, model_ref: str) -> None:
-        try:
-            downloader.download(model_ref, self._on_progress, self._cancel_event)
-            with self._lock:
-                if self._cancel_event.is_set():
-                    self._state = "cancelled"
-                else:
-                    self._state = "completed"
-        except DownloadCancelled:
-            with self._lock:
-                self._state = "cancelled"
-        except Exception as exc:
-            with self._lock:
-                self._state = "error"
-                self._error = str(exc)
-        finally:
-            with self._lock:
-                self._running = False
+    def _next_queued_locked(self, module_id: str) -> ModelDownloadQueueItem | None:
+        for item in self._items:
+            if item.module_id == module_id and item.state == "queued":
+                return item
+        return None
 
-    def _on_progress(self, progress: ModelDownloadProgress) -> None:
-        with self._lock:
-            if progress.module_id != self._module_id or progress.model_ref != self._model_ref:
-                raise ValueError("model download progress identity mismatch")
-            self._progress = progress
+    def _worker(self, module_id: str) -> None:
+        downloader = self.registry.get(module_id)
+        while True:
+            with self._lock:
+                item = self._next_queued_locked(module_id)
+                if item is None:
+                    self._workers.pop(module_id, None)
+                    return
+                item.state = "downloading"
+                item.error = None
+                item.progress = ModelDownloadProgress(module_id, item.model_ref, "starting")
+                cancel_event = threading.Event()
+                self._cancel_events[item.id] = cancel_event
 
-    def cancel(self) -> None:
-        with self._lock:
-            if not self._running:
-                return
-            self._cancel_event.set()
+            def on_progress(progress: ModelDownloadProgress, *, item_id: str = item.id) -> None:
+                with self._lock:
+                    current = self.get(item_id)
+                    if progress.module_id != current.module_id or progress.model_ref != current.model_ref:
+                        raise ValueError("model download progress identity mismatch")
+                    current.progress = progress
+
+            try:
+                downloader.download(item.model_ref, on_progress, cancel_event)
+                with self._lock:
+                    item.state = "cancelled" if cancel_event.is_set() else "completed"
+            except DownloadCancelled:
+                with self._lock:
+                    item.state = "cancelled"
+            except Exception as exc:
+                with self._lock:
+                    item.state = "error"
+                    item.error = str(exc)
+            finally:
+                with self._lock:
+                    self._cancel_events.pop(item.id, None)
 
     @staticmethod
     def _human_bytes(value: int | None) -> str:
@@ -175,28 +242,28 @@ class ModelDownloadJob:
             number /= 1024.0
         return f"{number:.2f} {unit}"
 
-    def lines(self) -> tuple[str, ...]:
+    def lines(self, module_id: str | None = None) -> tuple[str, ...]:
         with self._lock:
-            state = self._state
-            module_id = self._module_id
-            model_ref = self._model_ref
-            progress = self._progress
-            error = self._error
-        lines = [
-            f"Module: {module_id or '-'}",
-            f"Model : {model_ref or '-'}",
-            f"State : {state}",
-        ]
-        if progress is not None:
-            lines.append(f"Status: {progress.status}")
-            if progress.digest:
-                lines.append(f"Layer : {progress.digest[:28]}")
-            if progress.total_bytes is not None:
-                completed = self._human_bytes(progress.completed_bytes)
-                total = self._human_bytes(progress.total_bytes)
-                percent = progress.percent
-                suffix = "" if percent is None else f" ({percent:.1f}%)"
-                lines.append(f"Data  : {completed} / {total}{suffix}")
-        if error:
-            lines.append(f"Error : {error}")
+            items = [item for item in self._items if module_id is None or item.module_id == module_id]
+        if not items:
+            return ("Queue: empty",)
+
+        lines = [f"Queue: {len(items)} item(s)"]
+        for index, item in enumerate(items, start=1):
+            marker = ">" if item.state == "downloading" else " "
+            line = f"{marker}{index:02d} [{item.state.upper():11}] {item.module_id}  {item.model_ref}"
+            progress = item.progress
+            if progress is not None and progress.percent is not None:
+                line += f"  {progress.percent:.1f}%"
+            lines.append(line)
+            if item.state == "downloading" and progress is not None:
+                if progress.status:
+                    lines.append(f"     {progress.status}")
+                if progress.total_bytes is not None:
+                    lines.append(
+                        f"     {self._human_bytes(progress.completed_bytes)} / "
+                        f"{self._human_bytes(progress.total_bytes)}"
+                    )
+            if item.error:
+                lines.append(f"     ERROR: {item.error}")
         return tuple(lines)

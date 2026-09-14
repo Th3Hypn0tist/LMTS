@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:lmts:benchmark-report:1.1",
   "title": "LMTS Benchmark Report Template",
-  "description": "Canonical interchange contract for LMTS benchmark reports. This contract fixes structural meaning while keeping report, source, entity, metric, summary, evidence and view fields open for extension. Canonical RunResult and MatrixRunRecord evidence remains the measurement source of truth; this report is the canonical transport and presentation contract used for server round trips and DVS input.",
+  "description": "Canonical interchange contract for LMTS benchmark reports. This contract fixes structural meaning while keeping report, source, entity, metric, summary, evidence and view fields open for extension. It carries the actual executed test set but does not prescribe a fixed benchmark suite. Fixed required tests, versions, parameters, scoring and comparison rules belong to a named benchmark profile such as the future AIGM LM Benchmark Report. Canonical RunResult and MatrixRunRecord evidence remains the measurement source of truth; this report is the canonical transport and presentation contract used for server round trips and DVS input.",
   "type": "object",
   "required": [
     "format",
@@ -58,6 +58,8 @@
     "field_policy": "open-world",
     "compatibility_rule": "Adding fields, metrics, dimensions, entities, summary aggregates, evidence or view parameters does not require a version change. A version change is required when the meaning or required shape of an existing field changes incompatibly.",
     "transport_rule": "The same lmts.report/1.1 document is written to disk, POSTed to report servers, returned by report servers and consumed by DVS. Servers must not translate it into another LMTS report model.",
+    "test_set_rule": "The template records which tests were actually executed but does not define a fixed required test set. A named benchmark profile may define exact required test identities, versions, parameters, mandatory rules, metrics, scoring and aggregation semantics.",
+    "profile_rule": "AIGM LM Benchmark Report is reserved for a future locked benchmark profile once discriminating tests and metrics are established. LMTS Benchmark Report Template must remain usable for arbitrary LMTS benchmark matrices.",
     "missing_value_rule": "Unavailable known measurements are represented explicitly as JSON null. Missing fields mean the producer did not define that field for the record; consumers must not invent fallback values.",
     "standard_metrics": {
       "input_tokens": {"unit": "tokens"},

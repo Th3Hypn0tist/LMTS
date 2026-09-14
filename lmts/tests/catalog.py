@@ -17,6 +17,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Text generation",
             description="Basic text generation smoke test.",
+            level="quick",
             requirements=TestRequirements(text_generation=True),
             parameters=(),
             factory=lambda values: TextGenerationTest(),
@@ -26,6 +27,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Workspace multifile",
             description="Read input and create exact multi-file output.",
+            level="standard",
             requirements=TestRequirements(
                 text_generation=True,
                 workspace_read=True,
@@ -40,6 +42,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Free prompt consistency",
             description="Run one arbitrary prompt repeatedly to measure exact-output consistency.",
+            level="standard",
             requirements=TestRequirements(text_generation=True),
             parameters=(
                 TestParameter(
@@ -69,6 +72,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Cold and warm inference",
             description="Measure first-call behavior separately from repeated warm inference.",
+            level="standard",
             requirements=TestRequirements(text_generation=True),
             parameters=(
                 TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly PERF_OK", multiline=True),
@@ -84,6 +88,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             version="1.0.0",
             title="Repeat variance",
             description="Measure latency and generation-throughput variance across repeated identical calls.",
+            level="standard",
             requirements=TestRequirements(text_generation=True),
             parameters=(
                 TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly VAR_OK", multiline=True),
@@ -102,6 +107,8 @@ def default_test_type_registry() -> TestTypeRegistry:
                 version="1.0.0",
                 title=case["title"],
                 description=case["description"],
+                level=case.get("level", "quick"),
+                mandatory=case.get("mandatory") == "true",
                 requirements=TestRequirements(text_generation=True),
                 parameters=(),
                 factory=lambda values, case=case: bot_core_test(case),
@@ -114,6 +121,8 @@ def default_test_type_registry() -> TestTypeRegistry:
                 version="1.0.0",
                 title=case["title"],
                 description=case["description"],
+                level=case.get("level", "quick"),
+                mandatory=case.get("mandatory") == "true",
                 requirements=TestRequirements(text_generation=True),
                 parameters=(),
                 factory=lambda values, case=case: capability_test(case),

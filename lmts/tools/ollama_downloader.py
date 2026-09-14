@@ -129,3 +129,40 @@ class OllamaModelDownloader:
 
         if cancel_event.is_set():
             raise DownloadCancelled(f"Ollama pull cancelled: {model_ref}")
+
+    def delete(self, model_ref: str) -> None:
+        model_ref = model_ref.strip()
+        if not model_ref:
+            raise ValueError("Ollama model reference must be non-empty")
+
+        body = json.dumps({"model": model_ref}).encode("utf-8")
+        req = request.Request(
+            f"{self.base_url}/api/delete",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="DELETE",
+        )
+        try:
+            with self._open(req, timeout=30.0) as response:
+                status = int(getattr(response, "status", 200))
+                if not 200 <= status < 300:
+                    raise RuntimeError(f"Ollama delete failed with HTTP {status}")
+                raw = response.read()
+        except error.HTTPError as exc:
+            try:
+                payload = json.loads(exc.read().decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                payload = None
+            message = payload.get("error") if isinstance(payload, dict) else None
+            raise RuntimeError(f"Ollama delete failed: {message or f'HTTP {exc.code}'}") from exc
+        except (OSError, error.URLError) as exc:
+            raise RuntimeError(f"Ollama delete failed: {exc}") from exc
+
+        if not raw.strip():
+            return
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError(f"Ollama delete returned invalid JSON: {exc}") from exc
+        if isinstance(payload, dict) and payload.get("error"):
+            raise RuntimeError(f"Ollama delete failed: {payload['error']}")

@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:lmts:benchmark-report:1.1",
+  "title": "LMTS Benchmark Report Template",
+  "description": "Canonical interchange contract for LMTS benchmark reports. This contract fixes structural meaning while keeping report, source, entity, metric, summary, evidence and view fields open for extension. Canonical RunResult and MatrixRunRecord evidence remains the measurement source of truth; this report is the canonical transport and presentation contract used for server round trips and DVS input.",
+  "type": "object",
+  "required": [
+    "format",
+    "version",
+    "report",
+    "source",
+    "dimensions",
+    "entities",
+    "metric_definitions",
+    "records",
+    "summary",
+    "views"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "format": {"const": "lmts.report"},
+    "version": {"const": "1.1"},
+    "report": {"$ref": "#/$defs/report"},
+    "source": {"$ref": "#/$defs/source"},
+    "dimensions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/dimension"}
+    },
+    "entities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {"$ref": "#/$defs/entity"}
+      }
+    },
+    "metric_definitions": {
+      "type": "object",
+      "description": "Self-describing metric catalog. Standard and domain-specific metrics share the same namespace and may be added without changing the report version.",
+      "additionalProperties": {"$ref": "#/$defs/metric_definition"}
+    },
+    "records": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/record"}
+    },
+    "summary": {"$ref": "#/$defs/summary"},
+    "views": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/view"}
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Optional namespaced extension payloads. Ordinary new fields do not need to be placed here because the contract is open-world.",
+      "additionalProperties": {"$ref": "#/$defs/json_value"}
+    }
+  },
+  "x-lmts-contract": {
+    "field_policy": "open-world",
+    "compatibility_rule": "Adding fields, metrics, dimensions, entities, summary aggregates, evidence or view parameters does not require a version change. A version change is required when the meaning or required shape of an existing field changes incompatibly.",
+    "transport_rule": "The same lmts.report/1.1 document is written to disk, POSTed to report servers, returned by report servers and consumed by DVS. Servers must not translate it into another LMTS report model.",
+    "missing_value_rule": "Unavailable known measurements are represented explicitly as JSON null. Missing fields mean the producer did not define that field for the record; consumers must not invent fallback values.",
+    "standard_metrics": {
+      "input_tokens": {"unit": "tokens"},
+      "output_tokens": {"unit": "tokens"},
+      "ttft": {"unit": "ms"},
+      "total_time": {"unit": "ms"},
+      "score_percent": {"unit": "percent"},
+      "workspace_protocol_steps": {"unit": "steps"},
+      "output_file_count": {"unit": "files"},
+      "exact_output_match": {"unit": null}
+    }
+  },
+  "$defs": {
+    "json_value": {
+      "anyOf": [
+        {"type": "string"},
+        {"type": "number"},
+        {"type": "integer"},
+        {"type": "boolean"},
+        {"type": "null"},
+        {"type": "array", "items": {"$ref": "#/$defs/json_value"}},
+        {"type": "object", "additionalProperties": {"$ref": "#/$defs/json_value"}}
+      ]
+    },
+    "report": {
+      "type": "object",
+      "required": ["id", "type", "title", "created_at"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "created_at": {"type": "string", "format": "date-time"},
+        "description": {"type": "string"},
+        "tags": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "id": {"type": "string", "minLength": 1},
+        "schema_version": {"$ref": "#/$defs/json_value"},
+        "exported_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "dimension": {
+      "type": "object",
+      "required": ["label", "entity_type"],
+      "additionalProperties": true,
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "entity_type": {"type": "string", "minLength": 1},
+        "description": {"type": "string"}
+      }
+    },
+    "entity": {
+      "type": "object",
+      "required": ["label", "properties"],
+      "additionalProperties": true,
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "properties": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/json_value"}
+        }
+      }
+    },
+    "metric_definition": {
+      "type": "object",
+      "required": ["label"],
+      "additionalProperties": true,
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "unit": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "value_type": {"type": "string", "minLength": 1},
+        "direction": {"type": "string", "minLength": 1}
+      }
+    },
+    "metric": {
+      "type": "object",
+      "required": ["value"],
+      "additionalProperties": true,
+      "properties": {
+        "value": {"$ref": "#/$defs/json_value"},
+        "unit": {"type": "string", "minLength": 1}
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["status", "result"],
+      "additionalProperties": true,
+      "properties": {
+        "status": {"type": "string", "minLength": 1},
+        "result": {"type": "string", "minLength": 1}
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["type", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "message": {"type": "string"}
+      }
+    },
+    "record": {
+      "type": "object",
+      "required": ["id", "coordinates", "outcome", "metrics", "evidence"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "coordinates": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "timing": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "started_at": {"type": "string", "format": "date-time"},
+            "completed_at": {"type": "string", "format": "date-time"}
+          }
+        },
+        "outcome": {"$ref": "#/$defs/outcome"},
+        "score": {"$ref": "#/$defs/json_value"},
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/metric"}
+        },
+        "evidence": {
+          "type": "object",
+          "description": "Open evidence payload carried through server round trips. Known LMTS producers include execution_metadata, artifacts, responses, workspace_trace, system_context and telemetry.",
+          "additionalProperties": {"$ref": "#/$defs/json_value"}
+        },
+        "error": {"$ref": "#/$defs/error"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["records", "outcomes"],
+      "additionalProperties": true,
+      "properties": {
+        "records": {"type": "integer", "minimum": 0},
+        "outcomes": {
+          "type": "object",
+          "required": ["pass", "fail", "error", "cancelled", "unknown"],
+          "additionalProperties": {"type": "integer", "minimum": 0},
+          "properties": {
+            "pass": {"type": "integer", "minimum": 0},
+            "fail": {"type": "integer", "minimum": 0},
+            "error": {"type": "integer", "minimum": 0},
+            "cancelled": {"type": "integer", "minimum": 0},
+            "unknown": {"type": "integer", "minimum": 0}
+          }
+        }
+      }
+    },
+    "view": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "minLength": 1},
+        "title": {"type": "string"},
+        "row_dimension": {"type": "string", "minLength": 1},
+        "column_dimension": {"type": "string", "minLength": 1},
+        "value": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

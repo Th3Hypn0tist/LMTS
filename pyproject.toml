@@ -13,6 +13,7 @@ dependencies = []
 lmts = "lmts.cli:main"
 lmts-tui = "lmts.view.tui:main"
 lmts-view = "lmts.view.shell:main"
+lmts-dvs = "lmts.dvs.server:main"
 
 [tool.setuptools.packages.find]
 include = ["lmts*"]
@@ -21,3 +22,4 @@ include = ["lmts*"]
 "lmts.config" = ["*.php"]
 "lmts.install" = ["*.sh"]
 "lmts.reporting" = ["*.json"]
+"lmts.dvs" = ["templates/*.json", "presets/*.json", "static/*", "README.md"]

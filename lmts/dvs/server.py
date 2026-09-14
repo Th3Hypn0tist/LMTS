@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import json
+import mimetypes
+import os
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+
+from .registry import DVSRegistry
+
+
+PACKAGE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = (PACKAGE_DIR / 'static').resolve()
+HOST = os.environ.get('LMTS_DVS_HOST', '127.0.0.1')
+PORT = int(os.environ.get('LMTS_DVS_PORT', '8775'))
+REGISTRY = DVSRegistry()
+
+
+def safe_asset_path(root: Path, relative_path: str) -> Path:
+    decoded = urllib.parse.unquote(relative_path).replace('\\', '/')
+    candidate = (root / decoded.lstrip('/')).resolve()
+    if root not in candidate.parents and candidate != root:
+        raise ValueError('asset path escapes configured root')
+    if not candidate.is_file():
+        raise FileNotFoundError(relative_path)
+    return candidate
+
+
+def content_type(path: Path) -> str:
+    guessed, _ = mimetypes.guess_type(path.name)
+    if path.suffix == '.js':
+        return 'application/javascript; charset=utf-8'
+    if path.suffix == '.css':
+        return 'text/css; charset=utf-8'
+    if path.suffix == '.html':
+        return 'text/html; charset=utf-8'
+    if guessed and guessed.startswith('text/'):
+        return f'{guessed}; charset=utf-8'
+    return guessed or 'application/octet-stream'
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = 'LMTS-DVS/1.0'
+
+    def _json(self, payload: Any, status: int = 200) -> None:
+        raw = json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json; charset=utf-8')
+        self.send_header('Content-Length', str(len(raw)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _file(self, path: Path) -> None:
+        raw = path.read_bytes()
+        self.send_response(200)
+        self.send_header('Content-Type', content_type(path))
+        self.send_header('Content-Length', str(len(raw)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _body(self) -> dict[str, Any]:
+        size = int(self.headers.get('Content-Length', '0') or 0)
+        if size <= 0:
+            raise ValueError('request body is required')
+        payload = json.loads(self.rfile.read(size).decode('utf-8'))
+        if not isinstance(payload, dict):
+            raise ValueError('JSON request body must be an object')
+        return payload
+
+    def do_GET(self) -> None:
+        path = urllib.parse.urlparse(self.path).path
+        try:
+            if path == '/':
+                return self._file(safe_asset_path(STATIC_DIR, 'index.html'))
+            if path.startswith('/static/'):
+                return self._file(safe_asset_path(STATIC_DIR, path.removeprefix('/static/')))
+            if path == '/api/health':
+                return self._json({'ok': True, 'service': 'LMTS DVS', 'host_role': 'studio+viewer', 'version': '1.0'})
+            if path == '/api/input-templates':
+                return self._json({'input_templates': [item.to_dict() for item in REGISTRY.templates.list()]})
+            if path.startswith('/api/input-templates/'):
+                item_id = urllib.parse.unquote(path.removeprefix('/api/input-templates/'))
+                return self._json({'input_template': REGISTRY.templates.get(item_id).to_dict()})
+            if path == '/api/visualization-presets':
+                return self._json({'visualization_presets': [item.to_dict() for item in REGISTRY.presets.list()]})
+            if path.startswith('/api/visualization-presets/'):
+                item_id = urllib.parse.unquote(path.removeprefix('/api/visualization-presets/'))
+                return self._json({'visualization_preset': REGISTRY.presets.get(item_id).to_dict()})
+            return self._json({'ok': False, 'error': 'not_found'}, 404)
+        except FileNotFoundError as exc:
+            return self._json({'ok': False, 'error': str(exc)}, 404)
+        except KeyError as exc:
+            return self._json({'ok': False, 'error': str(exc)}, 404)
+        except Exception as exc:
+            return self._json({'ok': False, 'error': str(exc)}, 400)
+
+    def do_POST(self) -> None:
+        path = urllib.parse.urlparse(self.path).path
+        try:
+            if path == '/api/table':
+                payload = self._body()
+                if set(payload) != {'input_template_id', 'source'}:
+                    raise ValueError('/api/table requires exactly input_template_id and source')
+                template = REGISTRY.templates.get(str(payload['input_template_id']))
+                table = template.extract(payload['source'])
+                return self._json({'ok': True, 'input_template_id': template.id, 'table': table.to_dict()})
+            return self._json({'ok': False, 'error': 'not_found'}, 404)
+        except KeyError as exc:
+            return self._json({'ok': False, 'error': str(exc)}, 404)
+        except Exception as exc:
+            return self._json({'ok': False, 'error': str(exc)}, 400)
+
+    def log_message(self, fmt: str, *args) -> None:
+        print(f'[lmts-dvs] {self.address_string()} {fmt % args}')
+
+
+def main() -> None:
+    REGISTRY.reload()
+    print(f'LMTS DVS -> http://{HOST}:{PORT}')
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,6 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+body { margin: 0; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+header { margin-bottom: 24px; }
+.panel { border: 1px solid #444; padding: 16px; margin: 12px 0; }
+pre { overflow: auto; white-space: pre-wrap; }

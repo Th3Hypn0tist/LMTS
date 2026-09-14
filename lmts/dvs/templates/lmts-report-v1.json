@@ -1,0 +1,23 @@
+{
+  "format": "s3d.dvs.input-template",
+  "version": "1.0",
+  "id": "lmts.report.v1",
+  "source_format": "lmts.report/1.0",
+  "reader": "json",
+  "rows": "records[*]",
+  "columns": [
+    {"name": "run_id", "selector": "id"},
+    {"name": "target", "selector": "coordinates.target"},
+    {"name": "test", "selector": "coordinates.test"},
+    {"name": "status", "selector": "outcome.status"},
+    {"name": "result", "selector": "outcome.result"},
+    {"name": "input_tokens", "selector": "metrics.input_tokens.value", "on_missing": "null"},
+    {"name": "output_tokens", "selector": "metrics.output_tokens.value", "on_missing": "null"},
+    {"name": "ttft_ms", "selector": "metrics.ttft.value", "on_missing": "null"},
+    {"name": "total_ms", "selector": "metrics.total_time.value", "on_missing": "null"},
+    {"name": "score_percent", "selector": "metrics.score_percent.value", "on_missing": "null"},
+    {"name": "workspace_protocol_steps", "selector": "metrics.workspace_protocol_steps.value", "on_missing": "null"},
+    {"name": "output_file_count", "selector": "metrics.output_file_count.value", "on_missing": "null"},
+    {"name": "exact_output_match", "selector": "metrics.exact_output_match.value", "on_missing": "null"}
+  ]
+}

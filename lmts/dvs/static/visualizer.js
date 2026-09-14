@@ -11,14 +11,42 @@ function channelVector(channels, prefix, fallback) {
   });
 }
 
+function colorComponent(channels, key, fallback) {
+  const component = Object.hasOwn(channels, key) ? finite(channels[key], key) : fallback;
+  if (component < 0 || component > 1) throw new Error(`${key} must be between 0 and 1`);
+  return component;
+}
+
 function channelColor(channels, fallback) {
-  return fallback.map((value, index) => {
-    if (index === 3) return value;
-    const key = `color.${'rgb'[index]}`;
-    const component = Object.hasOwn(channels, key) ? finite(channels[key], key) : value;
-    if (component < 0 || component > 1) throw new Error(`${key} must be between 0 and 1`);
-    return component;
-  });
+  return 'rgba'.split('').map((component, index) => (
+    colorComponent(channels, `color.${component}`, fallback[index])
+  ));
+}
+
+function perFaceColorChannelKeys(channels) {
+  return Object.keys(channels).filter(key => /^face\.[^.]+\.color\.[rgba]$/.test(key));
+}
+
+function channelFaceColors(channels, faceOrder) {
+  const present = perFaceColorChannelKeys(channels);
+  if (!present.length) return null;
+  if (!Array.isArray(faceOrder) || faceOrder.length !== 6 || faceOrder.some(face => typeof face !== 'string' || !face)) {
+    throw new Error('S3D BOX_FACE_ORDER is required for per-face DVS color channels');
+  }
+
+  const expected = faceOrder.flatMap(face => 'rgba'.split('').map(component => `face.${face}.color.${component}`));
+  const allowed = new Set(expected);
+  const unknown = present.filter(key => !allowed.has(key));
+  if (unknown.length) throw new Error(`unknown per-face color channel(s): ${unknown.join(', ')}`);
+  const missing = expected.filter(key => !Object.hasOwn(channels, key));
+  if (missing.length) {
+    throw new Error(`per-face color channels require complete ${faceOrder.length}xRGBA set; missing: ${missing.join(', ')}`);
+  }
+
+  return faceOrder.map(face => 'rgba'.split('').map(component => {
+    const key = `face.${face}.color.${component}`;
+    return colorComponent(channels, key, 1);
+  }));
 }
 
 function visitGroups(generations, visitor) {
@@ -37,6 +65,7 @@ class S3DVisualPlanRenderer {
     if (!gl) throw new Error('WebGL2 is required by S3D visualizer');
     this.canvas = canvas;
     this.gl = gl;
+    this.s3d = s3d;
     this.renderer = new s3d.WebGLBatchRenderer(gl);
     this.camera = new s3d.PerspectiveCamera({ position: [8, 7, 10], target: [0, 1, 0] });
     this.controls = new s3d.OrbitControls(canvas, this.camera);
@@ -115,8 +144,16 @@ class S3DVisualPlanRenderer {
       const rotation = channelVector(channels, 'rotation', [0, 0, 0]);
       const scale = channelVector(channels, 'scale', [0.35, 0.35, 0.35]);
       if (scale.some(value => value <= 0)) throw new Error('S3D box scale channels must be positive');
-      const color = channelColor(channels, [0.35, 0.7, 1, 1]);
-      this.renderer.box(position, scale, color, false, { rotation });
+      const faceColors = channelFaceColors(channels, this.s3d?.BOX_FACE_ORDER);
+      if (faceColors) {
+        if (typeof this.renderer.boxFaces !== 'function') {
+          throw new Error('loaded S3D renderer does not support per-face box colors');
+        }
+        this.renderer.boxFaces(position, scale, faceColors, false, { rotation });
+      } else {
+        const color = channelColor(channels, [0.35, 0.7, 1, 1]);
+        this.renderer.box(position, scale, color, false, { rotation });
+      }
     });
     this.renderer.commitPersistent();
   }
@@ -136,4 +173,11 @@ class S3DVisualPlanRenderer {
   }
 }
 
-export { S3DVisualPlanRenderer };
+export {
+  S3DVisualPlanRenderer,
+  channelColor,
+  channelFaceColors,
+  channelVector,
+  perFaceColorChannelKeys,
+  visitGroups,
+};

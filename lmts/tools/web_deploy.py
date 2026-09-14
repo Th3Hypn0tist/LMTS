@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .output import OutputTarget, write_files
+from .report_contract_php import REPORT_CONTRACT_VALIDATOR_PHP
 
 
 REPORT_CONTRACT_NAME = 'LMTS_Benchmark_Report_Template_v1.1.schema.json'
@@ -151,20 +152,12 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 $config = require dirname(__DIR__, 2) . '/config/db.php';
-
-const LMTS_REPORT_FORMAT = 'lmts.report';
-const LMTS_REPORT_VERSION = '1.1';
+require_once dirname(__DIR__) . '/lib/report_contract.php';
 
 function fail_response(int $status, string $message): never {
     http_response_code($status);
     echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
-}
-
-function require_array_field(array $report, string $name): array {
-    $value = $report[$name] ?? null;
-    if (!is_array($value)) fail_response(400, "report.$name must be an object or array");
-    return $value;
 }
 
 function canonicalize_json_value(mixed $value): mixed {
@@ -177,20 +170,6 @@ function canonicalize_json_value(mixed $value): mixed {
         $value[$key] = canonicalize_json_value($item);
     }
     return $value;
-}
-
-function validate_record(array $record): void {
-    $id = trim((string)($record['id'] ?? ''));
-    if ($id === '') fail_response(400, 'report record id is missing');
-    foreach (['coordinates', 'outcome', 'metrics', 'evidence'] as $field) {
-        if (!isset($record[$field]) || !is_array($record[$field])) {
-            fail_response(400, "report record $id is missing $field");
-        }
-    }
-    if ($record['coordinates'] === []) fail_response(400, "report record $id has no coordinates");
-    if (trim((string)($record['outcome']['status'] ?? '')) === '' || trim((string)($record['outcome']['result'] ?? '')) === '') {
-        fail_response(400, "report record $id has incomplete outcome");
-    }
 }
 
 try {
@@ -224,51 +203,22 @@ try {
 
     $raw = file_get_contents('php://input');
     if ($raw === false || trim($raw) === '') fail_response(400, 'empty request body');
+
+    $document = json_decode($raw, false, 512, JSON_THROW_ON_ERROR);
+    if (!($document instanceof stdClass)) fail_response(400, 'benchmark report root must be an object');
+    lmts_validate_report_document(
+        $document,
+        dirname(__DIR__) . '/contracts/' . LMTS_REPORT_CONTRACT_FILE,
+    );
+
     $report = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
-    if (!is_array($report) || ($report['format'] ?? null) !== LMTS_REPORT_FORMAT || ($report['version'] ?? null) !== LMTS_REPORT_VERSION) {
-        fail_response(400, 'unsupported benchmark report format');
-    }
-
-    $meta = require_array_field($report, 'report');
-    $source = require_array_field($report, 'source');
-    $dimensions = require_array_field($report, 'dimensions');
-    $entities = require_array_field($report, 'entities');
-    require_array_field($report, 'metric_definitions');
-    $records = require_array_field($report, 'records');
-    $summary = require_array_field($report, 'summary');
-    $views = require_array_field($report, 'views');
-
-    if ($dimensions === []) fail_response(400, 'report.dimensions must not be empty');
-    if (!array_is_list($records)) fail_response(400, 'report.records must be an array');
-    if (!array_is_list($views)) fail_response(400, 'report.views must be an array');
-    if (!isset($summary['records']) || !is_int($summary['records'])) fail_response(400, 'report.summary.records must be an integer');
-    if ($summary['records'] !== count($records)) fail_response(400, 'report.summary.records does not match records array');
-    if (!isset($summary['outcomes']) || !is_array($summary['outcomes'])) fail_response(400, 'report.summary.outcomes must be an object');
-    foreach (['pass', 'fail', 'error', 'cancelled', 'unknown'] as $outcomeName) {
-        if (!array_key_exists($outcomeName, $summary['outcomes']) || !is_int($summary['outcomes'][$outcomeName])) {
-            fail_response(400, "report.summary.outcomes.$outcomeName must be an integer");
-        }
-    }
-    foreach ($dimensions as $dimensionId => $dimension) {
-        if (!is_array($dimension)) fail_response(400, "dimension $dimensionId must be an object");
-        $entityType = trim((string)($dimension['entity_type'] ?? ''));
-        if ($entityType === '' || !isset($entities[$entityType]) || !is_array($entities[$entityType])) {
-            fail_response(400, "dimension $dimensionId references missing entity type");
-        }
-    }
-    foreach ($records as $record) {
-        if (!is_array($record)) fail_response(400, 'report.records contains a non-object value');
-        validate_record($record);
-    }
-
-    $reportId = trim((string)($meta['id'] ?? ''));
-    $reportType = trim((string)($meta['type'] ?? ''));
-    $createdAtRaw = trim((string)($meta['created_at'] ?? ''));
-    $sourceType = trim((string)($source['type'] ?? ''));
-    $sourceId = trim((string)($source['id'] ?? ''));
-    if ($reportId === '' || $reportType === '' || $createdAtRaw === '' || $sourceType === '' || $sourceId === '') {
-        fail_response(400, 'report identity fields are missing');
-    }
+    $meta = $report['report'];
+    $source = $report['source'];
+    $reportId = trim((string)$meta['id']);
+    $reportType = trim((string)$meta['type']);
+    $createdAtRaw = trim((string)$meta['created_at']);
+    $sourceType = trim((string)$source['type']);
+    $sourceId = trim((string)$source['id']);
 
     $createdAt = new DateTimeImmutable($createdAtRaw);
     $createdAtSql = $createdAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s.u');
@@ -286,7 +236,7 @@ try {
         $same = hash_equals(hash('sha256', $existingCanonical), hash('sha256', $reportJson));
         $pdo->commit();
         if (!$same) fail_response(409, 'report id already exists with different content');
-        echo json_encode(['ok' => true, 'id' => $reportId, 'version' => LMTS_REPORT_VERSION, 'created' => false], JSON_UNESCAPED_SLASHES);
+        echo json_encode(['ok' => true, 'id' => $reportId, 'version' => $report['version'], 'created' => false], JSON_UNESCAPED_SLASHES);
         exit;
     }
 
@@ -297,8 +247,8 @@ try {
     $insert->execute([$reportId, $reportType, $createdAtSql, $sourceType, $sourceId, $reportJson]);
     $pdo->commit();
     http_response_code(201);
-    echo json_encode(['ok' => true, 'id' => $reportId, 'version' => LMTS_REPORT_VERSION, 'created' => true], JSON_UNESCAPED_SLASHES);
-} catch (JsonException | DateException $e) {
+    echo json_encode(['ok' => true, 'id' => $reportId, 'version' => $report['version'], 'created' => true], JSON_UNESCAPED_SLASHES);
+} catch (InvalidArgumentException | JsonException | DateException $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) $pdo->rollBack();
     fail_response(400, $e->getMessage());
 } catch (Throwable $e) {
@@ -344,6 +294,7 @@ def web_root_files() -> dict[str, str]:
         'public/assets/lmts.css': CSS,
         'public/api/report.php': REPORT_PHP,
         'public/api/reports.php': REPORTS_PHP,
+        'public/lib/report_contract.php': REPORT_CONTRACT_VALIDATOR_PHP,
         f'public/contracts/{REPORT_CONTRACT_NAME}': report_contract,
         'config/db.php': db_config,
     }

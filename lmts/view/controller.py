@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from lmts.core.benchmark_runner import BenchmarkProgress, BenchmarkRunner
@@ -24,6 +25,9 @@ from .projector import LMTSViewState
 from .response_monitor import ResponseMonitor
 
 
+RunCompletedCallback = Callable[[dict[str, object]], None]
+
+
 class LMTSViewController:
     def __init__(self, providers: ProviderRegistry, test_types: TestTypeRegistry, matrix: TestMatrix, *, results_root: Path = Path("results"), workspace_root: Path = Path(".lmts/workspaces"), logs_root: Path = Path("logs"), profile_path: Path = DEFAULT_PROFILE_PATH) -> None:
         self.providers = providers
@@ -36,6 +40,7 @@ class LMTSViewController:
         self.state = LMTSViewState(tests=list(matrix.tests()), suite_level="moderate")
         self.response_monitor = ResponseMonitor()
         self.last_errors: list[dict[str, object]] = []
+        self.last_publish_errors: list[dict[str, str]] = []
         self._run_thread: threading.Thread | None = None
         self._run_control: RunControl | None = None
         self._sync_profile_state()
@@ -201,7 +206,7 @@ class LMTSViewController:
             self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
             self._clear_live_matrix()
 
-    def _start_run(self, targets: list[TestExecutor], tests: list[ConfiguredTest]) -> bool:
+    def _start_run(self, targets: list[TestExecutor], tests: list[ConfiguredTest], *, on_run_completed: RunCompletedCallback | None = None) -> bool:
         if self.state.running:
             self.state.message = "test matrix already running"
             return False
@@ -235,19 +240,25 @@ class LMTSViewController:
         self.state.last_result = None
         self.state.message = f"test matrix started: {len(targets)} target(s) x {len(tests)} configured test(s)"
         self.last_errors = []
-        self._run_thread = threading.Thread(target=self._run_matrix, args=(targets, tests, self._run_control), name="lmts-test-matrix", daemon=True)
+        self.last_publish_errors = []
+        self._run_thread = threading.Thread(
+            target=self._run_matrix,
+            args=(targets, tests, self._run_control, on_run_completed),
+            name="lmts-test-matrix",
+            daemon=True,
+        )
         self._run_thread.start()
         return True
 
-    def run_selected(self) -> bool:
-        return self._start_run(list(self.state.selected_targets), list(self.state.selected_tests))
+    def run_selected(self, *, on_run_completed: RunCompletedCallback | None = None) -> bool:
+        return self._start_run(list(self.state.selected_targets), list(self.state.selected_tests), on_run_completed=on_run_completed)
 
-    def run_all_tests(self) -> bool:
-        return self._start_run(list(self.state.selected_targets), list(self.state.tests))
+    def run_all_tests(self, *, on_run_completed: RunCompletedCallback | None = None) -> bool:
+        return self._start_run(list(self.state.selected_targets), list(self.state.tests), on_run_completed=on_run_completed)
 
-    def run_all_tests_to_all_models(self) -> bool:
+    def run_all_tests_to_all_models(self, *, on_run_completed: RunCompletedCallback | None = None) -> bool:
         models = [target for target in self.state.targets if target.kind == "model"]
-        return self._start_run(models, list(self.state.tests))
+        return self._start_run(models, list(self.state.tests), on_run_completed=on_run_completed)
 
     def cancel(self) -> bool:
         if not self.state.running or self._run_control is None:
@@ -260,7 +271,7 @@ class LMTSViewController:
             self._run_control.request_cancel()
         return True
 
-    def _run_matrix(self, targets, tests, control: RunControl) -> None:
+    def _run_matrix(self, targets, tests, control: RunControl, on_run_completed: RunCompletedCallback | None = None) -> None:
         runner = TestRunner(
             self.providers,
             RunStore(self.results_root),
@@ -330,6 +341,17 @@ class LMTSViewController:
                     elif run.passed is False:
                         self.state.progress_failed += 1
 
+                    if on_run_completed is not None and run.status != "cancelled":
+                        try:
+                            on_run_completed(run.to_dict())
+                        except Exception as exc:
+                            self.last_publish_errors.append({
+                                "run_id": run.run_id,
+                                "target_id": run.executor_id,
+                                "test_ref": run.test_ref,
+                                "error": f"{type(exc).__name__}: {exc}",
+                            })
+
                 batch = benchmark_runner.run(test, targets, self.workspace_root, progress=on_progress, control=control)
                 if batch.run_ids:
                     path = benchmark_store.append(batch)
@@ -365,7 +387,11 @@ class LMTSViewController:
                 "cancelled": self.state.progress_cancelled,
                 "batch_ids": ", ".join(batch_ids),
                 "batch_paths": ", ".join(batch_paths),
+                "publish_errors": len(self.last_publish_errors),
             }
+            if len(matrix_cells) == 1:
+                self.state.last_result["single_run_id"] = matrix_cells[0].run_id
+                self.state.last_result["single_run_path"] = matrix_cells[0].result_path
             if self.last_errors:
                 self.state.last_result["error_log"] = "Output -> Export errors"
             if control.cancelled:
@@ -374,6 +400,8 @@ class LMTSViewController:
             else:
                 self.state.progress_phase = "finished"
                 self.state.message = f"test matrix finished: {self.state.progress_passed} passed, {self.state.progress_failed} failed, {self.state.progress_errors} error(s)"
+                if self.last_publish_errors:
+                    self.state.message += f"; {len(self.last_publish_errors)} report publish failure(s)"
         except Exception as exc:
             self.state.progress_errors += 1
             self.state.progress_phase = "error"
@@ -390,11 +418,11 @@ class LMTSViewController:
         self.state.message = f"error log exported: {path}"
         return path
 
-    def test_all(self) -> bool:
+    def test_all(self, *, on_run_completed: RunCompletedCallback | None = None) -> bool:
         if self.state.running:
             self.state.message = "test matrix already running"
             return False
-        return self._start_run(list(self.state.targets), list(self.state.tests))
+        return self._start_run(list(self.state.targets), list(self.state.tests), on_run_completed=on_run_completed)
 
     def profile(self) -> Path | None:
         if self.state.running:

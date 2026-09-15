@@ -1,4 +1,4 @@
-import { S3DVisualPlanRenderer } from '/static/visualizer.js';
+import { S3DVisualPlanRenderer } from './visualizer.js';
 
 async function requestJson(method, path, body = undefined) {
   const response = await fetch(path, {

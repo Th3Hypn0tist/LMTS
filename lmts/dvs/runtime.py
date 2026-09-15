@@ -17,12 +17,9 @@ def _strict_transform(transform: dict[str, Any], allowed: set[str], label: str) 
 
 
 def _finite_float(value: Any, label: str) -> float:
-    if isinstance(value, bool):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f'{label} must be numeric')
-    try:
-        result = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f'{label} must be numeric') from exc
+    result = float(value)
     if not isfinite(result):
         raise ValueError(f'{label} must be finite')
     return result
@@ -34,12 +31,12 @@ def _pair(value: Any, label: str) -> tuple[float, float]:
     return (_finite_float(value[0], f'{label}[0]'), _finite_float(value[1], f'{label}[1]'))
 
 
-def _categorical_maps(rows: Sequence[dict[str, str]]) -> dict[str, dict[str, int]]:
-    result: dict[str, dict[str, int]] = {}
+def _categorical_maps(rows: Sequence[dict[str, Any]]) -> dict[str, dict[Any, int]]:
+    result: dict[str, dict[Any, int]] = {}
     if not rows:
         return result
     for column in rows[0]:
-        order: dict[str, int] = {}
+        order: dict[Any, int] = {}
         for row in rows:
             value = row[column]
             if value not in order:
@@ -49,18 +46,20 @@ def _categorical_maps(rows: Sequence[dict[str, str]]) -> dict[str, dict[str, int
 
 
 def _interpret_categorical_index(
-    raw: str,
+    raw: Any,
     binding: VisualBinding,
-    category_map: dict[str, int],
+    category_map: dict[Any, int],
     label: str,
 ) -> float:
+    if raw is None:
+        raise ValueError(f'{label} does not allow null')
     _strict_transform(binding.transform, {'spacing', 'offset', 'order'}, label)
     spacing = _finite_float(binding.transform.get('spacing', 1.0), f'{label}.spacing')
     offset = _finite_float(binding.transform.get('offset', 0.0), f'{label}.offset')
     order = binding.transform.get('order')
     if order is not None:
-        if not isinstance(order, list) or any(not isinstance(item, str) for item in order):
-            raise ValueError(f'{label}.order must be a string array')
+        if not isinstance(order, list):
+            raise ValueError(f'{label}.order must be an array')
         if len(set(order)) != len(order):
             raise ValueError(f'{label}.order must not contain duplicates')
         try:
@@ -75,9 +74,9 @@ def _interpret_categorical_index(
     return offset + index * spacing
 
 
-def _interpret_number(raw: str, binding: VisualBinding, label: str, *, nullable: bool) -> float | object:
+def _interpret_number(raw: Any, binding: VisualBinding, label: str, *, nullable: bool) -> float | object:
     _strict_transform(binding.transform, {'domain', 'range', 'clamp', 'null'}, label)
-    if raw == 'null':
+    if raw is None:
         if not nullable:
             raise ValueError(f'{label} does not allow null')
         null_policy = binding.transform.get('null')
@@ -108,21 +107,24 @@ def _interpret_number(raw: str, binding: VisualBinding, label: str, *, nullable:
     return range_min + (range_max - range_min) * normalized
 
 
-def _interpret_category_channel(raw: str, binding: VisualBinding, label: str) -> float:
+def _interpret_category_channel(raw: Any, binding: VisualBinding, label: str) -> float:
+    if raw is None:
+        raise ValueError(f'{label} does not allow null')
     _strict_transform(binding.transform, {'map'}, label)
     mapping = binding.transform.get('map')
     if not isinstance(mapping, dict) or not mapping:
         raise ValueError(f'{label}.map must be a non-empty object')
-    if raw not in mapping:
+    key = str(raw).lower() if isinstance(raw, bool) else str(raw)
+    if key not in mapping:
         raise ValueError(f'{label}.map has no value for category {raw!r}')
-    return _finite_float(mapping[raw], f'{label}.map[{raw!r}]')
+    return _finite_float(mapping[key], f'{label}.map[{key!r}]')
 
 
 def interpret_binding(
-    raw: str,
+    raw: Any,
     binding: VisualBinding,
     *,
-    category_map: dict[str, int],
+    category_map: dict[Any, int],
     label: str,
 ) -> float | object:
     interpretation = binding.interpretation
@@ -140,7 +142,7 @@ def interpret_binding(
 def _rows_from_template(
     source: Any,
     template: InputTemplate,
-) -> tuple[list[dict[str, str]], list[int], dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[int], dict[str, Any]]:
     extracted = template.extract(source)
     rows = [dict(zip(extracted.columns, row, strict=True)) for row in extracted.rows]
     return rows, list(range(len(rows))), dict(extracted.parameters)
@@ -148,15 +150,15 @@ def _rows_from_template(
 
 def _group_rows(
     generation: VisualizationGeneration,
-    rows: Sequence[dict[str, str]],
+    rows: Sequence[dict[str, Any]],
     source_indices: Sequence[int],
-) -> list[tuple[dict[str, str], list[dict[str, str]], list[int]]]:
+) -> list[tuple[dict[str, Any], list[dict[str, Any]], list[int]]]:
     if len(rows) != len(source_indices):
         raise ValueError('DVS runtime row/index cardinality mismatch')
     if not generation.group_by:
         return [({}, [row], [source_indices[index]]) for index, row in enumerate(rows)]
 
-    groups: dict[tuple[str, ...], tuple[list[dict[str, str]], list[int]]] = {}
+    groups: dict[tuple[Any, ...], tuple[list[dict[str, Any]], list[int]]] = {}
     for index, row in enumerate(rows):
         key = tuple(row[column] for column in generation.group_by)
         group_rows, group_indices = groups.setdefault(key, ([], []))
@@ -172,7 +174,7 @@ def _group_rows(
     ]
 
 
-def _constant_group_value(rows: Sequence[dict[str, str]], column: str, label: str) -> str:
+def _constant_group_value(rows: Sequence[dict[str, Any]], column: str, label: str) -> Any:
     values = {row[column] for row in rows}
     if len(values) != 1:
         raise ValueError(
@@ -184,9 +186,9 @@ def _constant_group_value(rows: Sequence[dict[str, str]], column: str, label: st
 
 def _project_generation(
     generation: VisualizationGeneration,
-    rows: Sequence[dict[str, str]],
+    rows: Sequence[dict[str, Any]],
     source_indices: Sequence[int],
-    categorical_maps: dict[str, dict[str, int]],
+    categorical_maps: dict[str, dict[Any, int]],
     input_parameters: dict[str, Any],
 ) -> dict[str, Any]:
     projected_groups: list[dict[str, Any]] = []

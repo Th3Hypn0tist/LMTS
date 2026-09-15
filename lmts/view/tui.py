@@ -17,6 +17,7 @@ from lmts.tests.catalog import default_test_matrix, default_test_type_registry, 
 from lmts.tests.types import TestParameter, TestTypeDefinition
 from lmts.tools.ftp_profiles import load_ftp_profiles
 from lmts.tools.mysql_config import deploy_mysql_config
+from lmts.tools.mysql_schema import install_mysql_schema
 from lmts.tools.profile import benchmark_system_reference, load_system_profile
 from lmts.tools.report_profiles import load_report_profiles
 from lmts.tools.report_publish import publish_report
@@ -516,6 +517,25 @@ def run() -> None:
 
         def edit_mysql(_stdscr: curses.window) -> None:
             nonlocal settings
+            action = host.choose(stdscr, 'MySQL', ['Edit connection', 'Install LMTS schema'])
+            if action is None:
+                return
+            if action == 1:
+                mysql = settings.mysql
+                confirm = host.choose(
+                    stdscr,
+                    'Install LMTS schema',
+                    ['Cancel', f'Install into {mysql.username}@{mysql.host}/{mysql.database}'],
+                    0,
+                )
+                if confirm != 1:
+                    return
+                try:
+                    install_mysql_schema(mysql)
+                    set_message(f'LMTS schema installed: {mysql.host}/{mysql.database}')
+                except RuntimeError as exc:
+                    set_message(f'MySQL schema install failed: {exc}')
+                return
             mysql = settings.mysql
             values = []
             for title, initial, allow_empty in [('MySQL host', mysql.host, False), ('MySQL database', mysql.database, False), ('MySQL username', mysql.username, False), ('MySQL password', mysql.password, True), ('Publish key', mysql.publish_key, False)]:

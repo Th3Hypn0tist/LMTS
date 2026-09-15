@@ -59,14 +59,21 @@ def test_installer_applies_schema_only_when_version_is_behind() -> None:
     assert 'installed result_server schema v${CURRENT_SCHEMA_VERSION} is newer' in text
 
 
-def test_installer_restarts_services_only_when_required() -> None:
+def test_installer_restarts_mariadb_only_when_required() -> None:
     text = _text()
     assert 'MARIADB_RESTART_REQUIRED=0' in text
-    assert 'APACHE_RESTART_REQUIRED=0' in text
     assert 'if (( MARIADB_RESTART_REQUIRED )); then' in text
-    assert 'if (( APACHE_RESTART_REQUIRED || SYSTEMD_RELOAD_REQUIRED )); then' in text
     assert 'systemctl restart mariadb' in text
-    assert 'systemctl restart apache2' in text
+    assert 'systemctl restart apache2' not in text
+
+
+def test_installer_does_not_own_web_host_configuration() -> None:
+    text = _text()
+    assert 'DocumentRoot' not in text
+    assert 'Alias /benchmark/' not in text
+    assert 'ServerName aigm.fi' not in text
+    assert 'APACHE_SITE=' not in text
+    assert 'No domain, virtual host, alias, DocumentRoot or web deployment path is configured by this script.' in text
 
 
 def test_installer_reports_convergence_summary() -> None:

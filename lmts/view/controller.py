@@ -367,7 +367,7 @@ class LMTSViewController:
                 "batch_paths": ", ".join(batch_paths),
             }
             if self.last_errors:
-                self.state.last_result["error_log"] = "press e to export"
+                self.state.last_result["error_log"] = "Output -> Export errors"
             if control.cancelled:
                 self.state.progress_phase = "cancelled"
                 self.state.message = f"test matrix cancelled: {self.state.progress_completed}/{self.state.progress_total} run(s) reached"

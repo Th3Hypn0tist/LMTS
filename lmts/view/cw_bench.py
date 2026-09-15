@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import threading
 from pathlib import Path
 
-from lmts.core.control import RunControl
 from lmts.core.cw_bench import CICAdapter, CWSource
 from lmts.tests.modules.cw_deep import CWDeepTest
 
@@ -41,29 +39,9 @@ def start_cw_bench(
         output_language=output_language,
         cic_root=cic_root,
     )
-    controller._run_control = RunControl()
-    controller.response_monitor.reset()
-    controller.state.running = True
-    controller.state.cancel_requested = False
-    controller.state.progress_completed = 0
-    controller.state.progress_total = len(targets)
-    controller.state.progress_passed = 0
-    controller.state.progress_failed = 0
-    controller.state.progress_errors = 0
-    controller.state.progress_cancelled = 0
-    controller.state.progress_target_id = ""
-    controller.state.progress_test_ref = ""
-    controller.state.progress_phase = "starting"
-    controller.state.last_result = None
-    controller.state.message = (
-        f"CW Bench started: {source.ref} / {output_language} / {len(targets)} model(s)"
-    )
-    controller.last_errors = []
-    controller._run_thread = threading.Thread(
-        target=controller._run_matrix,
-        args=(targets, [test], controller._run_control),
-        name="lmts-cw-bench",
-        daemon=True,
-    )
-    controller._run_thread.start()
-    return True
+    started = controller._start_run(targets, [test])
+    if started:
+        controller.state.message = (
+            f"CW Bench started: {source.ref} / {output_language} / {len(targets)} model(s)"
+        )
+    return started

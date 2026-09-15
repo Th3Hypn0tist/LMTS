@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+import json
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
+
+import lmts.dvs.server as server_module
+from lmts.dvs.registry import DVSRegistry
+from lmts.dvs.studio import DVSStudioStore
+
+
+def _template(item_id: str, *, column: str = 'value') -> dict:
+    return {
+        'format': 's3d.dvs.input-template',
+        'version': '1.0',
+        'id': item_id,
+        'source_format': 'example/1.0',
+        'reader': 'json',
+        'rows': 'records[*]',
+        'columns': [{'name': column, 'selector': column}],
+    }
+
+
+def _preset(item_id: str, template_id: str, *, column: str = 'value') -> dict:
+    return {
+        'format': 's3d.dvs.visualization-preset',
+        'version': '1.0',
+        'id': item_id,
+        'source_format': 'example/1.0',
+        'input_template_ref': template_id,
+        'generations': [{
+            'id': 'root',
+            'primitive': 'box',
+            'bindings': {
+                'scale.y': {'column': column, 'interpretation': 'number'},
+            },
+        }],
+    }
+
+
+def _write_json(root: Path, name: str, payload: dict) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / name).write_text(json.dumps(payload), encoding='utf-8')
+
+
+@pytest.fixture
+def studio_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    system_templates = tmp_path / 'system-templates'
+    system_presets = tmp_path / 'system-presets'
+    studio_root = tmp_path / 'studio'
+    _write_json(system_templates, 'system.template.json', _template('system.template'))
+
+    registry = DVSRegistry(
+        templates_root=system_templates,
+        presets_root=system_presets,
+        studio_root=studio_root,
+    )
+    store = DVSStudioStore(registry)
+    monkeypatch.setattr(server_module, 'REGISTRY', registry)
+    monkeypatch.setattr(server_module, 'STUDIO', store)
+    monkeypatch.setattr(server_module, 'STUDIO_ROOT', studio_root.resolve())
+
+    httpd = ThreadingHTTPServer(('127.0.0.1', 0), server_module.Handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    host, port = httpd.server_address
+    try:
+        yield f'http://{host}:{port}', registry
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+
+
+def _request(base_url: str, method: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
+    data = None if payload is None else json.dumps(payload).encode('utf-8')
+    request = urllib.request.Request(
+        base_url + path,
+        method=method,
+        data=data,
+        headers={'Content-Type': 'application/json'} if data is not None else {},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            return response.status, json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode('utf-8'))
+
+
+def _item_path(prefix: str, item_id: str) -> str:
+    return prefix + urllib.parse.quote(item_id, safe='')
+
+
+def test_studio_http_create_and_update_template(studio_server) -> None:
+    base_url, registry = studio_server
+    payload = _template('user/template')
+
+    status, body = _request(base_url, 'POST', '/api/studio/input-templates', payload)
+    assert status == 201
+    assert body['ok'] is True
+    assert body['input_template']['id'] == 'user/template'
+    assert registry.templates.contains('user/template')
+
+    updated = _template('user/template', column='score')
+    status, body = _request(
+        base_url,
+        'PUT',
+        _item_path('/api/studio/input-templates/', 'user/template'),
+        updated,
+    )
+    assert status == 200
+    assert body['input_template']['columns'] == [{'name': 'score', 'selector': 'score'}]
+    assert [column.name for column in registry.templates.get('user/template').columns] == ['score']
+
+
+def test_studio_http_create_and_update_preset(studio_server) -> None:
+    base_url, registry = studio_server
+    status, _ = _request(base_url, 'POST', '/api/studio/input-templates', _template('table'))
+    assert status == 201
+
+    payload = _preset('view', 'table')
+    status, body = _request(base_url, 'POST', '/api/studio/visualization-presets', payload)
+    assert status == 201
+    assert body['visualization_preset']['id'] == 'view'
+
+    payload['generations'][0]['bindings'] = {
+        'position.y': {'column': 'value', 'interpretation': 'number'},
+    }
+    status, body = _request(
+        base_url,
+        'PUT',
+        _item_path('/api/studio/visualization-presets/', 'view'),
+        payload,
+    )
+    assert status == 200
+    assert 'position.y' in body['visualization_preset']['generations'][0]['bindings']
+    assert list(registry.presets.get('view').generations[0].bindings) == ['position.y']
+
+
+def test_studio_http_system_definition_is_read_only(studio_server) -> None:
+    base_url, _ = studio_server
+    status, body = _request(
+        base_url,
+        'PUT',
+        _item_path('/api/studio/input-templates/', 'system.template'),
+        _template('system.template', column='score'),
+    )
+    assert status == 403
+    assert body['ok'] is False
+    assert 'read-only' in body['error']
+
+
+def test_studio_http_missing_update_is_404(studio_server) -> None:
+    base_url, _ = studio_server
+    status, body = _request(
+        base_url,
+        'PUT',
+        _item_path('/api/studio/input-templates/', 'missing'),
+        _template('missing'),
+    )
+    assert status == 404
+    assert body['ok'] is False
+    assert "has no item 'missing'" in body['error']
+
+
+def test_studio_http_invalid_definition_is_400(studio_server) -> None:
+    base_url, _ = studio_server
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/studio/input-templates',
+        {'format': 'wrong', 'id': 'bad'},
+    )
+    assert status == 400
+    assert body['ok'] is False
+    assert body['error']
+
+
+def test_studio_http_duplicate_create_is_400(studio_server) -> None:
+    base_url, _ = studio_server
+    payload = _template('table')
+    status, _ = _request(base_url, 'POST', '/api/studio/input-templates', payload)
+    assert status == 201
+    status, body = _request(base_url, 'POST', '/api/studio/input-templates', payload)
+    assert status == 400
+    assert body['ok'] is False
+    assert 'already exists' in body['error']
+
+
+def test_studio_http_health_exposes_write_root(studio_server) -> None:
+    base_url, _ = studio_server
+    status, body = _request(base_url, 'GET', '/api/health')
+    assert status == 200
+    assert body['studio']['write_api'] is True
+    assert body['studio']['root']

@@ -22,7 +22,10 @@ def _record(run_id: str, target: str, test: str, result: str, score: float | Non
     return {
         'id': run_id,
         'coordinates': {'target': target, 'test': test},
-        'timing': {'started_at': None, 'completed_at': None},
+        'timing': {
+            'started_at': '2026-09-15T06:00:00+00:00',
+            'completed_at': '2026-09-15T06:00:01+00:00',
+        },
         'outcome': {'status': 'completed', 'result': result, 'passed': result == 'pass'},
         'metrics': {
             'input_tokens': {'value': None},
@@ -44,6 +47,7 @@ def test_lmts_report_template_and_benchmark_preset_are_compatible() -> None:
     assert template.source_format == 'lmts.report/1.1'
     assert preset.source_format == template.source_format
     assert preset.input_template_ref == template.id
+    assert {column.type for column in template.columns} <= {'string', 'number', 'boolean'}
     generation = preset.generations[0]
     assert generation.group_by == ('target', 'test')
     assert generation.bindings['scale.y'].column == 'score_percent'
@@ -57,14 +61,15 @@ def test_default_dvs_registry_loads_lmts_benchmark_preset() -> None:
     preset.validate_against(template)
 
 
-def test_lmts_report_input_template_projects_explicit_null_as_string() -> None:
+def test_lmts_report_input_template_preserves_typed_values_and_explicit_null() -> None:
     template, _ = _template_and_preset()
     report = {'records': [_record('run-1', 'model-a', 'test-a', 'pass', 100.0)]}
     table = template.extract(report)
     row = dict(zip(table.columns, table.rows[0], strict=True))
-    assert row['score_percent'] == '100.0'
-    assert row['ttft_ms'] == 'null'
-    assert row['started_at'] == 'null'
+    assert row['score_percent'] == 100.0
+    assert row['ttft_ms'] is None
+    assert row['started_at'] == '2026-09-15T06:00:00+00:00'
+    assert row['passed'] is True
 
 
 def test_lmts_benchmark_visual_plan_maps_categories_score_and_result() -> None:

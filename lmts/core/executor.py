@@ -75,6 +75,9 @@ class ModelExecutor:
         }
 
     def generate(self, prompt: str, sink: ResponseSink | None = None) -> NormalizedResponse:
+        if sink is not None:
+            sink(ResponseStreamChunk(source_id=self.id, channel="input", text=prompt))
+
         generate_stream = getattr(self.provider, "generate_stream", None)
         if sink is not None and callable(generate_stream):
             return generate_stream(self.model, prompt, sink)
@@ -141,4 +144,6 @@ class RuntimeExecutor:
         return dict(self.executor_metadata)
 
     def generate(self, prompt: str, sink: ResponseSink | None = None) -> NormalizedResponse:
+        if sink is not None:
+            sink(ResponseStreamChunk(source_id=self.id, channel="input", text=prompt))
         return self.generate_handler(prompt, sink)

@@ -114,7 +114,7 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
     except ValueError:
         mysql = MySQLSettings()
     try:
-        dvs = _dvs_from_payload(payload.get('dvs')) if schema_version == SETTINGS_SCHEMA_VERSION else DVSSettings()
+        dvs = _dvs_from_payload(payload.get('dvs'))
     except ValueError:
         dvs = DVSSettings()
     return LMTSSettings(

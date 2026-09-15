@@ -80,6 +80,38 @@
             <button id="studio-update" type="button">Update</button>
             <button id="studio-refresh" type="button">Refresh registry</button>
           </div>
+
+          <fieldset id="studio-scale-tools">
+            <legend>Input scale</legend>
+            <label>
+              Number column
+              <select id="studio-scale-column"></select>
+            </label>
+            <label>
+              Low
+              <div class="actions">
+                <input id="studio-scale-low" type="number" step="any">
+                <button id="studio-find-low" type="button">Find lowest</button>
+              </div>
+            </label>
+            <label>
+              High
+              <div class="actions">
+                <input id="studio-scale-high" type="number" step="any">
+                <button id="studio-find-high" type="button">Find highest</button>
+              </div>
+            </label>
+            <label>
+              Power
+              <input id="studio-scale-power" type="number" step="any" min="0" value="1">
+            </label>
+            <div class="actions wrap">
+              <button id="studio-apply-scale" type="button">Apply scale</button>
+              <button id="studio-remove-scale" type="button">Remove scale</button>
+            </div>
+            <p class="hint">Find operates on typed values before scaling. Scale is exposed downstream as scale.&lt;column&gt;.</p>
+          </fieldset>
+
           <p id="studio-message" class="hint">Validate and Preview never persist. Create and Update are separate persisted operations.</p>
         </div>
 

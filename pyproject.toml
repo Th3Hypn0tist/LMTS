@@ -14,7 +14,7 @@ test = ["pytest>=8"]
 
 [project.scripts]
 lmts = "lmts.cli:main"
-lmts-tui = "lmts.view.tui:main"
+lmts-tui = "lmts.view.report_export_runtime:main"
 lmts-view = "lmts.view.shell:main"
 lmts-dvs = "lmts.dvs.server:main"
 

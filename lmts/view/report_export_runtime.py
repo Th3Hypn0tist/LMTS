@@ -6,7 +6,6 @@ from pathlib import Path
 from lmts.core.matrix_store import MatrixRunStore
 from lmts.core.result_export import build_matrix_bundle
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
-from lmts.core.store import RunStore
 from lmts.reporting import project_matrix_bundle
 from lmts.reporting.single import project_run_result
 from lmts.tools.report_export import export_report_json
@@ -19,6 +18,8 @@ from .output_dialog import choose_report_profile
 
 
 _ACTIVE_CONTROLLER: 'ReportExportController | None' = None
+_ACTIVE_HOST: 'ReportExportHost | None' = None
+_RUN_OPTIONS = ('Run', 'Run all tests', 'Run all tests to all models')
 
 
 def _select_report_profile(host: LMTSInteractiveHost, stdscr: curses.window) -> ReportProfile | None:
@@ -32,7 +33,6 @@ class ReportExportController(LMTSViewController):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._next_publish_profile: ReportProfile | None = None
-        self.completion_export_pending = False
         global _ACTIVE_CONTROLLER
         _ACTIVE_CONTROLLER = self
 
@@ -51,12 +51,8 @@ class ReportExportController(LMTSViewController):
         return publish
 
     def _launch(self, targets, tests) -> bool:
-        targets = list(targets)
-        tests = list(tests)
         callback = self._consume_publish_callback()
-        started = self._start_run(targets, tests, on_run_completed=callback)
-        self.completion_export_pending = bool(started and len(targets) == 1 and callback is None)
-        return started
+        return self._start_run(list(targets), list(tests), on_run_completed=callback)
 
     def run_selected(self, *, on_run_completed=None) -> bool:
         if on_run_completed is not None:
@@ -82,79 +78,45 @@ class ReportExportController(LMTSViewController):
 
 class ReportExportHost(LMTSInteractiveHost):
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, on_idle=self._report_export_idle, **kwargs)
+        self._handled_completion_ids: set[str] = set()
+        super().__init__(*args, on_idle=self._global_completion_idle, **kwargs)
+        global _ACTIVE_HOST
+        _ACTIVE_HOST = self
 
-    def _run_shape(self, choice: int) -> tuple[int, int]:
-        controller = _ACTIVE_CONTROLLER
-        if controller is None:
-            return 0, 0
-        if choice == 0:
-            return len(controller.state.selected_targets), len(controller.state.selected_tests)
-        if choice == 1:
-            return len(controller.state.selected_targets), len(controller.state.tests)
-        model_count = sum(1 for target in controller.state.targets if target.kind == 'model')
-        return model_count, len(controller.state.tests)
-
-    def choose(self, stdscr: curses.window, title: str, options, selected: int = 0):
-        choice = super().choose(stdscr, title, options, selected)
-        if choice is None or title != 'Run' or tuple(options) != ('Run', 'Run all tests', 'Run all tests to all models'):
-            return choice
-
-        controller = _ACTIVE_CONTROLLER
-        if controller is None:
-            return choice
-        controller.configure_next_publish(None)
-        target_count, _ = self._run_shape(choice)
-        if target_count <= 1:
-            return choice
-
-        publish_choice = super().choose(
-            stdscr,
-            'Export reports to server as they complete?',
-            ['Yes', 'No'],
-            0,
-        )
-        if publish_choice is None:
-            return None
-        if publish_choice == 1:
-            return choice
-
-        profile = _select_report_profile(self, stdscr)
-        if profile is None:
-            self.message = 'run cancelled: no report server selected'
-            return None
-        controller.configure_next_publish(profile)
-        return choice
-
-    def _completed_report(self, controller: ReportExportController) -> tuple[dict[str, object], Path]:
-        result = controller.state.last_result if isinstance(controller.state.last_result, dict) else {}
-
-        single_path = str(result.get('single_run_path') or '').strip()
-        if single_path:
-            evidence_path = Path(single_path)
-            if not evidence_path.is_file():
-                raise FileNotFoundError(f'canonical run result missing: {evidence_path}')
-            run_data = RunStore(controller.results_root).load(evidence_path)
-            return project_run_result(run_data), evidence_path
-
-        matrix_path_text = str(result.get('matrix_path') or '').strip()
-        if not matrix_path_text:
-            raise ValueError('completed test set is missing canonical matrix path')
-        evidence_path = Path(matrix_path_text)
-        if not evidence_path.is_file():
-            raise FileNotFoundError(f'canonical matrix result missing: {evidence_path}')
-        matrix_data = MatrixRunStore(controller.results_root).load(evidence_path)
+    def _completed_report(self, controller: ReportExportController, matrix_path: Path) -> dict[str, object]:
+        if not matrix_path.is_file():
+            raise FileNotFoundError(f'canonical matrix result missing: {matrix_path}')
+        matrix_data = MatrixRunStore(controller.results_root).load(matrix_path)
         bundle = build_matrix_bundle(matrix_data, results_root=controller.results_root)
-        return project_matrix_bundle(bundle), evidence_path
+        return project_matrix_bundle(bundle)
 
-    def _report_export_idle(self, stdscr: curses.window) -> None:
+    def _global_completion_idle(self, stdscr: curses.window) -> None:
         controller = _ACTIVE_CONTROLLER
-        if controller is None or controller.state.running or not controller.completion_export_pending:
+        if controller is None or controller.state.running:
             return
 
-        controller.completion_export_pending = False
+        result = controller.state.last_result if isinstance(controller.state.last_result, dict) else {}
+        matrix_id = str(result.get('matrix_id') or '').strip()
+        matrix_path_text = str(result.get('matrix_path') or '').strip()
+        if not matrix_id or not matrix_path_text or matrix_id in self._handled_completion_ids:
+            return
+
+        # Claim the event before opening any modal so one completed matrix can
+        # never produce duplicate dialogs on subsequent idle ticks.
+        self._handled_completion_ids.add(matrix_id)
+        matrix_path = Path(matrix_path_text)
         try:
-            report, evidence_path = self._completed_report(controller)
+            matrix_data = MatrixRunStore(controller.results_root).load(matrix_path)
+        except (OSError, ValueError) as exc:
+            self.message = f'completion report failed: {exc}'
+            return
+
+        target_ids = [str(value) for value in (matrix_data.get('target_ids') or [])]
+        if len(target_ids) != 1 or str(matrix_data.get('status') or '') == 'cancelled':
+            return
+
+        try:
+            report = self._completed_report(controller, matrix_path)
         except (OSError, ValueError) as exc:
             self.message = f'report projection failed: {exc}'
             return
@@ -166,7 +128,7 @@ class ReportExportHost(LMTSInteractiveHost):
             0,
         )
         if action is None or action == 2:
-            self.message = f'kept local: {evidence_path}'
+            self.message = f'kept local: {matrix_path}'
             return
 
         if action == 0:
@@ -189,11 +151,60 @@ class ReportExportHost(LMTSInteractiveHost):
             self.message = f'report file export failed: {exc}; canonical result kept local'
 
 
+def _run_target_count(controller: ReportExportController, choice: int) -> int:
+    if choice == 0:
+        return len(controller.state.selected_targets)
+    if choice == 1:
+        return len(controller.state.selected_targets)
+    return sum(1 for target in controller.state.targets if target.kind == 'model')
+
+
+def _install_run_publish_prompt(tui_module) -> None:
+    current = tui_module.choose_with_preview
+    original = getattr(current, '_lmts_report_original', current)
+
+    def choose_with_report_prompt(stdscr, title, options, preview, *args, **kwargs):
+        choice = original(stdscr, title, options, preview, *args, **kwargs)
+        if choice is None or title != 'Run' or tuple(options) != _RUN_OPTIONS:
+            return choice
+
+        controller = _ACTIVE_CONTROLLER
+        host = _ACTIVE_HOST
+        if controller is None or host is None:
+            return choice
+
+        controller.configure_next_publish(None)
+        if _run_target_count(controller, choice) <= 1:
+            return choice
+
+        publish_choice = host.choose(
+            stdscr,
+            'Export reports to server as they complete?',
+            ['Yes', 'No'],
+            0,
+        )
+        if publish_choice is None:
+            return None
+        if publish_choice == 1:
+            return choice
+
+        profile = _select_report_profile(host, stdscr)
+        if profile is None:
+            host.message = 'run cancelled: no report server selected'
+            return None
+        controller.configure_next_publish(profile)
+        return choice
+
+    choose_with_report_prompt._lmts_report_original = original
+    tui_module.choose_with_preview = choose_with_report_prompt
+
+
 def run_tui() -> None:
     from . import tui
 
     tui.LMTSViewController = ReportExportController
     tui.RegistrySplitCursesViewHost = ReportExportHost
+    _install_run_publish_prompt(tui)
     tui.run()
 
 

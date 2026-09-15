@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .reference_benchmark import (
     REFERENCE_BENCHMARK_DOMAINS,
+    ReferenceBenchmarkProgressCallback,
     empty_reference_benchmarks,
     run_reference_benchmark,
     validate_reference_benchmarks,
@@ -293,8 +294,13 @@ def save_reference_benchmark(domain: str, result: dict[str, object], path: Path 
     return target
 
 
-def benchmark_system_reference(domain: str, path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object]:
-    result = run_reference_benchmark(domain).to_dict()
+def benchmark_system_reference(
+    domain: str,
+    path: Path = DEFAULT_PROFILE_PATH,
+    *,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> dict[str, object]:
+    result = run_reference_benchmark(domain, progress=progress).to_dict()
     save_reference_benchmark(domain, result, path)
     return result
 

@@ -28,6 +28,7 @@ class OllamaProvider:
         self._id = provider_id
         self.discovery_timeout = discovery_timeout
         self.generation_timeout = generation_timeout
+        self._capabilities_cache: dict[str, frozenset[str]] = {}
 
     @property
     def id(self) -> str:
@@ -44,6 +45,30 @@ class OllamaProvider:
         effective_timeout = self.discovery_timeout if timeout is None else timeout
         with request.urlopen(req, timeout=effective_timeout) as response:
             return json.loads(response.read().decode("utf-8"))
+
+    def _model_capabilities(self, model_ref: str) -> frozenset[str]:
+        cached = self._capabilities_cache.get(model_ref)
+        if cached is not None:
+            return cached
+        payload = self._json(
+            "/api/show",
+            {"model": model_ref},
+            timeout=self.discovery_timeout,
+        )
+        raw = payload.get("capabilities")
+        capabilities = frozenset(str(value) for value in raw) if isinstance(raw, list) else frozenset()
+        self._capabilities_cache[model_ref] = capabilities
+        return capabilities
+
+    def _generation_payload(self, model: ModelDescriptor, prompt: str, *, stream: bool) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "model": model.model_ref,
+            "prompt": prompt,
+            "stream": stream,
+        }
+        if "thinking" in self._model_capabilities(model.model_ref):
+            payload["think"] = True
+        return payload
 
     def discover_models(self) -> list[ModelDescriptor]:
         payload = self._json("/api/tags", timeout=self.discovery_timeout)
@@ -114,7 +139,7 @@ class OllamaProvider:
         started = time.perf_counter()
         raw = self._json(
             "/api/generate",
-            {"model": model.model_ref, "prompt": prompt, "stream": False},
+            self._generation_payload(model, prompt, stream=False),
             timeout=self.generation_timeout,
         )
         total_ms = (time.perf_counter() - started) * 1000.0
@@ -126,11 +151,9 @@ class OllamaProvider:
         prompt: str,
         sink: Callable[[ResponseStreamChunk], None],
     ) -> NormalizedResponse:
-        """Generate through Ollama NDJSON and expose only provider response channels."""
+        """Generate through Ollama NDJSON and expose provider response channels."""
         started = time.perf_counter()
-        data = json.dumps(
-            {"model": model.model_ref, "prompt": prompt, "stream": True}
-        ).encode("utf-8")
+        data = json.dumps(self._generation_payload(model, prompt, stream=True)).encode("utf-8")
         req = request.Request(
             f"{self.base_url}/api/generate",
             data=data,

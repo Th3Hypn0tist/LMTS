@@ -6,6 +6,7 @@ import os
 import platform
 import statistics
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -28,6 +29,22 @@ _MEMORY_LARGE_WORKING_SET_BYTES = 64 * 1024 * 1024
 _MEMORY_LARGE_REPEATS_PER_SAMPLE = 16
 _MEMORY_SAMPLE_COUNT = 5
 _MEMORY_WARMUP_REPEATS = 2
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceBenchmarkProgress:
+    domain: str
+    phase: str
+    benchmark_id: str | None = None
+    label: str | None = None
+    sample_index: int | None = None
+    sample_total: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+ReferenceBenchmarkProgressCallback = Callable[[ReferenceBenchmarkProgress], None]
 
 
 @dataclass(slots=True)
@@ -57,6 +74,28 @@ class ReferenceBenchmarkSuiteResult:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+def _emit(
+    progress: ReferenceBenchmarkProgressCallback | None,
+    *,
+    domain: str,
+    phase: str,
+    benchmark_id: str | None = None,
+    label: str | None = None,
+    sample_index: int | None = None,
+    sample_total: int | None = None,
+) -> None:
+    if progress is None:
+        return
+    progress(ReferenceBenchmarkProgress(
+        domain=domain,
+        phase=phase,
+        benchmark_id=benchmark_id,
+        label=label,
+        sample_index=sample_index,
+        sample_total=sample_total,
+    ))
 
 
 def empty_reference_benchmarks() -> dict[str, object]:
@@ -164,73 +203,152 @@ def _sha256_digest(chunk: bytes, repeats: int) -> str:
     return digest.hexdigest()
 
 
-def _cpu_single_thread_test(chunk: bytes) -> ReferenceBenchmarkTestResult:
+def _cpu_single_thread_test(
+    chunk: bytes,
+    *,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> ReferenceBenchmarkTestResult:
+    benchmark_id = "lmts.reference.cpu.sha256_stream_1t"
+    label = "SHA-256 stream 1T"
+    _emit(progress, domain="cpu", phase="test_started", benchmark_id=benchmark_id, label=label, sample_total=_CPU_SAMPLE_COUNT)
     _sha256_digest(chunk, _CPU_WARMUP_REPEATS)
     durations: list[float] = []
     digest_hex = ""
-    for _ in range(_CPU_SAMPLE_COUNT):
+    for sample_index in range(1, _CPU_SAMPLE_COUNT + 1):
         started = time.perf_counter()
         digest_hex = _sha256_digest(chunk, _CPU_SINGLE_REPEATS_PER_SAMPLE)
         durations.append(time.perf_counter() - started)
+        _emit(
+            progress,
+            domain="cpu",
+            phase="sample_completed",
+            benchmark_id=benchmark_id,
+            label=label,
+            sample_index=sample_index,
+            sample_total=_CPU_SAMPLE_COUNT,
+        )
     metrics = _throughput_metrics(durations, _CPU_CHUNK_BYTES * _CPU_SINGLE_REPEATS_PER_SAMPLE)
     metrics.update({"threads": 1, "chunk_bytes": _CPU_CHUNK_BYTES, "repeats_per_sample": _CPU_SINGLE_REPEATS_PER_SAMPLE, "digest_sha256": digest_hex})
-    return ReferenceBenchmarkTestResult("lmts.reference.cpu.sha256_stream_1t", "SHA-256 stream 1T", "sha256_stream", 1, metrics=metrics)
+    result = ReferenceBenchmarkTestResult(benchmark_id, label, "sha256_stream", 1, metrics=metrics)
+    _emit(progress, domain="cpu", phase="test_completed", benchmark_id=benchmark_id, label=label, sample_total=_CPU_SAMPLE_COUNT)
+    return result
 
 
-def _cpu_parallel_test(chunk: bytes) -> ReferenceBenchmarkTestResult:
+def _cpu_parallel_test(
+    chunk: bytes,
+    *,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> ReferenceBenchmarkTestResult:
+    benchmark_id = "lmts.reference.cpu.sha256_stream_all_threads"
+    label = "SHA-256 stream all threads"
     workers = max(1, os.cpu_count() or 1)
+    _emit(progress, domain="cpu", phase="test_started", benchmark_id=benchmark_id, label=label, sample_total=_CPU_SAMPLE_COUNT)
     _sha256_digest(chunk, _CPU_WARMUP_REPEATS)
     durations: list[float] = []
     digests: list[str] = []
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="lmts-ref-cpu") as executor:
-        for _ in range(_CPU_SAMPLE_COUNT):
+        for sample_index in range(1, _CPU_SAMPLE_COUNT + 1):
             started = time.perf_counter()
             futures = [executor.submit(_sha256_digest, chunk, _CPU_PARALLEL_REPEATS_PER_WORKER) for _ in range(workers)]
             digests = [future.result() for future in futures]
             durations.append(time.perf_counter() - started)
+            _emit(
+                progress,
+                domain="cpu",
+                phase="sample_completed",
+                benchmark_id=benchmark_id,
+                label=label,
+                sample_index=sample_index,
+                sample_total=_CPU_SAMPLE_COUNT,
+            )
     bytes_per_sample = _CPU_CHUNK_BYTES * _CPU_PARALLEL_REPEATS_PER_WORKER * workers
     metrics = _throughput_metrics(durations, bytes_per_sample)
     metrics.update({"threads": workers, "chunk_bytes": _CPU_CHUNK_BYTES, "repeats_per_worker": _CPU_PARALLEL_REPEATS_PER_WORKER, "digest_sha256": digests[0] if digests else ""})
-    return ReferenceBenchmarkTestResult("lmts.reference.cpu.sha256_stream_all_threads", "SHA-256 stream all threads", "sha256_stream_parallel", 1, metrics=metrics)
+    result = ReferenceBenchmarkTestResult(benchmark_id, label, "sha256_stream_parallel", 1, metrics=metrics)
+    _emit(progress, domain="cpu", phase="test_completed", benchmark_id=benchmark_id, label=label, sample_total=_CPU_SAMPLE_COUNT)
+    return result
 
 
-def run_cpu_reference_benchmark() -> ReferenceBenchmarkSuiteResult:
+def run_cpu_reference_benchmark(
+    *,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> ReferenceBenchmarkSuiteResult:
+    _emit(progress, domain="cpu", phase="suite_started")
     chunk = bytes((index % 251 for index in range(_CPU_CHUNK_BYTES)))
-    single = _cpu_single_thread_test(chunk)
-    parallel = _cpu_parallel_test(chunk)
+    single = _cpu_single_thread_test(chunk, progress=progress)
+    parallel = _cpu_parallel_test(chunk, progress=progress)
     single_rate = float(single.metrics["throughput_bytes_per_second"])
     parallel_rate = float(parallel.metrics["throughput_bytes_per_second"])
-    return ReferenceBenchmarkSuiteResult(
+    result = ReferenceBenchmarkSuiteResult(
         domain="cpu", suite_id="lmts.reference.cpu", suite_version=1, measured_at=_measured_at(), tests=[single, parallel],
         summary={"single_thread_bytes_per_second": single_rate, "all_threads_bytes_per_second": parallel_rate, "parallel_scaling_factor": parallel_rate / single_rate if single_rate > 0 else None},
         environment=_environment(),
     )
+    _emit(progress, domain="cpu", phase="suite_completed")
+    return result
 
 
-def _memory_copy_test(*, benchmark_id: str, label: str, working_set_bytes: int, repeats_per_sample: int) -> ReferenceBenchmarkTestResult:
+def _memory_copy_test(
+    *,
+    benchmark_id: str,
+    label: str,
+    working_set_bytes: int,
+    repeats_per_sample: int,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> ReferenceBenchmarkTestResult:
+    _emit(progress, domain="memory", phase="test_started", benchmark_id=benchmark_id, label=label, sample_total=_MEMORY_SAMPLE_COUNT)
     source = b"\xa5" * working_set_bytes
     target = bytearray(working_set_bytes)
     for _ in range(_MEMORY_WARMUP_REPEATS):
         target[:] = source
     durations: list[float] = []
-    for _ in range(_MEMORY_SAMPLE_COUNT):
+    for sample_index in range(1, _MEMORY_SAMPLE_COUNT + 1):
         started = time.perf_counter()
         for _ in range(repeats_per_sample):
             target[:] = source
         durations.append(time.perf_counter() - started)
+        _emit(
+            progress,
+            domain="memory",
+            phase="sample_completed",
+            benchmark_id=benchmark_id,
+            label=label,
+            sample_index=sample_index,
+            sample_total=_MEMORY_SAMPLE_COUNT,
+        )
     metrics = _throughput_metrics(durations, working_set_bytes * repeats_per_sample)
     metrics.update({"working_set_bytes": working_set_bytes, "repeats_per_sample": repeats_per_sample, "verification_byte": target[0] if target else None})
-    return ReferenceBenchmarkTestResult(benchmark_id, label, "copy_slice", 1, metrics=metrics)
+    result = ReferenceBenchmarkTestResult(benchmark_id, label, "copy_slice", 1, metrics=metrics)
+    _emit(progress, domain="memory", phase="test_completed", benchmark_id=benchmark_id, label=label, sample_total=_MEMORY_SAMPLE_COUNT)
+    return result
 
 
-def run_memory_reference_benchmark() -> ReferenceBenchmarkSuiteResult:
-    small = _memory_copy_test(benchmark_id="lmts.reference.memory.copy_4mib", label="Copy 4 MiB working set", working_set_bytes=_MEMORY_SMALL_WORKING_SET_BYTES, repeats_per_sample=_MEMORY_SMALL_REPEATS_PER_SAMPLE)
-    large = _memory_copy_test(benchmark_id="lmts.reference.memory.copy_64mib", label="Copy 64 MiB working set", working_set_bytes=_MEMORY_LARGE_WORKING_SET_BYTES, repeats_per_sample=_MEMORY_LARGE_REPEATS_PER_SAMPLE)
-    return ReferenceBenchmarkSuiteResult(
+def run_memory_reference_benchmark(
+    *,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> ReferenceBenchmarkSuiteResult:
+    _emit(progress, domain="memory", phase="suite_started")
+    small = _memory_copy_test(
+        benchmark_id="lmts.reference.memory.copy_4mib",
+        label="Copy 4 MiB working set",
+        working_set_bytes=_MEMORY_SMALL_WORKING_SET_BYTES,
+        repeats_per_sample=_MEMORY_SMALL_REPEATS_PER_SAMPLE,
+        progress=progress,
+    )
+    large = _memory_copy_test(
+        benchmark_id="lmts.reference.memory.copy_64mib",
+        label="Copy 64 MiB working set",
+        working_set_bytes=_MEMORY_LARGE_WORKING_SET_BYTES,
+        repeats_per_sample=_MEMORY_LARGE_REPEATS_PER_SAMPLE,
+        progress=progress,
+    )
+    result = ReferenceBenchmarkSuiteResult(
         domain="memory", suite_id="lmts.reference.memory", suite_version=1, measured_at=_measured_at(), tests=[small, large],
         summary={"copy_4mib_bytes_per_second": small.metrics["throughput_bytes_per_second"], "copy_64mib_bytes_per_second": large.metrics["throughput_bytes_per_second"]},
         environment=_environment(),
     )
+    _emit(progress, domain="memory", phase="suite_completed")
+    return result
 
 
 def _external_tests(raw_tests: list[dict[str, object]]) -> list[ReferenceBenchmarkTestResult]:
@@ -248,40 +366,77 @@ def _external_tests(raw_tests: list[dict[str, object]]) -> list[ReferenceBenchma
     ]
 
 
-def run_gpu_reference_benchmark() -> ReferenceBenchmarkSuiteResult:
+def _emit_external_tests(
+    domain: str,
+    tests: list[ReferenceBenchmarkTestResult],
+    progress: ReferenceBenchmarkProgressCallback | None,
+) -> None:
+    for test in tests:
+        _emit(
+            progress,
+            domain=domain,
+            phase="test_completed",
+            benchmark_id=test.benchmark_id,
+            label=test.label,
+        )
+
+
+def run_gpu_reference_benchmark(
+    *,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> ReferenceBenchmarkSuiteResult:
+    _emit(progress, domain="gpu", phase="suite_started")
+    _emit(progress, domain="gpu", phase="backend_started", label="CUDA driver API")
     try:
         raw_tests, backend_environment = run_cuda_reference()
     except CudaUnavailable as exc:
         raise NotImplementedError(str(exc)) from exc
     tests = _external_tests(raw_tests)
-    return ReferenceBenchmarkSuiteResult(
+    _emit(progress, domain="gpu", phase="backend_completed", label="CUDA driver API")
+    _emit_external_tests("gpu", tests, progress)
+    result = ReferenceBenchmarkSuiteResult(
         domain="gpu", suite_id="lmts.reference.gpu", suite_version=1, measured_at=_measured_at(), tests=tests,
-        summary={"device_count": len({ _target_key(test.target) for test in tests })},
+        summary={"device_count": len({_target_key(test.target) for test in tests})},
         environment={**_environment(), **backend_environment},
     )
+    _emit(progress, domain="gpu", phase="suite_completed")
+    return result
 
 
-def run_npu_reference_benchmark() -> ReferenceBenchmarkSuiteResult:
+def run_npu_reference_benchmark(
+    *,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> ReferenceBenchmarkSuiteResult:
+    _emit(progress, domain="npu", phase="suite_started")
+    _emit(progress, domain="npu", phase="backend_started", label="NPU reference backend")
     try:
         raw_tests, backend_environment = DEFAULT_NPU_REFERENCE_REGISTRY.benchmark()
     except NPUUnavailable as exc:
         raise NotImplementedError(str(exc)) from exc
     tests = _external_tests(raw_tests)
-    return ReferenceBenchmarkSuiteResult(
+    _emit(progress, domain="npu", phase="backend_completed", label="NPU reference backend")
+    _emit_external_tests("npu", tests, progress)
+    result = ReferenceBenchmarkSuiteResult(
         domain="npu", suite_id="lmts.reference.npu", suite_version=1, measured_at=_measured_at(), tests=tests,
-        summary={"device_count": len({ _target_key(test.target) for test in tests })},
+        summary={"device_count": len({_target_key(test.target) for test in tests})},
         environment={**_environment(), **backend_environment},
     )
+    _emit(progress, domain="npu", phase="suite_completed")
+    return result
 
 
-def run_reference_benchmark(domain: str) -> ReferenceBenchmarkSuiteResult:
+def run_reference_benchmark(
+    domain: str,
+    *,
+    progress: ReferenceBenchmarkProgressCallback | None = None,
+) -> ReferenceBenchmarkSuiteResult:
     normalized = domain.strip().casefold()
     if normalized == "cpu":
-        return run_cpu_reference_benchmark()
+        return run_cpu_reference_benchmark(progress=progress)
     if normalized == "memory":
-        return run_memory_reference_benchmark()
+        return run_memory_reference_benchmark(progress=progress)
     if normalized == "gpu":
-        return run_gpu_reference_benchmark()
+        return run_gpu_reference_benchmark(progress=progress)
     if normalized == "npu":
-        return run_npu_reference_benchmark()
+        return run_npu_reference_benchmark(progress=progress)
     raise ValueError(f"unknown reference benchmark domain: {domain}")

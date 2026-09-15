@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,6 +24,15 @@ def _object(value: Any, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f'{label} must be an object')
     return value
+
+
+def _number(value: Any, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f'{label} must be a finite number')
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f'{label} must be a finite number')
+    return result
 
 
 def _require_keys(payload: dict[str, Any], required: set[str], allowed: set[str], label: str) -> None:
@@ -83,27 +93,83 @@ def stringify_cell(value: Any) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class InputScale:
+    low: float
+    high: float
+    power: float = 1.0
+
+    def __post_init__(self) -> None:
+        low = _number(self.low, 'InputScale.low')
+        high = _number(self.high, 'InputScale.high')
+        power = _number(self.power, 'InputScale.power')
+        if high <= low:
+            raise ValueError('InputScale.high must be greater than InputScale.low')
+        if power <= 0:
+            raise ValueError('InputScale.power must be greater than zero')
+        object.__setattr__(self, 'low', low)
+        object.__setattr__(self, 'high', high)
+        object.__setattr__(self, 'power', power)
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> 'InputScale':
+        payload = _object(payload, 'InputScale')
+        _require_keys(payload, {'low', 'high'}, {'low', 'high', 'power'}, 'InputScale')
+        return cls(
+            low=_number(payload['low'], 'InputScale.low'),
+            high=_number(payload['high'], 'InputScale.high'),
+            power=_number(payload.get('power', 1.0), 'InputScale.power'),
+        )
+
+    def apply(self, value: Any) -> float:
+        input_value = _number(value, 'scaled input')
+        normalized = (input_value - self.low) / (self.high - self.low)
+        if normalized < 0 and not self.power.is_integer():
+            raise ValueError('scaled input below low cannot use a non-integer power')
+        output = normalized ** self.power
+        if isinstance(output, complex) or not math.isfinite(float(output)):
+            raise ValueError('scaled output must be a finite real number')
+        return float(output)
+
+    def to_dict(self) -> dict[str, float]:
+        return {'low': self.low, 'high': self.high, 'power': self.power}
+
+
+@dataclass(frozen=True, slots=True)
 class InputColumn:
     name: str
     selector: str
+    scale: InputScale | None = None
+
+    @property
+    def scale_parameter_id(self) -> str | None:
+        return None if self.scale is None else f'scale.{self.name}'
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> 'InputColumn':
         payload = _object(payload, 'InputColumn')
-        _require_keys(payload, {'name', 'selector'}, {'name', 'selector'}, 'InputColumn')
+        _require_keys(payload, {'name', 'selector'}, {'name', 'selector', 'scale'}, 'InputColumn')
+        raw_scale = payload.get('scale')
         return cls(
             name=_text(payload['name'], 'InputColumn.name'),
             selector=_text(payload['selector'], 'InputColumn.selector'),
+            scale=None if raw_scale is None else InputScale.from_dict(raw_scale),
         )
 
+    def project(self, value: Any) -> Any:
+        return self.scale.apply(value) if self.scale is not None else value
+
     def to_dict(self) -> dict[str, Any]:
-        return {'name': self.name, 'selector': self.selector}
+        result: dict[str, Any] = {'name': self.name, 'selector': self.selector}
+        if self.scale is not None:
+            result['scale'] = self.scale.to_dict()
+        return result
 
 
 @dataclass(frozen=True, slots=True)
 class _StringTable:
     columns: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
+    parameters: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.columns or any(not isinstance(value, str) or not value for value in self.columns):
@@ -116,9 +182,15 @@ class _StringTable:
                 raise ValueError('runtime string table row width must match columns')
             if any(not isinstance(value, str) for value in row):
                 raise ValueError('runtime string table cells must be strings')
+        for name in self.parameters:
+            _text(name, 'runtime input parameter name')
 
     def to_dict(self) -> dict[str, Any]:
-        return {'columns': list(self.columns), 'rows': [list(row) for row in self.rows]}
+        return {
+            'columns': list(self.columns),
+            'rows': [list(row) for row in self.rows],
+            'parameters': dict(self.parameters),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,6 +245,29 @@ class InputTemplate:
             'columns': [column.to_dict() for column in self.columns],
         }
 
+    def column(self, column_name: str) -> InputColumn:
+        name = _text(column_name, 'Input Template column name')
+        for column in self.columns:
+            if column.name == name:
+                return column
+        raise KeyError(f'InputTemplate {self.id!r} has no column {name!r}')
+
+    def find_raw_range(self, source: Any, column_name: str) -> tuple[float, float]:
+        column = self.column(column_name)
+        rows = select_many(source, self.rows_selector)
+        if not rows:
+            raise ValueError(f'InputTemplate {self.id!r} has no source rows to scan')
+        values: list[float] = []
+        for row_index, row in enumerate(rows):
+            try:
+                raw_value = select_one(row, column.selector)
+                values.append(_number(raw_value, f'row {row_index} column {column.name!r}'))
+            except (KeyError, ValueError) as exc:
+                raise ValueError(
+                    f'InputTemplate {self.id!r} row {row_index} column {column.name!r}: {exc}'
+                ) from exc
+        return min(values), max(values)
+
     def extract(self, source: Any) -> _StringTable:
         rows = select_many(source, self.rows_selector)
         projected: list[tuple[str, ...]] = []
@@ -181,13 +276,23 @@ class InputTemplate:
             for column in self.columns:
                 try:
                     raw_value = select_one(row, column.selector)
-                except KeyError as exc:
+                    projected_value = column.project(raw_value)
+                except (KeyError, ValueError) as exc:
                     raise ValueError(
                         f'InputTemplate {self.id!r} row {row_index} column {column.name!r}: {exc}'
                     ) from exc
-                values.append(stringify_cell(raw_value))
+                values.append(stringify_cell(projected_value))
             projected.append(tuple(values))
-        return _StringTable(tuple(column.name for column in self.columns), tuple(projected))
+        parameters = {
+            column.scale_parameter_id: column.scale.to_dict()
+            for column in self.columns
+            if column.scale is not None and column.scale_parameter_id is not None
+        }
+        return _StringTable(
+            tuple(column.name for column in self.columns),
+            tuple(projected),
+            parameters,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +327,7 @@ class VisualizationGeneration:
     primitive: str
     group_by: tuple[str, ...] = ()
     bindings: dict[str, VisualBinding] = field(default_factory=dict)
+    parameters: dict[str, str] = field(default_factory=dict)
     children: tuple['VisualizationGeneration', ...] = ()
 
     @classmethod
@@ -230,7 +336,7 @@ class VisualizationGeneration:
         _require_keys(
             payload,
             {'id', 'primitive', 'bindings'},
-            {'id', 'primitive', 'group_by', 'bindings', 'children'},
+            {'id', 'primitive', 'group_by', 'bindings', 'parameters', 'children'},
             'VisualizationGeneration',
         )
         raw_group_by = payload.get('group_by', [])
@@ -239,6 +345,9 @@ class VisualizationGeneration:
         raw_bindings = payload['bindings']
         if not isinstance(raw_bindings, dict):
             raise ValueError('VisualizationGeneration.bindings must be an object')
+        raw_parameters = payload.get('parameters', {})
+        if not isinstance(raw_parameters, dict):
+            raise ValueError('VisualizationGeneration.parameters must be an object')
         raw_children = payload.get('children', [])
         if not isinstance(raw_children, list):
             raise ValueError('VisualizationGeneration.children must be an array')
@@ -246,11 +355,18 @@ class VisualizationGeneration:
         for channel, binding in raw_bindings.items():
             channel_name = _text(channel, 'visual channel')
             bindings[channel_name] = VisualBinding.from_dict(binding)
+        parameters: dict[str, str] = {}
+        for local_name, parameter_ref in raw_parameters.items():
+            parameters[_text(local_name, 'generation parameter name')] = _text(
+                parameter_ref,
+                'generation parameter reference',
+            )
         return cls(
             id=_text(payload['id'], 'VisualizationGeneration.id'),
             primitive=_text(payload['primitive'], 'VisualizationGeneration.primitive'),
             group_by=tuple(raw_group_by),
             bindings=bindings,
+            parameters=parameters,
             children=tuple(cls.from_dict(item) for item in raw_children),
         )
 
@@ -262,22 +378,29 @@ class VisualizationGeneration:
         }
         if self.group_by:
             result['group_by'] = list(self.group_by)
+        if self.parameters:
+            result['parameters'] = dict(self.parameters)
         if self.children:
             result['children'] = [child.to_dict() for child in self.children]
         return result
 
-    def validate_columns(self, available: set[str]) -> None:
-        unknown_groups = sorted(set(self.group_by) - available)
+    def validate_sources(self, available_columns: set[str], available_parameters: set[str]) -> None:
+        unknown_groups = sorted(set(self.group_by) - available_columns)
         if unknown_groups:
             raise ValueError(f'generation {self.id!r} group_by references unknown columns: {", ".join(unknown_groups)}')
-        unknown_bindings = sorted({binding.column for binding in self.bindings.values()} - available)
+        unknown_bindings = sorted({binding.column for binding in self.bindings.values()} - available_columns)
         if unknown_bindings:
             raise ValueError(f'generation {self.id!r} bindings reference unknown columns: {", ".join(unknown_bindings)}')
+        unknown_parameters = sorted(set(self.parameters.values()) - available_parameters)
+        if unknown_parameters:
+            raise ValueError(
+                f'generation {self.id!r} parameters reference unknown input parameters: {", ".join(unknown_parameters)}'
+            )
         child_ids = [child.id for child in self.children]
         if len(set(child_ids)) != len(child_ids):
             raise ValueError(f'generation {self.id!r} child ids must be unique')
         for child in self.children:
-            child.validate_columns(available)
+            child.validate_sources(available_columns, available_parameters)
 
 
 @dataclass(frozen=True, slots=True)
@@ -325,9 +448,14 @@ class VisualizationPreset:
             raise ValueError(
                 f'VisualizationPreset input_template_ref {self.input_template_ref!r} does not match {template.id!r}'
             )
-        available = {column.name for column in template.columns}
+        available_columns = {column.name for column in template.columns}
+        available_parameters = {
+            column.scale_parameter_id
+            for column in template.columns
+            if column.scale_parameter_id is not None
+        }
         for generation in self.generations:
-            generation.validate_columns(available)
+            generation.validate_sources(available_columns, available_parameters)
 
     def to_dict(self) -> dict[str, Any]:
         return {

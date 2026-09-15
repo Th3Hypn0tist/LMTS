@@ -74,11 +74,13 @@
           <div class="actions wrap">
             <button id="studio-load" type="button">Load</button>
             <button id="studio-new" type="button">New</button>
+            <button id="studio-validate" type="button">Validate</button>
+            <button id="studio-preview" type="button">Preview</button>
             <button id="studio-create" type="button">Create</button>
             <button id="studio-update" type="button">Update</button>
             <button id="studio-refresh" type="button">Refresh registry</button>
           </div>
-          <p id="studio-message" class="hint">Create and Update are separate operations. The server validates every definition before persistence.</p>
+          <p id="studio-message" class="hint">Validate and Preview never persist. Create and Update are separate persisted operations.</p>
         </div>
 
         <label class="studio-editor-label">

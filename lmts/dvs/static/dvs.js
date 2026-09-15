@@ -132,6 +132,15 @@ function studioApi(kind) {
   throw new Error(`Unsupported Studio definition type: ${kind}`);
 }
 
+function studioDraftApi(kind, operation) {
+  if (!['validate', 'preview'].includes(operation)) {
+    throw new Error(`Unsupported Studio draft operation: ${operation}`);
+  }
+  if (kind === 'input-template') return `/api/studio/${operation}/input-template`;
+  if (kind === 'visualization-preset') return `/api/studio/${operation}/visualization-preset`;
+  throw new Error(`Unsupported Studio definition type: ${kind}`);
+}
+
 function encodeDefinitionId(itemId) {
   const value = String(itemId ?? '').trim();
   if (!value) throw new Error('Definition id is required');
@@ -161,6 +170,7 @@ async function main() {
   const studioKind = document.querySelector('#studio-kind');
   const studioDefinition = document.querySelector('#studio-definition');
   const studioEditor = document.querySelector('#studio-editor');
+  let renderer = null;
 
   async function refreshRegistry() {
     const [templatePayload, presetPayload] = await Promise.all([
@@ -227,6 +237,46 @@ async function main() {
     }
   });
 
+  document.querySelector('#studio-validate').addEventListener('click', async () => {
+    try {
+      const definition = definitionDocument(studioEditor.value);
+      const payload = await postJson(studioDraftApi(studioKind.value, 'validate'), definition);
+      document.querySelector('#output').textContent = JSON.stringify(payload, null, 2);
+      setStudioMessage(`Draft ${definition.id ?? '(unnamed)'} is valid. Nothing was persisted.`, 'ready');
+      setStatus('Studio draft validated', 'ready');
+    } catch (error) {
+      setStudioMessage(error.message, 'error');
+      setStatus(error.message, 'error');
+    }
+  });
+
+  document.querySelector('#studio-preview').addEventListener('click', async () => {
+    try {
+      const definition = definitionDocument(studioEditor.value);
+      const payload = await postJson(studioDraftApi(studioKind.value, 'preview'), {
+        definition,
+        source: sourceDocument(),
+      });
+      if (studioKind.value === 'visualization-preset') {
+        if (!renderer) throw new Error('S3D is not configured for Visualization Preset preview');
+        renderer.load(payload.visual_plan);
+        document.querySelector('#output').textContent = JSON.stringify(payload.visual_plan, null, 2);
+        setViewerMessage(`${payload.visual_plan.row_count} source row(s) · draft ${definition.id}`);
+      } else {
+        document.querySelector('#output').textContent = JSON.stringify({
+          columns: payload.columns,
+          rows: payload.rows,
+        }, null, 2);
+      }
+      setStudioMessage(`Previewed ${definition.id ?? '(unnamed)'} without persistence.`, 'ready');
+      setStatus('Studio draft preview complete', 'ready');
+    } catch (error) {
+      setStudioMessage(error.message, 'error');
+      setStatus(error.message, 'error');
+      setViewerMessage(error.message);
+    }
+  });
+
   document.querySelector('#studio-create').addEventListener('click', async () => {
     try {
       const documentValue = definitionDocument(studioEditor.value);
@@ -280,7 +330,7 @@ async function main() {
     }
   });
 
-  const renderer = await buildRenderer(health);
+  renderer = await buildRenderer(health);
   setStatus(
     renderer ? `DVS ready · S3D ${health.s3d.entrypoint}` : 'DVS ready · S3D not configured',
     renderer ? 'ready' : '',
@@ -346,4 +396,5 @@ export {
   newDefinition,
   studioApi,
   studioCollection,
+  studioDraftApi,
 };

@@ -40,7 +40,7 @@ def _preset(item_id: str = 'view', template_id: str = 'table') -> dict:
             'id': 'root',
             'primitive': 'box',
             'bindings': {
-                'position.x': {'column': 'kind', 'interpretation': 'category'},
+                'position.x': {'column': 'kind', 'interpretation': 'categorical-index'},
                 'scale.y': {'column': 'value', 'interpretation': 'number'},
             },
         }],

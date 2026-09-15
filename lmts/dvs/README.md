@@ -2,12 +2,22 @@
 
 DVS is LMTS's generic data-visualization subsystem for turning formal source formats into reusable S3D visualizations without embedding application-specific rendering logic into LMTS or S3D.
 
-Its internal projection boundary has one cell type: **string**. Numeric, categorical, temporal, color and other meanings are declared by visualization interpretation, not stored as alternate table types. This projection is an implementation detail, not a public canonical Input Table contract.
+The Input Template owns source extraction and basic typing. The current canonical Input Column types are:
+
+```text
+string
+number
+boolean
+```
+
+`number` means any finite numeric value. Numeric strings are parsed to numbers by the Input Template. `null` is not a type; nullable source values are declared separately with `nullable: true`.
 
 ```text
 formal source format
-    -> Input Template
-    -> internal string-row projection
+    -> Input Template selector
+    -> Input Template type
+    -> optional Input Template scale
+    -> typed input projection
     -> Visualization Preset
     -> recursive visual generations
     -> generic visual plan
@@ -19,6 +29,8 @@ formal source format
 | Capability | Baseline |
 | --- | --- |
 | Input Template model | Complete |
+| Typed Input Columns | `string`, `number`, `boolean` |
+| Input scaling | `low`, `high`, `power` + typed range scan |
 | Visualization Preset model | Complete |
 | Registry and validation | Complete |
 | Strict missing-field semantics | Complete |
@@ -34,7 +46,7 @@ formal source format
 
 ## Input Templates
 
-An Input Template defines how a formalized source format becomes rows, columns and string cells for the internal DVS projection boundary.
+An Input Template defines how a formalized source format becomes a typed internal DVS projection.
 
 It declares:
 
@@ -43,10 +55,60 @@ It declares:
 - row selector
 - named columns
 - selector for each column
+- type for each column
+- optional `nullable: true`
+- optional numeric `scale`
 
-Selectors are strict. Missing fields are errors. There is no `on_missing` fallback semantics.
+Example:
 
-If unavailable data is valid for a source format, the source format must represent it explicitly. `lmts.report/1.1` represents unavailable known measurements with JSON `null`; DVS then projects that actual source value to the string `"null"`.
+```json
+{
+  "name": "wind_speed",
+  "selector": "wind_speed",
+  "type": "number",
+  "scale": {
+    "low": 0.2,
+    "high": 5.9,
+    "power": 1.0
+  }
+}
+```
+
+Selectors and types are strict. Missing fields are errors. There is no `on_missing` fallback semantics. A scale is valid only for a `number` column.
+
+Typing happens before scaling. For a numeric column, the scale is:
+
+```text
+output = ((input - low) / (high - low)) ^ power
+```
+
+There is no implicit clamp. `high` must be greater than `low`, `power` must be greater than zero, and all scale values must be finite.
+
+Studio can scan the selected numeric column with **Find lowest** and **Find highest**. The scan uses the Input Template selector and type conversion, but runs before scaling. Accepted nullable `null` values are skipped for range calculation. If no numeric values remain, the scan fails rather than inventing a range.
+
+The scale is not discarded after projection. Each scaled column exposes one canonical input parameter:
+
+```text
+scale.<column>
+```
+
+For example:
+
+```text
+scale.wind_speed = { low: 0.2, high: 5.9, power: 1.0 }
+```
+
+Visualization generations can bind that complete object as a parameter:
+
+```json
+"parameters": {
+  "scale": "scale.wind_speed"
+}
+```
+
+The same scale definition can therefore drive both value calibration and visual representations such as an axis, legend or scale display without duplicate truth.
+
+If unavailable data is valid for a source format, the source format must represent it explicitly. `lmts.report/1.1` represents unavailable known measurements with JSON `null`; nullable Input Columns preserve that as an actual typed `null`/`None` value. Null is never represented by the string `"null"` unless the source column is explicitly typed as a string containing that text.
 
 The LMTS report template is:
 
@@ -58,7 +120,7 @@ It reads the canonical `lmts.report/1.1` interchange document used by disk expor
 
 ## Visualization Presets
 
-A Visualization Preset defines how projected columns become visual structure.
+A Visualization Preset defines how typed projected columns become visual structure.
 
 It declares:
 
@@ -68,12 +130,15 @@ It declares:
 - primitive per generation
 - optional grouping
 - named visual-channel bindings
+- optional input-parameter bindings
 - interpretation metadata
 - transform metadata
 
-Every binding must reference an actual Input Template column. Recursive child generation IDs are validated and duplicate IDs are rejected.
+Every channel binding must reference an actual Input Template column. Every parameter binding must reference an actual Input Template parameter. Recursive child generation IDs are validated and duplicate IDs are rejected.
 
-Application-specific meaning belongs here, not in DVS core. The first LMTS-specific preset is:
+The Visualization Preset does **not** own basic source typing. It receives values already typed by the Input Template. Its interpretations describe visual use, not conversion from arbitrary source strings into application types.
+
+Application-specific visual meaning belongs here, not in DVS core. The first LMTS-specific preset is:
 
 ```text
 lmts.benchmark.landscape.v1
@@ -94,7 +159,9 @@ This establishes the first real `LMTS Benchmark Report -> Input Template -> Visu
 
 ## Generic visual plan
 
-`project_visualization()` applies an Input Template and Visualization Preset to source data and emits a generic `s3d.dvs.visual-plan/1.0` document. It contains only primitive, visibility, visual-channel, grouping and source-row information. It does not contain LMTS-specific renderer logic.
+`project_visualization()` applies an Input Template and Visualization Preset to source data and emits a generic `s3d.dvs.visual-plan/1.0` document. It contains primitive, visibility, typed visual-channel, parameter-binding, grouping and source-row information. It does not contain LMTS-specific renderer logic.
+
+Input parameters are exposed at the visual-plan root. A generation that binds an input parameter receives the same value under its local parameter name.
 
 Current generic interpretations are:
 
@@ -115,22 +182,30 @@ Recursive child generations are projected using only their parent group's row su
 
 **Feature baseline: complete.**
 
-Studio is the authoring and validation surface. Its intended complete feature set is:
+Studio is the authoring and validation surface. Its current feature set includes:
 
 - create, edit and inspect Input Templates
 - create, edit and inspect Visualization Presets
 - choose source format
-- preview source -> internal projection
-- inspect projected columns and values
-- create recursive generation hierarchies
+- define Input Column type and nullability
+- define numeric Input Scales
+- find typed pre-scale low/high values from source data
+- preview source -> typed projection
+- inspect projected columns, types, values and input parameters
+- create recursive generation hierarchies through the canonical definition contract
 - choose visual primitive per generation
 - bind columns to visual channels
+- bind Input Template parameters to generations
 - configure interpretation and transforms
 - validate preset <-> template compatibility
-- reject unknown columns and invalid definitions
+- reject unknown columns, parameters and invalid definitions
 - load/save reusable templates and presets
 - manage registered definitions
 - preview the same visualization consumed by Visualizer
+
+The current browser Studio is a canonical contract editor with focused scale controls. Validate and Preview never persist. Create and Update are explicit persisted operations.
+
+System definitions are read-only. Studio-authored definitions live under the local Studio root and cannot shadow system definitions with the same ID.
 
 Studio is owned by the Python DVS host.
 
@@ -138,7 +213,7 @@ Studio is owned by the Python DVS host.
 
 **Feature baseline: complete.**
 
-Visualizer is the read/inspection surface. It consumes a generic visual plan recursively and renders through S3D. Current packed bridge support materializes `box` primitives and maps generic channels into S3D packed box instances.
+Visualizer is the read/inspection surface. It consumes a generic visual plan recursively and renders through S3D. Current packed bridge support materializes `box` primitives and maps generic channels into S3D packed box instances. `group` is a structural generation primitive: it recurses into children but does not materialize geometry or affect camera bounds.
 
 Visualizer never becomes a new source of truth. It consumes source data and reusable visualization definitions.
 
@@ -155,7 +230,7 @@ The PHP host must consume the same Input Templates and Visualization Presets as 
 
 The Python host is stdlib-only and follows the Structure-style `ThreadingHTTPServer` pattern.
 
-Current host API surfaces include:
+Current read/runtime API surfaces include:
 
 ```text
 GET  /api/health
@@ -167,11 +242,25 @@ POST /api/extract
 POST /api/visualize
 ```
 
-`POST /api/extract` accepts exactly `input_template_id` and `source` and returns the projected `columns` and `rows`. There is deliberately no `/api/table` compatibility alias: the internal projection is not a public Input Table model.
+Studio API surfaces include:
+
+```text
+POST /api/studio/validate/input-template
+POST /api/studio/preview/input-template
+POST /api/studio/range/input-template
+POST /api/studio/validate/visualization-preset
+POST /api/studio/preview/visualization-preset
+POST /api/studio/input-templates
+PUT  /api/studio/input-templates/<id>
+POST /api/studio/visualization-presets
+PUT  /api/studio/visualization-presets/<id>
+```
+
+`POST /api/extract` accepts exactly `input_template_id` and `source` and returns the projected `columns`, `column_types`, typed `rows` and `parameters`. There is deliberately no `/api/table` compatibility alias.
+
+`POST /api/studio/range/input-template` accepts exactly `definition`, `source` and `column`. It parses the draft Input Template, scans that numeric column through its selector and type conversion before scaling, and returns `low` and `high` without persisting anything.
 
 `POST /api/visualize` accepts exactly `input_template_id`, `visualization_preset_id` and `source`, validates template/preset compatibility and returns the generic visual plan consumed by the visualization layer.
-
-The viewer-facing API is read-oriented. Studio mutation endpoints belong only to the Python host and may evolve without changing the shared Input Template or Visualization Preset formats.
 
 ## S3D visual channels
 
@@ -235,14 +324,16 @@ The S3D Statistics-domain `VisualEncoding` currently exposes RGB channels. That 
 ## Architectural rules
 
 1. DVS does not invent missing source data.
-2. Source formats own missing-value semantics.
-3. The string projection is an internal transport/runtime boundary, not an application data model.
-4. Visualization semantics belong to Visualization Presets.
-5. Input Templates know source structure, not application meaning.
-6. Studio and Visualizer consume the same canonical definitions.
-7. S3D owns generic 3D mechanics and packed layout; DVS does not build a parallel renderer or face-order truth.
-8. High-density visualization stays packed instead of creating one SceneObject per observation.
-9. Python Studio semantics are not duplicated in viewer-only hosts.
-10. DVS consumes `lmts.report/1.1` directly; it does not create a second LMTS report format.
-11. Visual plans are generic renderer input, not a second application-data authority.
-12. Per-face channels are all-or-nothing; there is no partial-color fallback semantics.
+2. Source formats own whether missing/unavailable values are representable; Input Templates own whether a selected column accepts `null`.
+3. Input Templates own extraction, basic typing and optional numeric scaling.
+4. The canonical Input Column types are `string`, `number` and `boolean`; `null` is an accepted value, not a type.
+5. Range discovery uses typed values before scaling.
+6. Input scales are exposed downstream as one `scale.<column>` parameter object so calibration and visual scale representation share one truth.
+7. Visualization semantics belong to Visualization Presets.
+8. Studio and Visualizer consume the same canonical definitions.
+9. S3D owns generic 3D mechanics and packed layout; DVS does not build a parallel renderer or face-order truth.
+10. High-density visualization stays packed instead of creating one SceneObject per observation.
+11. Python Studio semantics are not duplicated in viewer-only hosts.
+12. DVS consumes `lmts.report/1.1` directly; it does not create a second LMTS report format.
+13. Visual plans are generic renderer input, not a second application-data authority.
+14. Per-face channels are all-or-nothing; there is no partial-color fallback semantics.

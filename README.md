@@ -4,17 +4,17 @@
 
 AIGM LMTS is a testing, benchmarking, profiling, reporting and visualization system for measuring capability, behavior, execution characteristics and system-level performance under reusable, versioned tests.
 
-The goal is not to produce a universal leaderboard. LMTS collects reproducible evidence about how an evaluation target behaves on a known system under a known protocol, then lets that evidence be inspected, compared, exported, visualized and reused without creating duplicate truth.
+The goal is not to produce a universal leaderboard. LMTS produces reproducible evidence about how an evaluation target behaves on a known system under a known protocol, then lets that evidence be inspected, compared, exported, published and visualized without creating duplicate truth.
 
 **One evaluation model. Many target types. No duplicate truth.**
 
 LMTS separates target identity, test semantics, execution, canonical evidence and presentation. Providers do not own tests. Views do not own results. Reports and visualizations do not reconstruct missing evidence. Invalid or missing canonical data remains visible instead of being silently replaced by fallback behavior.
 
-## Feature baseline
+## Current implementation baseline
 
-This README is the feature-level baseline for the project. It is intentionally kept slightly ahead of low-level UI wiring so the repository has one stable description of what LMTS is being built as.
+This README describes the current `main` implementation. It is not a future feature wish list.
 
-| Area | Feature baseline |
+| Area | Current baseline |
 | --- | --- |
 | Evaluation targets | Models, standalone bots and bot compositions |
 | Providers | Provider-neutral core with Ollama local-provider support |
@@ -23,20 +23,23 @@ This README is the feature-level baseline for the project. It is intentionally k
 | Automatic suites | Quick 19, Moderate 35, Deep 35 + Deep workflows |
 | Deep evaluation | CW Bench with Structure/CIC round-trip comparison |
 | Workspace | Isolated `input/`, `work/`, `output/` execution boundary and Workspace Protocol v1 |
-| Profiling | CPU, memory, GPU, NPU and reference performance profile |
+| Profiling | CPU, memory, GPU, NPU identity plus reference-performance suites |
 | Runtime evidence | Token usage, TTFT, total time, telemetry, artifacts, workspace traces and structured errors |
-| Results | Canonical append-only run records and matrix records |
-| Result UI | Target × test matrix, run drill-down and target comparison |
-| Reporting | LMTS Report Format v1 with explicit missing metric values |
+| Results | Canonical append-only RunResult and MatrixRunRecord evidence |
+| Result UI | Live target × test matrix, historical matrices, run drill-down and target comparison |
+| Reporting | LMTS Benchmark Report Template `lmts.report/1.1` |
+| Report server | Immutable/idempotent report storage and same-document GET/POST round trip |
 | Export | Single run, complete matrix bundle, disk, web/static and FTP publication paths |
-| Model Downloader | Modular downloader core, queues, progress, cancellation and Ollama pull/list support |
-| TUI | Registry-driven Profile, Benchmark, Model Downloader and Settings surfaces |
+| Model Downloader | Modular downloader core, FIFO queues, progress, cancellation and Ollama pull/list support |
+| TUI | Registry-driven Profile, Benchmark, Deep/CW Bench, Model Downloader and Settings surfaces |
 | AIGMos View | `|lmts:view` adapter |
-| DVS Input Templates | Formal source-format → strict generic string-table projection |
-| DVS Visualization Presets | Recursive primitive generations and explicit column/channel bindings |
-| DVS Studio | **Complete feature baseline**: author, inspect, validate and manage Input Templates and Visualization Presets |
-| DVS Visualizer | **Complete feature baseline**: load formal source data, apply presets and inspect the resulting S3D visualization |
-| S3D integration | Packed instancing and dimension-driven position, rotation, scale and RGB visual channels |
+| DVS Input Templates | Strict source extraction with typed columns: `string`, `number`, `boolean` |
+| DVS input scaling | Numeric `low`, `high`, `power` scale owned by the Input Template |
+| DVS Visualization Presets | Recursive generations, explicit column/channel bindings and parameter bindings |
+| DVS Studio | Complete feature baseline for authoring and validating templates/presets |
+| DVS Visualizer | Complete feature baseline for generic visual-plan rendering through S3D |
+| LMTS DVS preset | `lmts.benchmark.landscape.v1` |
+| S3D integration | Packed instancing with uniform or strict per-face RGBA channels |
 | Runtime dependencies | Python 3.11+, zero third-party Python runtime dependencies |
 
 ## Core architecture
@@ -82,7 +85,7 @@ The boundaries are intentional:
 
 ## Evaluation targets
 
-LMTS uses one target model for three subject kinds:
+LMTS uses one evaluation model for three subject kinds:
 
 | Kind | Source | Execution |
 | --- | --- | --- |
@@ -123,8 +126,8 @@ The default registry currently contains **36 test types**.
 
 | Level | Meaning | Automatic suite |
 | --- | --- | ---: |
-| **Quick** | all tests whose `minimum_level` is `quick` | 19 |
-| **Moderate** | Quick + Moderate tests | 35 |
+| **Quick** | all automatically configured tests whose `minimum_level` is `quick` | 19 |
+| **Moderate** | Quick + automatically configured Moderate tests | 35 |
 | **Deep** | Moderate automatic suite + Deep-specific workflows | 35 + CW Bench |
 
 There are 17 Moderate-classified test types, but `research.free_prompt_consistency@1.0.0` requires a user-supplied prompt and is intentionally excluded from automatic suites. Therefore the automatic Moderate suite contains 19 Quick + 16 automatically configured Moderate tests = **35 tests**.
@@ -228,7 +231,9 @@ css
 
 The default CIC root is `../Structure`.
 
-## System profile and runtime evidence
+CW Bench now uses the same controller run path as normal benchmark execution. Live matrix state, response monitoring, cancellation and canonical MatrixRunRecord storage therefore use one execution path rather than a parallel CW-specific run-state implementation.
+
+## System profile and reference benchmarks
 
 Benchmark execution is attached to a canonical system profile so results do not become detached from the machine that produced them.
 
@@ -238,7 +243,20 @@ The profile covers:
 - memory
 - GPU
 - NPU
-- reference performance measurements
+- reference performance suites
+
+Reference benchmark domains are:
+
+```text
+cpu
+memory
+gpu
+npu
+```
+
+CPU and memory suites contain multiple repeatable measurements. GPU and NPU use their explicit reference backends when available. Reference execution emits structured live progress events for suite, backend, test and sample phases.
+
+The Profile TUI sends those progress events to the live Console pane while the benchmark runs.
 
 Run evidence can include:
 
@@ -289,7 +307,7 @@ results/
     └── <matrix-id>.json
 ```
 
-Canonical data is the source of truth. Exports, reports, databases and visualizations are projections of that data.
+Canonical RunResult and MatrixRunRecord evidence is the measurement source of truth. Exports, reports, databases and visualizations are projections of that evidence.
 
 ## Matrix results and comparison
 
@@ -302,7 +320,7 @@ BOT bot-writer              PASS     PASS     ERROR
 COMPOSITION writer-review   PASS     PASS     PASS
 ```
 
-The matrix is intentionally quick to read. A cell opens run-level detail.
+The matrix is intentionally quick to read. A cell can be opened to run-level detail.
 
 Execution state and evaluation verdict remain separate. A run may execute successfully and still receive `FAIL`; execution or protocol failure can be represented as `ERROR`.
 
@@ -312,33 +330,88 @@ Canonical matrix evidence also supports target-to-target comparison across model
 
 LMTS provides:
 
-- matrix-first result browsing
+- matrix-first live result browsing
+- historical matrix browsing
 - run-level drill-down
 - target-to-target comparison
 - export of an individual canonical run
 - export of a complete matrix bundle
-- LMTS Report Format v1 projection
-- explicit standard metric entries where an unavailable measurement is represented as `value: null`
+- explicit error-log export through `Output -> Export errors`
+- LMTS Benchmark Report Template `lmts.report/1.1` projection
 - report publishing through the report API path
-- static/web report deployment
+- static/web report deployment tooling
 - disk and FTP output targets
 - saved FTP and report profiles
 - MySQL as a projection/integration path, never canonical storage
 
 The live response monitor is read-only. It displays execution output without becoming part of test control or result ownership.
 
-## DVS — Data Visualizer Studio
+## LMTS Benchmark Report Template v1.1
 
-DVS is LMTS's generic data-visualization subsystem. It is intentionally separated from LMTS test semantics so the same mechanism can visualize any formalized source format for which an Input Template and Visualization Preset exist.
+The canonical report interchange contract is:
 
 ```text
-formal source data
+lmts/reporting/LMTS_Benchmark_Report_Template_v1.1.schema.json
+```
+
+Contract identity:
+
+```text
+format  = lmts.report
+version = 1.1
+```
+
+The contract fixes structural meaning while keeping report, source, entity, metric, summary, evidence and view fields open for extension.
+
+The transport rule is deliberately simple:
+
+```text
+canonical LMTS evidence
+        |
+        v
+LMTS Benchmark Report Template 1.1
+        |
+        +------ disk
+        +------ POST report server
+        +------ GET report server
+        +------ DVS Input Template
+```
+
+The server does not translate the document into another LMTS report model. The same semantic `lmts.report/1.1` document is stored and returned. Object key order may be canonicalized; semantic round-trip identity is the contract.
+
+Unavailable known measurements are represented explicitly as JSON `null`. A missing field means that the producer did not define that field for the record. Consumers must not invent a fallback value.
+
+The report records the tests that were actually executed, but the Template does **not** define a fixed benchmark suite.
+
+`AIGM LM Benchmark Report` is reserved for a future locked benchmark profile that can define exact test identities, versions, parameters, mandatory rules, metrics, scoring and aggregation once the discriminating test/metric set is mature enough. That locked profile does not exist yet.
+
+## Result server
+
+The generated result-server implementation accepts only `lmts.report/1.1`.
+
+Report IDs are immutable:
+
+- first POST stores the report
+- reposting the same report ID with semantically identical content is idempotent
+- reposting the same report ID with different content returns a conflict
+- GET returns the stored canonical report document
+
+The repository contains deployment tooling and the normative report schema is included in the generated web root. Physical production-server deployment remains an environment/deployment action, not canonical result ownership.
+
+## DVS - Data Visualizer Studio
+
+DVS is LMTS's generic data-visualization subsystem for turning formal source formats into reusable S3D visualizations without embedding application-specific rendering logic into LMTS or S3D.
+
+```text
+formal source format
         |
         v
    Input Template
+ extraction + typing
+ optional input scale
         |
         v
-strict string-table projection
+ typed input projection
         |
         v
 Visualization Preset
@@ -347,124 +420,230 @@ Visualization Preset
 recursive visual generations
         |
         v
+generic visual plan
+        |
+        v
        S3D
 ```
 
-### DVS data contract
+### Input Templates
 
-The canonical DVS table boundary has one cell type: **string**. Numeric, categorical, temporal, color and other semantics are interpretations declared by the visualization layer, not alternate table storage types.
+The Input Template owns source extraction and basic typing.
+
+Canonical Input Column types are:
+
+```text
+string
+number
+boolean
+```
+
+`number` means a finite numeric value. Numeric strings may be parsed by the Input Template. `null` is not a type; a selected source value may accept `null` only when the column explicitly declares `nullable: true`.
 
 Input Templates define:
 
-- source format identity
+- source-format identity
 - source reader
 - row selector
 - named columns
-- strict column selectors
+- selector for each column
+- type for each column
+- optional nullability
+- optional numeric scale
 
-Missing fields are errors. DVS does not invent missing source values. If a source format needs to represent an unavailable value, that source format must represent it explicitly. For `lmts.report/1.0`, unavailable standard measurements are projected as JSON `null`, which becomes the string `"null"` at the DVS table boundary.
+Numeric scale belongs to the Input Template:
 
-Visualization Presets define:
+```text
+low
+high
+power
+```
+
+Typing happens before scaling:
+
+```text
+output = ((input - low) / (high - low)) ^ power
+```
+
+There is no implicit clamp. Scale values must be finite, `high > low`, and `power > 0`.
+
+Studio can scan a selected numeric column to find typed pre-scale low/high values. Nullable `null` values are skipped during range calculation. If no numeric values remain, range discovery fails instead of inventing a range.
+
+A scaled column exposes one canonical downstream parameter:
+
+```text
+scale.<column>
+```
+
+That same object can drive both value calibration and visual representations such as an axis or legend without duplicating scale truth.
+
+The LMTS report Input Template is:
+
+```text
+lmts/dvs/templates/lmts-report-v1.1.json
+```
+
+It consumes the same `lmts.report/1.1` document used by disk export and the result server. DVS does not maintain a parallel LMTS report model.
+
+Explicit JSON `null` in `lmts.report/1.1` remains a typed null value when the Input Column is nullable. It is not converted into the string `"null"` unless the column is explicitly a string containing that text.
+
+### Visualization Presets
+
+A Visualization Preset defines how typed projected columns become visual structure.
+
+It declares:
 
 - source-format compatibility
 - Input Template reference
-- recursive generations
-- primitive selection
-- grouping
+- recursive visual generations
+- primitive per generation
+- optional grouping
 - named visual-channel bindings
-- interpretation and transform metadata
+- optional Input Template parameter bindings
+- interpretation metadata
+- transform metadata
 
-### DVS Studio
+Every channel binding must reference an actual Input Template column. Every parameter binding must reference an actual Input Template parameter. Recursive child generation IDs are validated and duplicate IDs are rejected.
 
-**Feature baseline: complete.**
+The Visualization Preset does not own basic source typing. Application-specific visual meaning belongs in the preset, not in DVS core.
 
-Studio is the authoring surface for building and validating reusable DVS definitions. Its feature boundary includes:
+The first LMTS-specific preset is:
 
-- create/edit/inspect Input Templates
-- create/edit/inspect Visualization Presets
-- source-format selection
-- live template projection preview
-- column inspection
-- primitive selection
-- recursive generation hierarchy
-- visual-channel binding editor
-- interpretation/transform configuration
-- validation against registered templates and columns
-- preset/template registry management
-- load/save reusable definitions
-- use the same definitions consumed by the viewer
+```text
+lmts.benchmark.landscape.v1
+```
 
-The Python DVS host owns Studio functionality.
+Its current mapping uses:
 
-### DVS Visualizer
+```text
+target         -> position.x categorical index
+test           -> position.z categorical index
+score_percent  -> position.y + scale.y
+result         -> uniform RGB channels
+```
 
-**Feature baseline: complete.**
+The benchmark preset deliberately remains uniform RGB. S3D and DVS support per-face RGBA, but LMTS does not assign invented per-face semantics before useful benchmark meaning exists.
 
-Visualizer is the read/visualization surface. Its feature boundary includes:
+This establishes a real:
 
-- load formal source data
-- select compatible Input Template
-- project source rows into the strict string-table boundary
-- select compatible Visualization Preset
-- generate recursive visual structures
-- S3D primitive rendering
-- packed high-density visualization paths
-- dimension-driven visual encodings
-- camera/navigation interaction
-- selection and inspection
-- reuse the same preset without application-specific visualization code
+```text
+LMTS Benchmark Report
+    -> Input Template
+    -> Visualization Preset
+    -> generic visual plan
+    -> S3D
+```
 
-The viewer is read-oriented and does not own source evidence.
+chain while keeping DVS and S3D application-neutral.
 
-### Host roles
+### Generic visual plan
+
+DVS projects source data into `s3d.dvs.visual-plan/1.0`.
+
+The visual plan contains primitive, visibility, typed visual-channel, parameter-binding, grouping and source-row information. It is renderer input, not a second application-data authority.
+
+Current generic interpretations include:
+
+```text
+categorical-index
+number
+number-or-null
+category-channel
+```
+
+Transforms are strict. Unsupported transform fields fail. There is no implicit aggregation inside a generation group. If a binding resolves to several different source values where one value is required, projection fails instead of guessing.
+
+For `number-or-null`, explicit null can map to `not-rendered`; DVS marks that group invisible rather than manufacturing a replacement value.
+
+Recursive child generations operate on their parent group's row subset while preserving original source-row indices.
+
+### Studio and Visualizer
+
+**Studio feature baseline: complete.**
+
+Studio can create, edit, inspect, validate and preview Input Templates and Visualization Presets, including typed columns, nullability, numeric input scales, range discovery, recursive generation definitions and parameter/channel bindings.
+
+System definitions are read-only. Studio-authored definitions live under the local Studio root and cannot shadow system definitions with the same ID.
+
+**Visualizer feature baseline: complete.**
+
+Visualizer consumes the generic visual plan recursively and renders through S3D. `box` materializes packed geometry. `group` is structural and recurses into children without creating geometry or changing camera bounds.
+
+Host roles remain:
 
 ```text
 Python DVS host = Studio + Visualizer
 PHP DVS host    = Visualizer portability target
 ```
 
-The PHP viewer target consumes the same Input Templates and Visualization Presets; it does not own authoring semantics.
+The PHP portability target must consume the same Input Templates and Visualization Presets. It does not own independent authoring semantics.
+
+Current Python read/runtime API includes:
+
+```text
+GET  /api/health
+GET  /api/input-templates
+GET  /api/input-templates/<id>
+GET  /api/visualization-presets
+GET  /api/visualization-presets/<id>
+POST /api/extract
+POST /api/visualize
+```
+
+There is deliberately no `/api/table` compatibility alias.
 
 ## S3D visualization boundary
 
 DVS delegates generic 3D mechanics to S3D rather than building a second renderer.
 
-The current S3D Statistics path includes:
-
-- application-neutral `Dimension`
-- `Observation`
-- `Distribution`
-- descriptive statistics
-- `RangeSelection`
-- `MetricSpace`
-- `MetricPointCloud`
-- packed typed instance buffers for dense point clouds
-- cached packed submissions rather than one SceneObject/draw call per observation
-- `VisualEncoding`
-- `VisualChannelBinding`
-- independent dimension-driven channels for:
-  - `position.x/y/z`
-  - `rotation.x/y/z`
-  - `scale.x/y/z`
-  - `color.r/g/b`
-
-The current packed box instance is:
+The uniform box bridge accepts:
 
 ```text
-position XYZ   3
-scale XYZ      3
-rotation XYZ   3
-RGB            3
-alpha          1
-----------------
-total         13 floats / instance
+position.x/y/z
+rotation.x/y/z
+scale.x/y/z
+color.r/g/b/a
 ```
 
-Alpha remains a render/batch property at this stage. Per-face channels are a later extension of the packed visual model rather than a reason to create per-observation scene objects.
+S3D owns the canonical packed box representation. The current packed box instance uses **33 floats**:
+
+```text
+position XYZ                    3
+scale XYZ                       3
+rotation XYZ                    3
+face z- RGBA                    4
+face z+ RGBA                    4
+face x- RGBA                    4
+face x+ RGBA                    4
+face y- RGBA                    4
+face y+ RGBA                    4
+---------------------------------
+total                          33 floats / instance
+```
+
+Canonical face order belongs to S3D:
+
+```text
+z-, z+, x-, x+, y-, y+
+```
+
+DVS reads that order from S3D rather than duplicating it as application truth.
+
+Generic per-face channels use:
+
+```text
+face.<S3D-face-id>.color.r/g/b/a
+```
+
+Per-face semantics are strict. If any per-face color channel is present, the complete `6 x RGBA` set is required. Partial face definitions, unknown face IDs and missing S3D face-order metadata are errors. There is no partial-color fallback.
+
+If no per-face channels are present, the uniform RGBA value is replicated into all six canonical face slots by S3D.
+
+High-density visualization stays packed instead of creating one SceneObject per observation.
 
 ## TUI
 
-Start the application from the repository root:
+Start LMTS from the repository root:
 
 ```bash
 python3 -m lmts
@@ -473,27 +652,117 @@ python3 -m lmts
 Top-level tabs are registry-driven:
 
 ```text
-1. Profile | 2. Benchmark | 3. Model Downloader | 4. Settings
+1 Profile
+2 Benchmark
+3 Model Downloader
+4 Settings
 ```
-
-Benchmark exposes cumulative suite selection directly:
-
-```text
-z. Quick
-x. Moderate
-c. Deep
-```
-
-Deep contains CW Bench, Deep-suite execution and result browsing.
-
-Application shortcuts are defined through the shortcut registry and can be overridden through `.lmts/shortcuts.json`. Invalid or ambiguous shortcut configuration is rejected instead of silently replaced.
 
 Global navigation:
 
 ```text
-Esc Esc   Back
+Esc       Back
 q q q     Quit
+Ctrl+L    Layout controls
 ```
+
+`Esc` is a single back action. There is no `Esc Esc` navigation sequence.
+
+Layout mode uses the same generic view host across surfaces:
+
+```text
+Ctrl+L    Actions -> Layout
+0         toggle all panes
+1..9      toggle pane by slot
+Ctrl+L    cancel Layout -> Actions
+```
+
+A pane digit immediately returns to Actions mode.
+
+### Profile
+
+Default actions:
+
+```text
+z Test CPU
+x Test MEM
+c Test GPU
+v Test NPU
+p Profile system
+```
+
+Profile layout:
+
+```text
+1 Main
+2 Console
+```
+
+Reference benchmark progress is streamed into the Profile Console while the suite runs.
+
+### Benchmark
+
+Default Actions row:
+
+```text
+t Tests
+m Targets
+r Run
+o Output
+f Refresh
+```
+
+The Tests dialog owns suite selection and configured-test management:
+
+```text
+Quick suite
+Moderate suite
+Deep suite
+Select tests
+Add test
+Remove test
+CW Bench
+```
+
+The Run dialog exposes three explicit scopes:
+
+```text
+Run                         selected tests -> selected targets
+Run all tests               all configured tests -> selected targets
+Run all tests to all models all configured tests -> all model targets
+```
+
+Bots and compositions remain available through selected-target execution. `Run all tests to all models` intentionally selects model targets only.
+
+Benchmark layout:
+
+```text
+1 Main
+2 Results
+3 Console
+```
+
+The Results pane is the live target × test matrix. Console is the live response monitor.
+
+Output owns historical results, target comparison, report publication and error export.
+
+### Deep and CW Bench
+
+Deep layout and CW Bench layout use the same live execution panes:
+
+```text
+1 Main
+2 Results
+3 Console
+```
+
+Deep and CW Bench runs are not blocked behind a modal progress dialog. They use the same controller run path, live matrix state, response monitor and cancellation semantics as normal benchmark execution.
+
+### Shortcut configuration
+
+Application shortcuts are defined through the shortcut registry and can be overridden through `.lmts/shortcuts.json`.
+
+Invalid, unknown or ambiguous shortcut configuration is rejected. There is no silent compatibility fallback.
 
 ## Model Downloader
 
@@ -511,7 +780,7 @@ LMTS includes a modular downloader core with:
 
 The Ollama adapter implements availability checks, installed-model discovery through `/api/tags`, and streamed model pulls through `/api/pull` with progress and cancellation.
 
-The downloader architecture is complete at the core level. TUI/controller wiring and backend-specific operations can evolve independently without changing the downloader contract.
+The top-level Model Downloader surface and shortcut registry exist. Downloader-core semantics are intentionally separate from TUI/controller wiring so additional provider modules can be added without changing the queue contract.
 
 ## AIGMos View compatibility
 
@@ -522,6 +791,8 @@ LMTS exposes an AIGMos View adapter at:
 ```
 
 The adapter projects LMTS state while leaving render ownership to the AIGMos layout system. LMTS provides view data; it does not duplicate the host renderer.
+
+The LMTS TUI interaction model is built from reusable registry, layout, dialog and pane primitives rather than benchmark-specific terminal code.
 
 ## Runtime
 
@@ -544,7 +815,7 @@ lmts/
 ├── tests/       test contracts, registry, catalog and executable test modules
 ├── tools/       profiling, telemetry, downloader and deployment utilities
 ├── view/        TUI, controller, projections and AIGMos View adapter
-├── reporting/   LMTS report projection and schemas
+├── reporting/   LMTS benchmark-report projection and schemas
 ├── dvs/         Data Visualizer Studio, templates, presets, server and viewer assets
 ├── lib/         shared bounded runtime/view primitives
 ├── config/      server/database configuration assets
@@ -553,7 +824,19 @@ lmts/
 tests/           repository-level verification tests
 ```
 
-`./CW_sources/` is a runtime source directory for user-provided Canonical Wireframes and is only required when CW Bench is used.
+`./CW_sources/` is a runtime source directory for user-provided Canonical Wireframes and is required only when CW Bench is used.
+
+## Deliberately not locked yet
+
+Some future standardization is intentionally deferred:
+
+- **AIGM LM Benchmark Report** is not yet a fixed benchmark profile.
+- The final discriminating benchmark test set is not locked.
+- Required benchmark metrics, scoring and aggregation for that future profile are not locked.
+- A physical public result-server deployment is an operational deployment step, not part of canonical evidence semantics.
+- Additional model-provider/downloader modules can be added without changing the core contracts.
+
+The open `LMTS Benchmark Report Template v1.1` remains usable for arbitrary LMTS benchmark matrices while those benchmark-profile decisions mature.
 
 ## Design rules
 
@@ -563,11 +846,14 @@ LMTS is built around explicit architectural constraints:
 2. **No duplicate truth.** Views, reports, databases and visualizations do not become alternate result authorities.
 3. **No silent fallback.** Missing protocol data, invalid configuration and failed imports remain visible failures.
 4. **Source formats own missing-data semantics.** DVS never manufactures absent source values.
-5. **Tests are provider-neutral.** Providers generate; tests evaluate.
-6. **Targets are broader than models.** Models, bots and compositions share one evaluation architecture.
-7. **System context matters.** Benchmark evidence stays attached to the machine and runtime context that produced it.
-8. **Execution is bounded.** Workspace and runtime boundaries are explicit rather than implied.
-9. **Dense visualization stays dense.** High-observation-count rendering uses packed buffers rather than per-observation scene objects.
-10. **Presentation is replaceable.** TUI, reports, DVS and AIGMos View consume canonical state instead of owning it.
+5. **Input Templates own extraction, basic typing and numeric input scaling.** Visualization Presets own visual meaning.
+6. **Tests are provider-neutral.** Providers generate; tests evaluate.
+7. **Targets are broader than models.** Models, bots and compositions share one evaluation architecture.
+8. **System context matters.** Benchmark evidence stays attached to the machine and runtime context that produced it.
+9. **Execution is bounded.** Workspace and runtime boundaries are explicit rather than implied.
+10. **Dense visualization stays dense.** High-observation-count rendering uses packed buffers rather than per-observation scene objects.
+11. **S3D owns generic 3D mechanics.** DVS does not duplicate packed layout or face-order truth.
+12. **Presentation is replaceable.** TUI, reports, DVS and AIGMos View consume canonical state instead of owning it.
+13. **Secure by limitations.** Capabilities are explicit, bounded and reject invalid states rather than guessing.
 
-LMTS is therefore not just a collection of prompts. It is a controlled evaluation runtime for producing structured evidence that can be compared, inspected, exported and visualized without losing the context that produced it.
+LMTS is therefore not just a collection of prompts. It is a controlled evaluation runtime for producing structured evidence that can be compared, inspected, exported, published and visualized without losing the context that produced it.

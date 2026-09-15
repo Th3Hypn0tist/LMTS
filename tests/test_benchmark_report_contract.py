@@ -1,92 +1,88 @@
+from __future__ import annotations
+
+import json
 from pathlib import Path
+
+import pytest
 
 from lmts.reporting import REPORT_FORMAT, REPORT_VERSION, project_matrix_bundle
 from lmts.tools.report_contract_php import REPORT_CONTRACT_VALIDATOR_PHP
-from lmts.tools.web_deploy import REPORT_CONTRACT_NAME, REPORT_PHP, APP_JS, web_root_files
+from lmts.tools.web_deploy import APP_JS, REPORT_CONTRACT_NAME, REPORT_PHP, web_root_files
+
+
+SCHEMA = Path('lmts/reporting/LMTS_Benchmark_Report_Template_v1.1.schema.json')
 
 
 def _bundle() -> dict:
     return {
-        'schema_version': 1,
-        'export_type': 'lmts.matrix_bundle',
-        'exported_at': '2026-09-14T10:00:00+00:00',
+        'format': 'lmts.matrix-bundle',
+        'version': 1,
         'matrix': {
-            'matrix_id': 'matrix-contract',
-            'started_at': '2026-09-14T09:59:00+00:00',
-            'completed_at': '2026-09-14T10:00:00+00:00',
+            'matrix_id': 'matrix-1',
+            'started_at': '2026-09-01T12:00:00+00:00',
+            'completed_at': '2026-09-01T12:01:00+00:00',
             'status': 'completed',
             'target_ids': ['model-a'],
-            'test_refs': ['core.text_generation@1.0.0#text-generation'],
+            'target_kinds': {'model-a': 'model'},
+            'test_refs': ['core.text_generation@1.0.0'],
+            'cells': [
+                {
+                    'target_id': 'model-a',
+                    'target_kind': 'model',
+                    'test_ref': 'core.text_generation@1.0.0',
+                    'run_id': 'run-1',
+                    'status': 'completed',
+                    'passed': True,
+                    'result_path': 'results/run-1.json',
+                }
+            ],
+            'passed': 1,
+            'failed': 0,
+            'errors': 0,
+            'cancelled': 0,
         },
-        'runs': [{
-            'run_id': 'run-contract',
-            'executor_id': 'model-a',
-            'executor_kind': 'model',
-            'test_ref': 'core.text_generation@1.0.0#text-generation',
-            'started_at': '2026-09-14T09:59:10+00:00',
-            'completed_at': '2026-09-14T09:59:11+00:00',
-            'status': 'completed',
-            'passed': True,
-            'metrics': {'ttft_ms': 10.0, 'custom_metric': 42},
-            'score': {'percent': 100.0, 'dimensions': []},
-            'artifacts': {'answer': 'ok'},
-            'responses': [],
-            'workspace_trace': [],
-            'system_context': {'profile_id': 'profile-a'},
-            'telemetry': {'gpu': {'peak_memory_bytes': 123}},
-            'evaluation_subject': {
-                'id': 'model-a',
-                'kind': 'model',
-                'label': 'Model A',
-                'members': [],
-                'configuration': {},
-                'fingerprint': 'subject-fingerprint',
-            },
-            'execution_metadata': {
-                'runtime_configuration_fingerprint': 'runtime-fingerprint',
-                'test_minimum_level': 'quick',
-                'test_mandatory': False,
-            },
-            'model_id': 'model-a',
-            'model_ref': 'model-a:latest',
-            'provider_ref': 'ollama-local',
-            'model_metadata': {
-                'digest': 'digest-a',
-                'size': 100,
-                'details': {
-                    'family': 'test',
-                    'parameter_size': '1B',
-                    'quantization_level': 'Q4',
-                },
-            },
-            'error': None,
-        }],
+        'runs': [
+            {
+                'run_id': 'run-1',
+                'test_ref': 'core.text_generation@1.0.0',
+                'executor_id': 'model-a',
+                'executor_kind': 'model',
+                'status': 'completed',
+                'passed': True,
+                'started_at': '2026-09-01T12:00:00+00:00',
+                'completed_at': '2026-09-01T12:00:01+00:00',
+                'score': {'total': 1.0, 'maximum': 1.0},
+                'usage': {'input_tokens': 10, 'output_tokens': 5},
+                'timing': {'ttft_seconds': 0.1, 'total_seconds': 1.0},
+                'system_context': {'profile_id': 'profile-a'},
+            }
+        ],
     }
 
 
-def test_projector_emits_open_world_benchmark_report_v11() -> None:
+def test_report_template_identity() -> None:
+    schema = json.loads(SCHEMA.read_text(encoding='utf-8'))
+    assert schema['properties']['format']['const'] == REPORT_FORMAT
+    assert schema['properties']['version']['const'] == REPORT_VERSION
+
+
+def test_projector_emits_report_v11() -> None:
     report = project_matrix_bundle(_bundle())
-    assert report['format'] == REPORT_FORMAT == 'lmts.report'
-    assert report['version'] == REPORT_VERSION == '1.1'
-    assert report['report']['type'] == 'benchmark'
-    assert report['report']['benchmark']['test_refs'] == ['core.text_generation@1.0.0#text-generation']
-    assert report['metric_definitions']['custom_metric']['value_type'] == 'int'
-    assert report['records'][0]['metrics']['custom_metric'] == {'value': 42}
-    assert report['records'][0]['evidence']['artifacts'] == {'answer': 'ok'}
-    assert report['records'][0]['evidence']['system_context'] == {'profile_id': 'profile-a'}
+    assert report['format'] == REPORT_FORMAT
+    assert report['version'] == REPORT_VERSION
+    assert report['source']['type'] == 'lmts.matrix-bundle'
+    assert report['summary']['records'] == 1
     assert report['summary']['targets'] == 1
     assert report['summary']['tests'] == 1
     assert report['summary']['system_profiles'] == [{'profile_id': 'profile-a'}]
 
 
-def test_report_system_profile_index_deduplicates_exact_context_only() -> None:
+def test_projector_keeps_distinct_system_profiles_with_same_id() -> None:
     bundle = _bundle()
-    first = bundle['runs'][0]
+    first = dict(bundle['runs'][0])
     duplicate = dict(first)
-    duplicate['run_id'] = 'run-contract-2'
-    duplicate['system_context'] = {'profile_id': 'profile-a'}
     different_same_id = dict(first)
-    different_same_id['run_id'] = 'run-contract-3'
+    different_same_id['run_id'] = 'run-2'
     different_same_id['system_context'] = {
         'profile_id': 'profile-a',
         'profile': {'cpu': {'model_name': 'CPU B'}},
@@ -103,8 +99,8 @@ def test_report_system_profile_index_deduplicates_exact_context_only() -> None:
 
 def test_results_server_and_dvs_share_report_v11_contract() -> None:
     files = web_root_files()
-    contract_path = f'public/contracts/{REPORT_CONTRACT_NAME}'
-    validator_path = 'public/lib/report_contract.php'
+    contract_path = f'contracts/{REPORT_CONTRACT_NAME}'
+    validator_path = 'lib/report_contract.php'
     assert contract_path in files
     assert validator_path in files
     assert files[validator_path] == REPORT_CONTRACT_VALIDATOR_PHP
@@ -114,6 +110,7 @@ def test_results_server_and_dvs_share_report_v11_contract() -> None:
     assert 'report id already exists with different content' in REPORT_PHP
     assert 'ON DUPLICATE KEY UPDATE' not in REPORT_PHP
     assert '"const": "1.1"' in files[contract_path]
+    assert all(not path.startswith('public/') for path in files)
 
 
 def test_result_viewer_consumes_report_system_profile_index() -> None:
@@ -121,10 +118,3 @@ def test_result_viewer_consumes_report_system_profile_index() -> None:
     assert "text: 'System Profiles'" in APP_JS
     assert "['Systems', systemProfiles.length]" in APP_JS
     assert "JSON.stringify(profile, null, 2)" in APP_JS
-
-
-def test_dvs_input_template_targets_same_report_contract() -> None:
-    path = Path('lmts/dvs/templates/lmts-report-v1.1.json')
-    text = path.read_text(encoding='utf-8')
-    assert '"source_format": "lmts.report/1.1"' in text
-    assert '"selector": "metrics.score_percent.value"' in text

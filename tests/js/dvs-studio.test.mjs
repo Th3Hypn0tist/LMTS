@@ -8,6 +8,7 @@ import {
   newDefinition,
   studioApi,
   studioCollection,
+  studioDraftApi,
 } from '../../lmts/dvs/static/dvs.js';
 
 
@@ -43,6 +44,34 @@ test('Studio API paths keep create and update namespaces explicit', () => {
   assert.equal(studioApi('input-template'), '/api/studio/input-templates');
   assert.equal(studioApi('visualization-preset'), '/api/studio/visualization-presets');
   assert.throws(() => studioApi('unknown'), /Unsupported Studio definition type/);
+});
+
+
+test('Studio draft API paths keep validation and preview non-persistent', () => {
+  assert.equal(
+    studioDraftApi('input-template', 'validate'),
+    '/api/studio/validate/input-template',
+  );
+  assert.equal(
+    studioDraftApi('input-template', 'preview'),
+    '/api/studio/preview/input-template',
+  );
+  assert.equal(
+    studioDraftApi('visualization-preset', 'validate'),
+    '/api/studio/validate/visualization-preset',
+  );
+  assert.equal(
+    studioDraftApi('visualization-preset', 'preview'),
+    '/api/studio/preview/visualization-preset',
+  );
+  assert.throws(
+    () => studioDraftApi('input-template', 'persist'),
+    /Unsupported Studio draft operation/,
+  );
+  assert.throws(
+    () => studioDraftApi('unknown', 'validate'),
+    /Unsupported Studio definition type/,
+  );
 });
 
 

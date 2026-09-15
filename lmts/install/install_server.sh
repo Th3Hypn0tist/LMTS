@@ -16,7 +16,6 @@ DB_HOST="localhost"
 MYSQL_DATADIR="/home/lmts/mysql"
 WWW_ROOT="/home/www"
 LMTS_WEB="${WWW_ROOT}/lmts"
-LMTS_PUBLIC="${LMTS_WEB}/public"
 LMTS_CONFIG="${LMTS_WEB}/config"
 AIGM_ROOT="${WWW_ROOT}/aigm.fi"
 AIGM_PUBLIC="${AIGM_ROOT}/public"
@@ -138,14 +137,14 @@ fi
 # 2. Directories and credentials.
 # ------------------------------------------------------------
 echo "[2/9] Checking directories and bootstrap credentials..."
-for directory in "${MYSQL_DATADIR}" "${LMTS_PUBLIC}" "${LMTS_CONFIG}" "${AIGM_PUBLIC}" "${SECRETS_DIR}"; do
+for directory in "${MYSQL_DATADIR}" "${LMTS_WEB}" "${LMTS_CONFIG}" "${AIGM_PUBLIC}" "${SECRETS_DIR}"; do
     if [[ ! -d "${directory}" ]]; then
         mkdir -p "${directory}"
         changed "created ${directory}"
     fi
 done
 chmod a+x /home
-chmod 755 "${WWW_ROOT}" "${LMTS_WEB}" "${LMTS_PUBLIC}" "${AIGM_ROOT}" "${AIGM_PUBLIC}"
+chmod 755 "${WWW_ROOT}" "${LMTS_WEB}" "${AIGM_ROOT}" "${AIGM_PUBLIC}"
 chown root:root /home/lmts
 chmod 755 /home/lmts
 
@@ -312,15 +311,12 @@ else
 fi
 
 USER_EXISTS="$(mariadb --protocol=socket -Nse "SELECT COUNT(*) FROM mysql.user WHERE User='${DB_USER}' AND Host='localhost';")"
-ACCOUNT_CHANGED=0
 if [[ "${USER_EXISTS}" != "1" ]]; then
     mariadb --protocol=socket -e "CREATE USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';"
-    ACCOUNT_CHANGED=1
     changed "created database runtime account"
 else
     if ! MYSQL_PWD="${DB_PASSWORD}" mariadb --protocol=tcp --host=127.0.0.1 --user="${DB_USER}" -Nse 'SELECT 1;' >/dev/null 2>&1; then
         mariadb --protocol=socket -e "ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';"
-        ACCOUNT_CHANGED=1
         changed "synchronized database runtime password"
     else
         unchanged "database runtime password"
@@ -423,7 +419,7 @@ else
 fi
 
 # ------------------------------------------------------------
-# 8. Apache: reload/restart only when configuration changed.
+# 8. Apache: restart only when configuration changed.
 # ------------------------------------------------------------
 echo "[8/9] Converging Apache host..."
 APACHE_RESTART_REQUIRED=0
@@ -441,12 +437,16 @@ if write_if_changed "${APACHE_SITE}" 644 root root <<EOF
     </Directory>
 
     RedirectMatch 301 ^/benchmark$ /benchmark/
-    Alias /benchmark/ ${LMTS_PUBLIC}/
-    <Directory ${LMTS_PUBLIC}>
+    Alias /benchmark/ ${LMTS_WEB}/
+    <Directory ${LMTS_WEB}>
         Options FollowSymLinks
         AllowOverride None
         Require all granted
         DirectoryIndex index.html index.php
+    </Directory>
+
+    <Directory ${LMTS_CONFIG}>
+        Require all denied
     </Directory>
 
     ErrorLog \${APACHE_LOG_DIR}/aigm-error.log
@@ -513,7 +513,7 @@ User     : ${DB_USER}
 Host     : ${DB_HOST}
 Schema   : v${SCHEMA_VERSION}
 Settings : ${SETTINGS_FILE}
-Web root : ${LMTS_PUBLIC}
+Web root : ${LMTS_WEB}
 
 Convergence summary:
   installed : ${INSTALLED}

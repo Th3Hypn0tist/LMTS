@@ -23,6 +23,6 @@ include = ["lmts*"]
 
 [tool.setuptools.package-data]
 "lmts.config" = ["*.php"]
-"lmts.install" = ["*.sh"]
+"lmts.install" = ["*.sh", "*.sql"]
 "lmts.reporting" = ["*.json"]
 "lmts.dvs" = ["templates/*.json", "presets/*.json", "static/*", "README.md"]

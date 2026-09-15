@@ -15,6 +15,7 @@ from lmts.reporting import project_matrix_bundle
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry, test_matrix_for_level
 from lmts.tests.types import TestParameter, TestTypeDefinition
+from lmts.tools.dvs_service import dvs_status
 from lmts.tools.ftp_profiles import load_ftp_profiles
 from lmts.tools.mysql_config import deploy_mysql_config
 from lmts.tools.mysql_schema import install_mysql_schema
@@ -25,6 +26,7 @@ from lmts.tools.web_deploy import deploy_web_root
 
 from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
+from .dvs_settings_dialog import manage_dvs
 from .output_dialog import choose_output_target, choose_report_profile, manage_ftp_profiles, manage_report_profiles
 from .projector import LMTSViewProjector
 from .reference_progress import format_reference_progress
@@ -153,6 +155,7 @@ def run() -> None:
     projector = LMTSViewProjector(controller.state)
     cw_bench_page = CWBenchPage(controller)
     settings = load_settings(DEFAULT_SETTINGS_PATH)
+    dvs_service_state = [dvs_status(settings.dvs)]
     shortcut_overrides = load_shortcut_overrides(DEFAULT_SHORTCUT_SETTINGS_PATH)
     shortcuts = build_shortcut_registry(shortcut_overrides)
     active_shortcuts = [shortcuts]
@@ -196,10 +199,14 @@ def run() -> None:
         report_count = len(load_report_profiles().profiles)
         runtime_count = len(load_runtime_targets())
         mysql = settings.mysql
+        dvs = dvs_service_state[0]
+        dvs_s3d = 'ready' if dvs.s3d_ready else ('not ready' if dvs.s3d_configured else 'not configured')
         return (
             'Application, server and connection settings.', '',
             f'Output folder  : {settings.output_folder}', f'MySQL host     : {mysql.host}',
             f'MySQL database : {mysql.database}', f'MySQL user     : {mysql.username}',
+            f'DVS status     : {dvs.state.upper()}', f'DVS endpoint   : {settings.dvs.host}:{settings.dvs.port}',
+            f'DVS S3D        : {dvs_s3d}',
             f'FTP profiles   : {ftp_count}', f'Report profiles: {report_count}',
             f'Runtime targets: {runtime_count}', f'Shortcuts      : {len(shortcut_overrides)} custom binding(s)',
             '', 'Server installer:', '  lmts/install/install_server.sh',
@@ -533,12 +540,12 @@ def run() -> None:
                 try:
                     install_mysql_schema(mysql)
                     set_message(f'LMTS schema installed: {mysql.host}/{mysql.database}')
-                except RuntimeError as exc:
+                except (RuntimeError, ValueError) as exc:
                     set_message(f'MySQL schema install failed: {exc}')
                 return
             mysql = settings.mysql
             values = []
-            for title, initial, allow_empty in [('MySQL host', mysql.host, False), ('MySQL database', mysql.database, False), ('MySQL username', mysql.username, False), ('MySQL password', mysql.password, True), ('Publish key', mysql.publish_key, False)]:
+            for title, initial, allow_empty in [('MySQL host', mysql.host, False), ('MySQL database', mysql.database, False), ('MySQL username', mysql.username, False), ('MySQL password', mysql.password, False), ('Publish key', mysql.publish_key, False)]:
                 value = _single_line(host, stdscr, title, initial=initial, allow_empty=allow_empty)
                 if value is None:
                     return
@@ -546,6 +553,15 @@ def run() -> None:
             settings = replace(settings, mysql=MySQLSettings(host=values[0], database=values[1], username=values[2], password=values[3], publish_key=values[4]))
             save_settings(settings, DEFAULT_SETTINGS_PATH)
             set_message('MySQL settings saved')
+
+        def edit_dvs(_stdscr: curses.window) -> None:
+            nonlocal settings
+            updated, status, message = manage_dvs(host, stdscr, settings.dvs)
+            if updated != settings.dvs:
+                settings = replace(settings, dvs=updated)
+                save_settings(settings, DEFAULT_SETTINGS_PATH)
+            dvs_service_state[0] = status
+            set_message(message or f'DVS status: {status.state}')
 
         def ftp_settings(_stdscr: curses.window) -> None:
             manage_ftp_profiles(host, stdscr)
@@ -567,7 +583,7 @@ def run() -> None:
             if action == 1:
                 set_message('installer: lmts/install/install_server.sh')
                 return
-            target = choose_output_target(host, stdscr, disk_initial='/home/www/lmts')
+            target = choose_output_target(host, stdscr, disk_initial='.')
             if target is None:
                 return
             try:
@@ -762,6 +778,7 @@ def run() -> None:
             'settings.output': edit_output_folder,
             'settings.server': server_setup,
             'settings.mysql': edit_mysql,
+            'settings.dvs': edit_dvs,
             'settings.ftp': ftp_settings,
             'settings.report': report_settings,
             'settings.targets': runtime_target_settings,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import math
 import re
 from dataclasses import dataclass, field
@@ -10,8 +9,10 @@ from typing import Any
 DVS_INPUT_TEMPLATE_FORMAT = 's3d.dvs.input-template'
 DVS_VISUALIZATION_PRESET_FORMAT = 's3d.dvs.visualization-preset'
 DVS_FORMAT_VERSION = '1.0'
+INPUT_COLUMN_TYPES = frozenset({'string', 'number', 'integer', 'boolean'})
 
 _SEGMENT_RE = re.compile(r'^(?P<name>[^.\[\]]+)(?P<wildcard>\[\*\])?$')
+_INTEGER_RE = re.compile(r'^[+-]?\d+$')
 
 
 def _text(value: Any, label: str) -> str:
@@ -86,10 +87,71 @@ def select_one(source: Any, selector: str) -> Any:
     return values[0]
 
 
-def stringify_cell(value: Any) -> str:
-    if isinstance(value, str):
+def _parse_string(value: Any, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f'{label} must be a string')
+    return value
+
+
+def _parse_number(value: Any, label: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f'{label} must be a finite number or numeric string')
+    if isinstance(value, (int, float)):
+        result = float(value)
+    elif isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            raise ValueError(f'{label} must be a finite number or numeric string')
+        try:
+            result = float(raw)
+        except ValueError as exc:
+            raise ValueError(f'{label} must be a finite number or numeric string') from exc
+    else:
+        raise ValueError(f'{label} must be a finite number or numeric string')
+    if not math.isfinite(result):
+        raise ValueError(f'{label} must be finite')
+    return result
+
+
+def _parse_integer(value: Any, label: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f'{label} must be an integer or integer string')
+    if isinstance(value, int):
         return value
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            raise ValueError(f'{label} must be an integer or integer string')
+        return int(value)
+    if isinstance(value, str):
+        raw = value.strip()
+        if _INTEGER_RE.fullmatch(raw) is None:
+            raise ValueError(f'{label} must be an integer or integer string')
+        return int(raw)
+    raise ValueError(f'{label} must be an integer or integer string')
+
+
+def _parse_boolean(value: Any, label: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        raw = value.strip().casefold()
+        if raw == 'true':
+            return True
+        if raw == 'false':
+            return False
+    raise ValueError(f'{label} must be boolean or the string true/false')
+
+
+def parse_input_value(value: Any, value_type: str, label: str) -> Any:
+    if value_type == 'string':
+        return _parse_string(value, label)
+    if value_type == 'number':
+        return _parse_number(value, label)
+    if value_type == 'integer':
+        return _parse_integer(value, label)
+    if value_type == 'boolean':
+        return _parse_boolean(value, label)
+    raise ValueError(f'{label} has unsupported Input Column type {value_type!r}')
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +182,7 @@ class InputScale:
             power=_number(payload.get('power', 1.0), 'InputScale.power'),
         )
 
-    def apply(self, value: Any) -> float:
+    def apply(self, value: int | float) -> float:
         input_value = _number(value, 'scaled input')
         normalized = (input_value - self.low) / (self.high - self.low)
         if normalized < 0 and not self.power.is_integer():
@@ -138,7 +200,14 @@ class InputScale:
 class InputColumn:
     name: str
     selector: str
+    type: str
     scale: InputScale | None = None
+
+    def __post_init__(self) -> None:
+        if self.type not in INPUT_COLUMN_TYPES:
+            raise ValueError(f'InputColumn.type must be one of: {", ".join(sorted(INPUT_COLUMN_TYPES))}')
+        if self.scale is not None and self.type not in {'number', 'integer'}:
+            raise ValueError('InputColumn.scale requires type number or integer')
 
     @property
     def scale_parameter_id(self) -> str | None:
@@ -147,47 +216,54 @@ class InputColumn:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> 'InputColumn':
         payload = _object(payload, 'InputColumn')
-        _require_keys(payload, {'name', 'selector'}, {'name', 'selector', 'scale'}, 'InputColumn')
+        _require_keys(payload, {'name', 'selector', 'type'}, {'name', 'selector', 'type', 'scale'}, 'InputColumn')
         raw_scale = payload.get('scale')
         return cls(
             name=_text(payload['name'], 'InputColumn.name'),
             selector=_text(payload['selector'], 'InputColumn.selector'),
+            type=_text(payload['type'], 'InputColumn.type'),
             scale=None if raw_scale is None else InputScale.from_dict(raw_scale),
         )
 
+    def parse(self, value: Any) -> Any:
+        return parse_input_value(value, self.type, f'InputColumn {self.name!r}')
+
     def project(self, value: Any) -> Any:
-        return self.scale.apply(value) if self.scale is not None else value
+        typed_value = self.parse(value)
+        return self.scale.apply(typed_value) if self.scale is not None else typed_value
 
     def to_dict(self) -> dict[str, Any]:
-        result: dict[str, Any] = {'name': self.name, 'selector': self.selector}
+        result: dict[str, Any] = {'name': self.name, 'selector': self.selector, 'type': self.type}
         if self.scale is not None:
             result['scale'] = self.scale.to_dict()
         return result
 
 
 @dataclass(frozen=True, slots=True)
-class _StringTable:
+class _InputTable:
     columns: tuple[str, ...]
-    rows: tuple[tuple[str, ...], ...]
+    column_types: tuple[str, ...]
+    rows: tuple[tuple[Any, ...], ...]
     parameters: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.columns or any(not isinstance(value, str) or not value for value in self.columns):
-            raise ValueError('runtime string table requires non-empty string column names')
+            raise ValueError('runtime input table requires non-empty string column names')
         if len(set(self.columns)) != len(self.columns):
-            raise ValueError('runtime string table column names must be unique')
+            raise ValueError('runtime input table column names must be unique')
+        if len(self.column_types) != len(self.columns):
+            raise ValueError('runtime input table column type width must match columns')
         width = len(self.columns)
         for row in self.rows:
             if len(row) != width:
-                raise ValueError('runtime string table row width must match columns')
-            if any(not isinstance(value, str) for value in row):
-                raise ValueError('runtime string table cells must be strings')
+                raise ValueError('runtime input table row width must match columns')
         for name in self.parameters:
             _text(name, 'runtime input parameter name')
 
     def to_dict(self) -> dict[str, Any]:
         return {
             'columns': list(self.columns),
+            'column_types': list(self.column_types),
             'rows': [list(row) for row in self.rows],
             'parameters': dict(self.parameters),
         }
@@ -252,8 +328,10 @@ class InputTemplate:
                 return column
         raise KeyError(f'InputTemplate {self.id!r} has no column {name!r}')
 
-    def find_raw_range(self, source: Any, column_name: str) -> tuple[float, float]:
+    def find_typed_range(self, source: Any, column_name: str) -> tuple[float, float]:
         column = self.column(column_name)
+        if column.type not in {'number', 'integer'}:
+            raise ValueError(f'InputTemplate range scan requires numeric column, got {column.type!r}')
         rows = select_many(source, self.rows_selector)
         if not rows:
             raise ValueError(f'InputTemplate {self.id!r} has no source rows to scan')
@@ -261,35 +339,36 @@ class InputTemplate:
         for row_index, row in enumerate(rows):
             try:
                 raw_value = select_one(row, column.selector)
-                values.append(_number(raw_value, f'row {row_index} column {column.name!r}'))
+                typed_value = column.parse(raw_value)
+                values.append(float(typed_value))
             except (KeyError, ValueError) as exc:
                 raise ValueError(
                     f'InputTemplate {self.id!r} row {row_index} column {column.name!r}: {exc}'
                 ) from exc
         return min(values), max(values)
 
-    def extract(self, source: Any) -> _StringTable:
+    def extract(self, source: Any) -> _InputTable:
         rows = select_many(source, self.rows_selector)
-        projected: list[tuple[str, ...]] = []
+        projected: list[tuple[Any, ...]] = []
         for row_index, row in enumerate(rows):
-            values: list[str] = []
+            values: list[Any] = []
             for column in self.columns:
                 try:
                     raw_value = select_one(row, column.selector)
-                    projected_value = column.project(raw_value)
+                    values.append(column.project(raw_value))
                 except (KeyError, ValueError) as exc:
                     raise ValueError(
                         f'InputTemplate {self.id!r} row {row_index} column {column.name!r}: {exc}'
                     ) from exc
-                values.append(stringify_cell(projected_value))
             projected.append(tuple(values))
         parameters = {
             column.scale_parameter_id: column.scale.to_dict()
             for column in self.columns
             if column.scale is not None and column.scale_parameter_id is not None
         }
-        return _StringTable(
+        return _InputTable(
             tuple(column.name for column in self.columns),
+            tuple(column.type for column in self.columns),
             tuple(projected),
             parameters,
         )
@@ -353,8 +432,7 @@ class VisualizationGeneration:
             raise ValueError('VisualizationGeneration.children must be an array')
         bindings: dict[str, VisualBinding] = {}
         for channel, binding in raw_bindings.items():
-            channel_name = _text(channel, 'visual channel')
-            bindings[channel_name] = VisualBinding.from_dict(binding)
+            bindings[_text(channel, 'visual channel')] = VisualBinding.from_dict(binding)
         parameters: dict[str, str] = {}
         for local_name, parameter_ref in raw_parameters.items():
             parameters[_text(local_name, 'generation parameter name')] = _text(

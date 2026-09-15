@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 
 Location = Literal["local", "remote"]
-ResponseStreamChannel = Literal["thinking", "text", "tool", "meta"]
+ResponseStreamChannel = Literal["input", "thinking", "text", "tool", "meta"]
 
 
 @dataclass(frozen=True, slots=True)

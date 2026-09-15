@@ -199,4 +199,83 @@ def test_studio_http_health_exposes_write_root(studio_server) -> None:
     status, body = _request(base_url, 'GET', '/api/health')
     assert status == 200
     assert body['studio']['write_api'] is True
+    assert body['studio']['draft_api'] is True
     assert body['studio']['root']
+
+
+def test_studio_http_validates_draft_template_without_persistence(studio_server) -> None:
+    base_url, registry = studio_server
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/studio/validate/input-template',
+        _template('draft'),
+    )
+    assert status == 200
+    assert body['input_template']['id'] == 'draft'
+    assert not registry.templates.contains('draft')
+
+
+def test_studio_http_previews_draft_template_against_source(studio_server) -> None:
+    base_url, registry = studio_server
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/studio/preview/input-template',
+        {
+            'definition': _template('draft'),
+            'source': {'records': [{'value': 5}, {'value': None}]},
+        },
+    )
+    assert status == 200
+    assert body['columns'] == ['value']
+    assert body['rows'] == [['5'], ['null']]
+    assert not registry.templates.contains('draft')
+
+
+def test_studio_http_validates_and_previews_draft_preset_without_persistence(studio_server) -> None:
+    base_url, registry = studio_server
+    status, _ = _request(base_url, 'POST', '/api/studio/input-templates', _template('table'))
+    assert status == 201
+
+    preset = _preset('draft-view', 'table')
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/studio/validate/visualization-preset',
+        preset,
+    )
+    assert status == 200
+    assert body['visualization_preset']['id'] == 'draft-view'
+    assert not registry.presets.contains('draft-view')
+
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/studio/preview/visualization-preset',
+        {
+            'definition': preset,
+            'source': {'records': [{'value': 3}]},
+        },
+    )
+    assert status == 200
+    assert body['visual_plan']['format'] == 's3d.dvs.visual-plan'
+    assert body['visual_plan']['row_count'] == 1
+    assert not registry.presets.contains('draft-view')
+
+
+def test_studio_http_draft_preview_rejects_closed_shape_violation(studio_server) -> None:
+    base_url, _ = studio_server
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/studio/preview/input-template',
+        {
+            'definition': _template('draft'),
+            'source': {'records': []},
+            'extra': True,
+        },
+    )
+    assert status == 400
+    assert body['ok'] is False
+    assert 'requires exactly definition and source' in body['error']

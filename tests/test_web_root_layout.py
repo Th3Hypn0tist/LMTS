@@ -18,11 +18,12 @@ def test_web_deploy_starts_at_target_root() -> None:
     assert all(not path.startswith('public/') for path in files)
 
 
-def test_apache_serves_lmts_root_and_denies_config() -> None:
+def test_privileged_installer_does_not_own_web_location() -> None:
     text = INSTALLER.read_text(encoding='utf-8')
     assert 'LMTS_PUBLIC=' not in text
-    assert 'Alias /benchmark/ ${LMTS_WEB}/' in text
-    assert '<Directory ${LMTS_WEB}>' in text
-    assert '<Directory ${LMTS_CONFIG}>' in text
-    assert 'Require all denied' in text
-    assert 'Web root : ${LMTS_WEB}' in text
+    assert 'LMTS_WEB=' not in text
+    assert 'DocumentRoot' not in text
+    assert 'Alias /benchmark/' not in text
+    assert 'ServerName aigm.fi' not in text
+    assert '/home/www' not in text
+    assert 'Deploy the LMTS web package from the TUI to any web-visible directory you choose.' in text

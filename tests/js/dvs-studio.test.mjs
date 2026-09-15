@@ -6,9 +6,13 @@ import {
   definitionDocument,
   encodeDefinitionId,
   newDefinition,
+  numericInputColumns,
+  scaleForColumn,
   studioApi,
   studioCollection,
   studioDraftApi,
+  studioRangeApi,
+  updateScaleDefinition,
 } from '../../lmts/dvs/static/dvs.js';
 
 
@@ -21,12 +25,12 @@ test('Studio selects the correct registry collection', () => {
 });
 
 
-test('Studio canonical skeletons use formal DVS contracts', () => {
+test('Studio canonical skeletons use formal typed DVS contracts', () => {
   const template = newDefinition('input-template');
   assert.equal(template.format, 's3d.dvs.input-template');
   assert.equal(template.version, '1.0');
   assert.equal(template.reader, 'json');
-  assert.deepEqual(template.columns, [{ name: 'value', selector: 'value' }]);
+  assert.deepEqual(template.columns, [{ name: 'value', selector: 'value', type: 'number' }]);
 
   const preset = newDefinition('visualization-preset');
   assert.equal(preset.format, 's3d.dvs.visualization-preset');
@@ -64,6 +68,7 @@ test('Studio draft API paths keep validation and preview non-persistent', () => 
     studioDraftApi('visualization-preset', 'preview'),
     '/api/studio/preview/visualization-preset',
   );
+  assert.equal(studioRangeApi(), '/api/studio/range/input-template');
   assert.throws(
     () => studioDraftApi('input-template', 'persist'),
     /Unsupported Studio draft operation/,
@@ -71,6 +76,50 @@ test('Studio draft API paths keep validation and preview non-persistent', () => 
   assert.throws(
     () => studioDraftApi('unknown', 'validate'),
     /Unsupported Studio definition type/,
+  );
+});
+
+
+test('Studio scale tools only expose number columns', () => {
+  const definition = {
+    columns: [
+      { name: 'name', type: 'string' },
+      { name: 'score', type: 'number' },
+      { name: 'passed', type: 'boolean' },
+      { name: 'latency', type: 'number', scale: { low: 10, high: 20, power: 2 } },
+    ],
+  };
+  assert.deepEqual(numericInputColumns(definition).map(column => column.name), ['score', 'latency']);
+  assert.equal(scaleForColumn(definition, 'score'), null);
+  assert.deepEqual(scaleForColumn(definition, 'latency'), { low: 10, high: 20, power: 2 });
+  assert.throws(() => scaleForColumn(definition, 'name'), /no number column/);
+});
+
+
+test('Studio scale editor applies and removes one canonical scale object', () => {
+  const definition = {
+    columns: [
+      { name: 'score', selector: 'score', type: 'number' },
+      { name: 'label', selector: 'label', type: 'string' },
+    ],
+  };
+  const scaled = updateScaleDefinition(definition, 'score', { low: '0.2', high: '5.9', power: '1' });
+  assert.deepEqual(scaled.columns[0].scale, { low: 0.2, high: 5.9, power: 1 });
+  assert.equal(definition.columns[0].scale, undefined);
+
+  const removed = updateScaleDefinition(scaled, 'score', null);
+  assert.equal(removed.columns[0].scale, undefined);
+  assert.throws(
+    () => updateScaleDefinition(definition, 'label', { low: 0, high: 1, power: 1 }),
+    /requires number column/,
+  );
+  assert.throws(
+    () => updateScaleDefinition(definition, 'score', { low: 1, high: 1, power: 1 }),
+    /greater than low/,
+  );
+  assert.throws(
+    () => updateScaleDefinition(definition, 'score', { low: 0, high: 1, power: 0 }),
+    /greater than zero/,
   );
 });
 

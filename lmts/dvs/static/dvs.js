@@ -101,7 +101,7 @@ function newDefinition(kind) {
       reader: 'json',
       rows: 'records[*]',
       columns: [
-        { name: 'value', selector: 'value' },
+        { name: 'value', selector: 'value', type: 'number' },
       ],
     };
   }
@@ -141,6 +141,44 @@ function studioDraftApi(kind, operation) {
   throw new Error(`Unsupported Studio definition type: ${kind}`);
 }
 
+function studioRangeApi() {
+  return '/api/studio/range/input-template';
+}
+
+function numericInputColumns(definition) {
+  if (!definition || !Array.isArray(definition.columns)) return [];
+  return definition.columns.filter(column => column?.type === 'number');
+}
+
+function scaleForColumn(definition, columnName) {
+  const column = numericInputColumns(definition).find(item => item.name === columnName);
+  if (!column) throw new Error(`Input Template has no number column ${columnName}`);
+  return column.scale ? { ...column.scale } : null;
+}
+
+function updateScaleDefinition(definition, columnName, scale) {
+  const result = JSON.parse(JSON.stringify(definition));
+  if (!Array.isArray(result.columns)) throw new Error('Input Template columns must be an array');
+  const column = result.columns.find(item => item?.name === columnName);
+  if (!column) throw new Error(`Input Template has no column ${columnName}`);
+  if (column.type !== 'number') throw new Error(`Input scale requires number column ${columnName}`);
+
+  if (scale == null) {
+    delete column.scale;
+    return result;
+  }
+
+  const low = Number(scale.low);
+  const high = Number(scale.high);
+  const power = Number(scale.power);
+  if (!Number.isFinite(low)) throw new Error('Scale low must be a finite number');
+  if (!Number.isFinite(high)) throw new Error('Scale high must be a finite number');
+  if (!(high > low)) throw new Error('Scale high must be greater than low');
+  if (!Number.isFinite(power) || !(power > 0)) throw new Error('Scale power must be greater than zero');
+  column.scale = { low, high, power };
+  return result;
+}
+
 function encodeDefinitionId(itemId) {
   const value = String(itemId ?? '').trim();
   if (!value) throw new Error('Definition id is required');
@@ -170,7 +208,73 @@ async function main() {
   const studioKind = document.querySelector('#studio-kind');
   const studioDefinition = document.querySelector('#studio-definition');
   const studioEditor = document.querySelector('#studio-editor');
+  const scaleTools = document.querySelector('#studio-scale-tools');
+  const scaleColumn = document.querySelector('#studio-scale-column');
+  const scaleLow = document.querySelector('#studio-scale-low');
+  const scaleHigh = document.querySelector('#studio-scale-high');
+  const scalePower = document.querySelector('#studio-scale-power');
   let renderer = null;
+
+  function refreshScaleFields() {
+    scaleTools.hidden = studioKind.value !== 'input-template';
+    if (scaleTools.hidden) return;
+
+    let definition;
+    try {
+      definition = definitionDocument(studioEditor.value);
+    } catch {
+      scaleColumn.replaceChildren();
+      scaleLow.value = '';
+      scaleHigh.value = '';
+      scalePower.value = '1';
+      return;
+    }
+
+    const columns = numericInputColumns(definition);
+    const previous = scaleColumn.value;
+    scaleColumn.replaceChildren();
+    for (const column of columns) option(scaleColumn, column.name, column.name);
+    if (columns.some(column => column.name === previous)) scaleColumn.value = previous;
+    const selected = scaleColumn.value;
+    if (!selected) {
+      scaleLow.value = '';
+      scaleHigh.value = '';
+      scalePower.value = '1';
+      return;
+    }
+    const scale = scaleForColumn(definition, selected);
+    scaleLow.value = scale?.low ?? '';
+    scaleHigh.value = scale?.high ?? '';
+    scalePower.value = scale?.power ?? 1;
+  }
+
+  function writeScaleToEditor(scale) {
+    const definition = definitionDocument(studioEditor.value);
+    const columnName = scaleColumn.value;
+    if (!columnName) throw new Error('Select a number column');
+    const updated = updateScaleDefinition(definition, columnName, scale);
+    studioEditor.value = JSON.stringify(updated, null, 2);
+    refreshScaleFields();
+    return updated;
+  }
+
+  async function findScaleBound(which) {
+    if (studioKind.value !== 'input-template') throw new Error('Range scan applies only to Input Templates');
+    const definition = definitionDocument(studioEditor.value);
+    const column = scaleColumn.value;
+    if (!column) throw new Error('Select a number column');
+    const payload = await postJson(studioRangeApi(), {
+      definition,
+      source: sourceDocument(),
+      column,
+    });
+    if (which === 'low') scaleLow.value = payload.low;
+    else if (which === 'high') scaleHigh.value = payload.high;
+    else throw new Error(`Unknown range bound ${which}`);
+    document.querySelector('#output').textContent = JSON.stringify(payload, null, 2);
+    setStudioMessage(`Found ${which} for ${column}: ${payload[which]}.`, 'ready');
+    setStatus(`Studio range scan ${column}`, 'ready');
+  }
 
   async function refreshRegistry() {
     const [templatePayload, presetPayload] = await Promise.all([
@@ -197,6 +301,7 @@ async function main() {
     const definitions = studioCollection(studioKind.value, state.templates, state.presets);
     for (const definition of definitions) option(studioDefinition, definition.id, definition.id);
     if (definitions.some(item => item.id === previousStudio)) studioDefinition.value = previousStudio;
+    refreshScaleFields();
   }
 
   function loadStudioSelection() {
@@ -204,6 +309,7 @@ async function main() {
     const selected = definitions.find(item => item.id === studioDefinition.value);
     if (!selected) throw new Error('No registered Studio definition is selected');
     studioEditor.value = JSON.stringify(selected, null, 2);
+    refreshScaleFields();
     setStudioMessage(`Loaded ${selected.id}. Update is validated by the server before persistence.`, 'ready');
   }
 
@@ -216,8 +322,11 @@ async function main() {
     const definitions = studioCollection(studioKind.value, state.templates, state.presets);
     for (const definition of definitions) option(studioDefinition, definition.id, definition.id);
     studioEditor.value = '';
+    refreshScaleFields();
     setStudioMessage('Select Load to inspect an existing definition, or New to start from a canonical skeleton.');
   });
+  studioEditor.addEventListener('input', refreshScaleFields);
+  scaleColumn.addEventListener('change', refreshScaleFields);
 
   document.querySelector('#studio-load').addEventListener('click', () => {
     try {
@@ -231,7 +340,50 @@ async function main() {
     try {
       const definition = newDefinition(studioKind.value);
       studioEditor.value = JSON.stringify(definition, null, 2);
+      refreshScaleFields();
       setStudioMessage('New definition skeleton loaded. Change the id before Create.', 'ready');
+    } catch (error) {
+      setStudioMessage(error.message, 'error');
+    }
+  });
+
+  document.querySelector('#studio-find-low').addEventListener('click', async () => {
+    try {
+      await findScaleBound('low');
+    } catch (error) {
+      setStudioMessage(error.message, 'error');
+      setStatus(error.message, 'error');
+    }
+  });
+
+  document.querySelector('#studio-find-high').addEventListener('click', async () => {
+    try {
+      await findScaleBound('high');
+    } catch (error) {
+      setStudioMessage(error.message, 'error');
+      setStatus(error.message, 'error');
+    }
+  });
+
+  document.querySelector('#studio-apply-scale').addEventListener('click', () => {
+    try {
+      const updated = writeScaleToEditor({
+        low: scaleLow.value,
+        high: scaleHigh.value,
+        power: scalePower.value,
+      });
+      const column = scaleColumn.value;
+      setStudioMessage(`Applied scale.${column} to draft ${updated.id}.`, 'ready');
+    } catch (error) {
+      setStudioMessage(error.message, 'error');
+    }
+  });
+
+  document.querySelector('#studio-remove-scale').addEventListener('click', () => {
+    try {
+      const column = scaleColumn.value;
+      const updated = writeScaleToEditor(null);
+      setStudioMessage(`Removed scale.${column} from draft ${updated.id}.`, 'ready');
     } catch (error) {
       setStudioMessage(error.message, 'error');
     }
@@ -265,7 +417,9 @@ async function main() {
       } else {
         document.querySelector('#output').textContent = JSON.stringify({
           columns: payload.columns,
+          column_types: payload.column_types,
           rows: payload.rows,
+          parameters: payload.parameters,
         }, null, 2);
       }
       setStudioMessage(`Previewed ${definition.id ?? '(unnamed)'} without persistence.`, 'ready');
@@ -288,6 +442,7 @@ async function main() {
         null,
         2,
       );
+      refreshScaleFields();
       setStudioMessage(`Created ${documentValue.id}.`, 'ready');
       setStatus(`Studio created ${documentValue.id}`, 'ready');
     } catch (error) {
@@ -313,6 +468,7 @@ async function main() {
         null,
         2,
       );
+      refreshScaleFields();
       setStudioMessage(`Updated ${selectedId}.`, 'ready');
       setStatus(`Studio updated ${selectedId}`, 'ready');
     } catch (error) {
@@ -394,7 +550,11 @@ export {
   definitionDocument,
   encodeDefinitionId,
   newDefinition,
+  numericInputColumns,
+  scaleForColumn,
   studioApi,
   studioCollection,
   studioDraftApi,
+  studioRangeApi,
+  updateScaleDefinition,
 };

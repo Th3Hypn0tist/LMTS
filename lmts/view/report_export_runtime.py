@@ -3,8 +3,11 @@ from __future__ import annotations
 import curses
 from pathlib import Path
 
+from lmts.core.matrix_store import MatrixRunStore
+from lmts.core.result_export import build_matrix_bundle
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
 from lmts.core.store import RunStore
+from lmts.reporting import project_matrix_bundle
 from lmts.reporting.single import project_run_result
 from lmts.tools.report_export import export_report_json
 from lmts.tools.report_profiles import ReportProfile, load_report_profiles
@@ -29,7 +32,7 @@ class ReportExportController(LMTSViewController):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._next_publish_profile: ReportProfile | None = None
-        self.single_export_pending = False
+        self.completion_export_pending = False
         global _ACTIVE_CONTROLLER
         _ACTIVE_CONTROLLER = self
 
@@ -50,10 +53,9 @@ class ReportExportController(LMTSViewController):
     def _launch(self, targets, tests) -> bool:
         targets = list(targets)
         tests = list(tests)
-        single = len(targets) == 1 and len(tests) == 1
         callback = self._consume_publish_callback()
         started = self._start_run(targets, tests, on_run_completed=callback)
-        self.single_export_pending = bool(started and single and callback is None)
+        self.completion_export_pending = bool(started and len(targets) == 1 and callback is None)
         return started
 
     def run_selected(self, *, on_run_completed=None) -> bool:
@@ -124,24 +126,35 @@ class ReportExportHost(LMTSInteractiveHost):
         controller.configure_next_publish(profile)
         return choice
 
+    def _completed_report(self, controller: ReportExportController) -> tuple[dict[str, object], Path]:
+        result = controller.state.last_result if isinstance(controller.state.last_result, dict) else {}
+
+        single_path = str(result.get('single_run_path') or '').strip()
+        if single_path:
+            evidence_path = Path(single_path)
+            if not evidence_path.is_file():
+                raise FileNotFoundError(f'canonical run result missing: {evidence_path}')
+            run_data = RunStore(controller.results_root).load(evidence_path)
+            return project_run_result(run_data), evidence_path
+
+        matrix_path_text = str(result.get('matrix_path') or '').strip()
+        if not matrix_path_text:
+            raise ValueError('completed test set is missing canonical matrix path')
+        evidence_path = Path(matrix_path_text)
+        if not evidence_path.is_file():
+            raise FileNotFoundError(f'canonical matrix result missing: {evidence_path}')
+        matrix_data = MatrixRunStore(controller.results_root).load(evidence_path)
+        bundle = build_matrix_bundle(matrix_data, results_root=controller.results_root)
+        return project_matrix_bundle(bundle), evidence_path
+
     def _report_export_idle(self, stdscr: curses.window) -> None:
         controller = _ACTIVE_CONTROLLER
-        if controller is None or controller.state.running or not controller.single_export_pending:
+        if controller is None or controller.state.running or not controller.completion_export_pending:
             return
 
-        controller.single_export_pending = False
-        result = controller.state.last_result if isinstance(controller.state.last_result, dict) else {}
-        path_text = str(result.get('single_run_path') or '').strip()
-        if not path_text:
-            return
-        result_path = Path(path_text)
-        if not result_path.is_file():
-            self.message = f'canonical run result missing: {result_path}'
-            return
-
+        controller.completion_export_pending = False
         try:
-            run_data = RunStore(controller.results_root).load(result_path)
-            report = project_run_result(run_data)
+            report, evidence_path = self._completed_report(controller)
         except (OSError, ValueError) as exc:
             self.message = f'report projection failed: {exc}'
             return
@@ -153,7 +166,7 @@ class ReportExportHost(LMTSInteractiveHost):
             0,
         )
         if action is None or action == 2:
-            self.message = f'kept local: {result_path}'
+            self.message = f'kept local: {evidence_path}'
             return
 
         if action == 0:

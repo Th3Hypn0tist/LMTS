@@ -26,6 +26,7 @@ from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
 from .output_dialog import choose_output_target, choose_report_profile, manage_ftp_profiles, manage_report_profiles
 from .projector import LMTSViewProjector
+from .reference_progress import format_reference_progress
 from .registries import TAB_REGISTRY, build_shortcut_registry
 from .results import cell_verdict, format_run_result, matrix_label
 from .runtime_target_dialog import manage_runtime_targets
@@ -483,23 +484,26 @@ def run() -> None:
 
         def profile_reference(domain: str) -> None:
             profile_console.clear()
-            profile_console.append(f'{domain.upper()} reference benchmark started')
-            host.draw(stdscr)
+
+            def on_progress(event) -> None:
+                profile_console.append(format_reference_progress(event))
+                host.draw(stdscr)
+
             try:
-                result = benchmark_system_reference(domain, controller.profile_path)
+                result = benchmark_system_reference(domain, controller.profile_path, progress=on_progress)
             except NotImplementedError as exc:
                 profile_console.append(f'{domain.upper()} unavailable: {exc}')
+                host.draw(stdscr)
                 set_message(str(exc))
                 return
             except (OSError, ValueError) as exc:
                 profile_console.append(f'{domain.upper()} failed: {exc}')
+                host.draw(stdscr)
                 set_message(f'{domain.upper()} reference benchmark failed: {exc}')
                 return
             tests = result.get('tests') if isinstance(result.get('tests'), list) else []
-            for test in tests:
-                if isinstance(test, dict):
-                    profile_console.append(f"PASS {test.get('label') or test.get('benchmark_id') or 'test'}")
-            profile_console.append(f'{domain.upper()} reference suite completed: {len(tests)} test(s)')
+            profile_console.append(f'{domain.upper()} reference suite saved: {len(tests)} test(s)')
+            host.draw(stdscr)
             set_message(f'{domain.upper()} reference suite completed: {len(tests)} test(s)')
 
         def edit_output_folder(_stdscr: curses.window) -> None:
@@ -645,23 +649,6 @@ def run() -> None:
             else:
                 open_tab('cw_bench')
 
-        def _start_run_scope(*, all_tests: bool, all_models: bool) -> None:
-            if controller.state.running:
-                set_message('test matrix already running')
-                return
-            original_tests = set(controller.state.selected_test_refs)
-            original_targets = set(controller.state.selected_target_ids)
-            if all_tests:
-                controller.state.selected_test_refs = {test_ref(test) for test in controller.state.tests}
-            if all_models:
-                controller.state.selected_target_ids = {target.id for target in controller.state.targets if target.kind == 'model'}
-            try:
-                controller.run_selected()
-            finally:
-                controller.state.selected_test_refs = original_tests
-                controller.state.selected_target_ids = original_targets
-            set_message(controller.state.message)
-
         def run_dialog(_stdscr: curses.window) -> None:
             if controller.state.running:
                 chosen = host.choose(stdscr, 'Run', ['Cancel run'])
@@ -706,11 +693,12 @@ def run() -> None:
             if chosen is None:
                 return
             if chosen == 0:
-                _start_run_scope(all_tests=False, all_models=False)
+                controller.run_selected()
             elif chosen == 1:
-                _start_run_scope(all_tests=True, all_models=False)
+                controller.run_all_tests()
             else:
-                _start_run_scope(all_tests=True, all_models=True)
+                controller.run_all_tests_to_all_models()
+            set_message(controller.state.message)
 
         def output_dialog(_stdscr: curses.window) -> None:
             options = ['Historical results', 'Compare targets', 'Publish report', 'Export errors']

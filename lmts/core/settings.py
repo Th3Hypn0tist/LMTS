@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
-SETTINGS_SCHEMA_VERSION = 2
+SETTINGS_SCHEMA_VERSION = 3
 DEFAULT_SETTINGS_PATH = Path('.lmts/settings.json')
 DEFAULT_OUTPUT_FOLDER = 'exports'
 
@@ -31,10 +31,27 @@ class MySQLSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DVSSettings:
+    host: str = '127.0.0.1'
+    port: int = 8775
+    s3d_root: str = '../S3D'
+    studio_root: str = '.lmts/dvs'
+
+    def __post_init__(self) -> None:
+        if not str(self.host).strip():
+            raise ValueError('DVS host must not be empty')
+        if isinstance(self.port, bool) or not isinstance(self.port, int) or not 1 <= self.port <= 65535:
+            raise ValueError('DVS port must be an integer between 1 and 65535')
+        if not str(self.studio_root).strip():
+            raise ValueError('DVS Studio root must not be empty')
+
+
+@dataclass(frozen=True, slots=True)
 class LMTSSettings:
     schema_version: int = SETTINGS_SCHEMA_VERSION
     output_folder: str = DEFAULT_OUTPUT_FOLDER
     mysql: MySQLSettings = field(default_factory=MySQLSettings)
+    dvs: DVSSettings = field(default_factory=DVSSettings)
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -57,6 +74,24 @@ def _mysql_from_payload(value: object) -> MySQLSettings:
     )
 
 
+def _dvs_from_payload(value: object) -> DVSSettings:
+    if not isinstance(value, dict):
+        return DVSSettings()
+    port = value.get('port', 8775)
+    if isinstance(port, bool):
+        raise ValueError('DVS port must be an integer')
+    try:
+        parsed_port = int(port)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('DVS port must be an integer') from exc
+    return DVSSettings(
+        host=str(value.get('host') or '127.0.0.1').strip(),
+        port=parsed_port,
+        s3d_root=str(value.get('s3d_root') if value.get('s3d_root') is not None else '../S3D').strip(),
+        studio_root=str(value.get('studio_root') or '.lmts/dvs').strip(),
+    )
+
+
 def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
     path = path.expanduser()
     if not path.is_file():
@@ -71,16 +106,21 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
     schema_version = payload.get('schema_version')
     if schema_version == 1:
         return LMTSSettings(output_folder=_normalise_output_folder(payload.get('output_folder')))
-    if schema_version != SETTINGS_SCHEMA_VERSION:
+    if schema_version not in {2, SETTINGS_SCHEMA_VERSION}:
         return LMTSSettings()
 
     try:
         mysql = _mysql_from_payload(payload.get('mysql'))
     except ValueError:
         mysql = MySQLSettings()
+    try:
+        dvs = _dvs_from_payload(payload.get('dvs')) if schema_version == SETTINGS_SCHEMA_VERSION else DVSSettings()
+    except ValueError:
+        dvs = DVSSettings()
     return LMTSSettings(
         output_folder=_normalise_output_folder(payload.get('output_folder')),
         mysql=mysql,
+        dvs=dvs,
     )
 
 

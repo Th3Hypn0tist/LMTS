@@ -206,9 +206,9 @@ def _benchmark(test_ref: str, target_ids: list[str], results: Path, workspaces: 
 
 
 def _tui() -> int:
-    from lmts.view.tui import run
+    from lmts.view.report_export_runtime import run_tui
 
-    run()
+    run_tui()
     return 0
 
 

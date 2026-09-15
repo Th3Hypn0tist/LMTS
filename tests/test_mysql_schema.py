@@ -54,6 +54,21 @@ def test_install_mysql_schema_uses_settings_and_password_env(tmp_path: Path, mon
     assert seen['stdin'] == b'SELECT 1;\n'
 
 
+def test_install_mysql_schema_rejects_empty_password_before_client_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = False
+
+    def fake_which(_name):
+        nonlocal called
+        called = True
+        return '/usr/bin/mariadb'
+
+    monkeypatch.setattr(mysql_schema.shutil, 'which', fake_which)
+    settings = MySQLSettings(password='')
+    with pytest.raises(ValueError, match='MySQL password must not be empty'):
+        mysql_schema.install_mysql_schema(settings)
+    assert called is False
+
+
 def test_install_mysql_schema_rejects_missing_client(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mysql_schema.shutil, 'which', lambda _name: None)
     with pytest.raises(RuntimeError, match='mariadb/mysql client is required'):
@@ -72,4 +87,22 @@ def test_install_mysql_schema_surfaces_client_error(tmp_path: Path, monkeypatch:
     monkeypatch.setattr(mysql_schema.subprocess, 'run', lambda *args, **kwargs: Completed())
 
     with pytest.raises(RuntimeError, match='permission denied'):
+        mysql_schema.install_mysql_schema(MySQLSettings(), schema_path=schema)
+
+
+def test_install_mysql_schema_prefers_real_error_over_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    schema = tmp_path / 'schema.sql'
+    schema.write_text('SELECT 1;\n', encoding='utf-8')
+
+    class Completed:
+        returncode = 1
+        stderr = (
+            b'WARNING: option --ssl-verify-server-cert is disabled because of an insecure passwordless login.\n'
+            b'ERROR 1045 (28000): Access denied for user\n'
+        )
+
+    monkeypatch.setattr(mysql_schema.shutil, 'which', lambda _name: '/usr/bin/mariadb')
+    monkeypatch.setattr(mysql_schema.subprocess, 'run', lambda *args, **kwargs: Completed())
+
+    with pytest.raises(RuntimeError, match='Access denied for user'):
         mysql_schema.install_mysql_schema(MySQLSettings(), schema_path=schema)

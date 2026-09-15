@@ -7,6 +7,7 @@ import pytest
 
 from lmts.dvs.registry import DVSRegistry
 from lmts.dvs.studio_preview import (
+    find_input_template_range,
     preview_input_template,
     preview_visualization_preset,
     validate_input_template,
@@ -23,8 +24,8 @@ def _template(item_id: str = 'table') -> dict:
         'reader': 'json',
         'rows': 'records[*]',
         'columns': [
-            {'name': 'kind', 'selector': 'kind'},
-            {'name': 'value', 'selector': 'value'},
+            {'name': 'kind', 'selector': 'kind', 'type': 'string'},
+            {'name': 'value', 'selector': 'value', 'type': 'number', 'nullable': True},
         ],
     }
 
@@ -41,7 +42,11 @@ def _preset(item_id: str = 'view', template_id: str = 'table') -> dict:
             'primitive': 'box',
             'bindings': {
                 'position.x': {'column': 'kind', 'interpretation': 'categorical-index'},
-                'scale.y': {'column': 'value', 'interpretation': 'number'},
+                'scale.y': {
+                    'column': 'value',
+                    'interpretation': 'number-or-null',
+                    'transform': {'null': 'not-rendered'},
+                },
             },
         }],
     }
@@ -58,21 +63,24 @@ def test_validate_input_template_is_non_persistent() -> None:
     result = validate_input_template(_template('draft'))
     assert result['id'] == 'draft'
     assert [column['name'] for column in result['columns']] == ['kind', 'value']
+    assert [column['type'] for column in result['columns']] == ['string', 'number']
 
 
-def test_preview_input_template_projects_draft_definition() -> None:
+def test_preview_input_template_projects_typed_draft_definition() -> None:
     result = preview_input_template({
         'definition': _template('draft'),
         'source': {
             'records': [
-                {'kind': 'a', 'value': 1},
+                {'kind': 'a', 'value': '1.5'},
                 {'kind': 'b', 'value': None},
             ],
         },
     })
     assert result['input_template']['id'] == 'draft'
     assert result['columns'] == ['kind', 'value']
-    assert result['rows'] == [['a', '1'], ['b', 'null']]
+    assert result['column_types'] == ['string', 'number']
+    assert result['rows'] == [['a', 1.5], ['b', None]]
+    assert result['parameters'] == {}
 
 
 def test_preview_input_template_rejects_missing_source_field() -> None:
@@ -81,6 +89,28 @@ def test_preview_input_template_rejects_missing_source_field() -> None:
             'definition': _template('draft'),
             'source': {'records': [{'kind': 'a'}]},
         })
+
+
+def test_find_input_template_range_uses_typed_values_before_scale() -> None:
+    definition = _template('draft')
+    definition['columns'][1]['scale'] = {'low': 0, 'high': 100, 'power': 2}
+    result = find_input_template_range({
+        'definition': definition,
+        'source': {
+            'records': [
+                {'kind': 'a', 'value': '5.5'},
+                {'kind': 'b', 'value': None},
+                {'kind': 'c', 'value': 12},
+            ],
+        },
+        'column': 'value',
+    })
+    assert result == {
+        'input_template_id': 'draft',
+        'column': 'value',
+        'low': 5.5,
+        'high': 12.0,
+    }
 
 
 def test_validate_visualization_preset_uses_registered_template(tmp_path: Path) -> None:

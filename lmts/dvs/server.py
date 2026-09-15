@@ -12,6 +12,7 @@ from .registry import DVSRegistry
 from .runtime import project_visualization
 from .studio import DVSStudioStore
 from .studio_preview import (
+    find_input_template_range,
     preview_input_template,
     preview_visualization_preset,
     validate_input_template,
@@ -150,6 +151,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({'ok': True, 'input_template': validate_input_template(self._body())})
             if path == '/api/studio/preview/input-template':
                 return self._json({'ok': True, **preview_input_template(self._body())})
+            if path == '/api/studio/range/input-template':
+                return self._json({'ok': True, **find_input_template_range(self._body())})
             if path == '/api/studio/validate/visualization-preset':
                 return self._json({
                     'ok': True,
@@ -173,7 +176,9 @@ class Handler(BaseHTTPRequestHandler):
                     'ok': True,
                     'input_template_id': template.id,
                     'columns': list(extracted.columns),
+                    'column_types': list(extracted.column_types),
                     'rows': [list(row) for row in extracted.rows],
+                    'parameters': dict(extracted.parameters),
                 })
             if path == '/api/visualize':
                 payload = self._body()

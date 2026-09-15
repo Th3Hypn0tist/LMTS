@@ -14,15 +14,8 @@ DB_NAME="lmts"
 DB_USER="lmts"
 DB_HOST="localhost"
 MYSQL_DATADIR="/home/lmts/mysql"
-WWW_ROOT="/home/www"
-LMTS_WEB="${WWW_ROOT}/lmts"
-LMTS_CONFIG="${LMTS_WEB}/config"
-AIGM_ROOT="${WWW_ROOT}/aigm.fi"
-AIGM_PUBLIC="${AIGM_ROOT}/public"
-APACHE_SITE="/etc/apache2/sites-available/000-aigm.conf"
 MYSQL_CONFIG="/etc/mysql/mariadb.conf.d/99-lmts-datadir.cnf"
 MARIADB_OVERRIDE="/etc/systemd/system/mariadb.service.d/lmts-home.conf"
-APACHE_OVERRIDE="/etc/systemd/system/apache2.service.d/lmts-home.conf"
 APPARMOR_LOCAL="/etc/apparmor.d/local/mariadbd"
 SECRETS_DIR="/etc/lmts"
 SECRETS_FILE="${SECRETS_DIR}/bootstrap.env"
@@ -99,13 +92,13 @@ service_enabled() {
 
 echo "============================================================"
 echo " LMTS privileged server bootstrap"
-echo " converge-to-state mode"
+echo " environment + local database only"
 echo "============================================================"
 
 # ------------------------------------------------------------
-# 1. Packages: install only what is missing.
+# 1. Privileged packages.
 # ------------------------------------------------------------
-echo "[1/9] Checking privileged server packages..."
+echo "[1/8] Checking privileged server packages..."
 PACKAGES=(
     apache2
     mariadb-server
@@ -134,17 +127,15 @@ else
 fi
 
 # ------------------------------------------------------------
-# 2. Directories and credentials.
+# 2. Bootstrap credentials and privileged directories.
 # ------------------------------------------------------------
-echo "[2/9] Checking directories and bootstrap credentials..."
-for directory in "${MYSQL_DATADIR}" "${LMTS_WEB}" "${LMTS_CONFIG}" "${AIGM_PUBLIC}" "${SECRETS_DIR}"; do
+echo "[2/8] Checking bootstrap credentials and directories..."
+for directory in "${MYSQL_DATADIR}" "${SECRETS_DIR}"; do
     if [[ ! -d "${directory}" ]]; then
         mkdir -p "${directory}"
         changed "created ${directory}"
     fi
 done
-chmod a+x /home
-chmod 755 "${WWW_ROOT}" "${LMTS_WEB}" "${AIGM_ROOT}" "${AIGM_PUBLIC}"
 chown root:root /home/lmts
 chmod 755 /home/lmts
 
@@ -168,9 +159,9 @@ fi
 : "${PUBLISH_KEY:?missing PUBLISH_KEY in ${SECRETS_FILE}}"
 
 # ------------------------------------------------------------
-# 3. MariaDB datadir and service policy.
+# 3. MariaDB datadir and policy.
 # ------------------------------------------------------------
-echo "[3/9] Checking MariaDB data directory and service policy..."
+echo "[3/8] Checking MariaDB data directory and policy..."
 MARIADB_RESTART_REQUIRED=0
 SYSTEMD_RELOAD_REQUIRED=0
 APPARMOR_RELOAD_REQUIRED=0
@@ -219,17 +210,6 @@ else
     unchanged "MariaDB systemd override"
 fi
 
-if write_if_changed "${APACHE_OVERRIDE}" 644 root root <<'EOF'
-[Service]
-ProtectHome=false
-EOF
-then
-    SYSTEMD_RELOAD_REQUIRED=1
-    changed "Apache systemd override"
-else
-    unchanged "Apache systemd override"
-fi
-
 if [[ -f /etc/apparmor.d/mariadbd ]]; then
     mkdir -p /etc/apparmor.d/local
     touch "${APPARMOR_LOCAL}"
@@ -256,9 +236,9 @@ if (( APPARMOR_RELOAD_REQUIRED )) && command -v apparmor_parser >/dev/null 2>&1;
 fi
 
 # ------------------------------------------------------------
-# 4. MariaDB lifecycle: restart only when policy changed.
+# 4. MariaDB lifecycle.
 # ------------------------------------------------------------
-echo "[4/9] Converging MariaDB service..."
+echo "[4/8] Converging MariaDB service..."
 if ! service_enabled mariadb; then
     systemctl enable mariadb
     changed "enabled MariaDB service"
@@ -301,7 +281,7 @@ fi
 # ------------------------------------------------------------
 # 5. Database, runtime account and least-privilege grants.
 # ------------------------------------------------------------
-echo "[5/9] Converging LMTS database and runtime account..."
+echo "[5/8] Converging LMTS database and runtime account..."
 DB_EXISTS="$(mariadb --protocol=socket -Nse "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME='${DB_NAME}';")"
 if [[ "${DB_EXISTS}" != "1" ]]; then
     mariadb --protocol=socket -e "CREATE DATABASE \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
@@ -337,9 +317,9 @@ else
 fi
 
 # ------------------------------------------------------------
-# 6. Canonical schema: apply only when behind.
+# 6. Canonical schema.
 # ------------------------------------------------------------
-echo "[6/9] Checking LMTS schema version..."
+echo "[6/8] Checking LMTS schema version..."
 HAS_VERSION_TABLE="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='${DB_NAME}' AND TABLE_NAME='lmts_schema_version';")"
 CURRENT_SCHEMA_VERSION=0
 if [[ "${HAS_VERSION_TABLE}" == "1" ]]; then
@@ -357,26 +337,9 @@ else
 fi
 
 # ------------------------------------------------------------
-# 7. Runtime configuration and user settings.
+# 7. LMTS user settings. No web root or server path is owned here.
 # ------------------------------------------------------------
-echo "[7/9] Converging runtime configuration..."
-if write_if_changed "${LMTS_CONFIG}/db.php" 640 root www-data <<PHP
-<?php
-
-return [
-    'dsn' => 'mysql:host=${DB_HOST};dbname=${DB_NAME};charset=utf8mb4',
-    'user' => '${DB_USER}',
-    'password' => '${DB_PASSWORD}',
-    'publish_key' => '${PUBLISH_KEY}',
-];
-PHP
-then
-    changed "runtime database config"
-else
-    unchanged "runtime database config"
-fi
-chmod 750 "${LMTS_CONFIG}"
-
+echo "[7/8] Converging LMTS user settings..."
 mkdir -p "${SETTINGS_DIR}"
 SETTINGS_CHANGED="$(DB_HOST="${DB_HOST}" DB_NAME="${DB_NAME}" DB_USER="${DB_USER}" DB_PASSWORD="${DB_PASSWORD}" PUBLISH_KEY="${PUBLISH_KEY}" SETTINGS_FILE="${SETTINGS_FILE}" python3 <<'PY'
 import json
@@ -419,81 +382,22 @@ else
 fi
 
 # ------------------------------------------------------------
-# 8. Apache: restart only when configuration changed.
+# 8. Apache/PHP environment and final verification.
+# LMTS does not own any vhost, domain, alias or DocumentRoot here.
 # ------------------------------------------------------------
-echo "[8/9] Converging Apache host..."
-APACHE_RESTART_REQUIRED=0
-if write_if_changed "${APACHE_SITE}" 644 root root <<EOF
-<VirtualHost *:80>
-    ServerName aigm.fi
-    ServerAlias www.aigm.fi
-    DocumentRoot ${AIGM_PUBLIC}
-
-    <Directory ${AIGM_PUBLIC}>
-        Options FollowSymLinks
-        AllowOverride None
-        Require all granted
-        DirectoryIndex index.html index.php
-    </Directory>
-
-    RedirectMatch 301 ^/benchmark$ /benchmark/
-    Alias /benchmark/ ${LMTS_WEB}/
-    <Directory ${LMTS_WEB}>
-        Options FollowSymLinks
-        AllowOverride None
-        Require all granted
-        DirectoryIndex index.html index.php
-    </Directory>
-
-    <Directory ${LMTS_CONFIG}>
-        Require all denied
-    </Directory>
-
-    ErrorLog \${APACHE_LOG_DIR}/aigm-error.log
-    CustomLog \${APACHE_LOG_DIR}/aigm-access.log combined
-</VirtualHost>
-EOF
-then
-    APACHE_RESTART_REQUIRED=1
-    changed "Apache site configuration"
-else
-    unchanged "Apache site configuration"
-fi
-
-if [[ -e /etc/apache2/sites-enabled/000-default.conf ]]; then
-    a2dissite 000-default.conf >/dev/null
-    APACHE_RESTART_REQUIRED=1
-    changed "disabled Apache default site"
-fi
-if [[ ! -e /etc/apache2/sites-enabled/000-aigm.conf ]]; then
-    a2ensite 000-aigm.conf >/dev/null
-    APACHE_RESTART_REQUIRED=1
-    changed "enabled LMTS Apache site"
-fi
+echo "[8/8] Verifying server environment..."
 apache2ctl configtest
 if ! service_enabled apache2; then
     systemctl enable apache2
     changed "enabled Apache service"
 fi
 if service_active apache2; then
-    if (( APACHE_RESTART_REQUIRED || SYSTEMD_RELOAD_REQUIRED )); then
-        systemctl restart apache2
-        restarted "Apache"
-    else
-        unchanged "Apache service already active"
-    fi
+    unchanged "Apache service already active"
 else
     systemctl start apache2
     restarted "Apache started"
 fi
 
-setfacl -R -m "u:${CALLER_USER}:rwX" "${LMTS_WEB}"
-find "${LMTS_WEB}" -type d -exec setfacl -m "d:u:${CALLER_USER}:rwx" {} \;
-
-# ------------------------------------------------------------
-# 9. Verification and summary.
-# ------------------------------------------------------------
-echo "[9/9] Verifying converged state..."
 VERIFIED_SCHEMA="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT schema_version FROM lmts_schema_version WHERE component='result_server';")"
 if [[ "${VERIFIED_SCHEMA}" != "${SCHEMA_VERSION}" ]]; then
     echo "ERROR: expected result_server schema v${SCHEMA_VERSION}, found v${VERIFIED_SCHEMA:-none}."
@@ -513,7 +417,6 @@ User     : ${DB_USER}
 Host     : ${DB_HOST}
 Schema   : v${SCHEMA_VERSION}
 Settings : ${SETTINGS_FILE}
-Web root : ${LMTS_WEB}
 
 Convergence summary:
   installed : ${INSTALLED}
@@ -524,9 +427,9 @@ Convergence summary:
 Secrets remain in:
   ${SECRETS_FILE}
   ${SETTINGS_FILE}
-  ${LMTS_CONFIG}/db.php
 
 Secrets are not printed to stdout.
-A second run checks the current state and only applies necessary changes.
+No domain, virtual host, alias, DocumentRoot or web deployment path is configured by this script.
+Deploy the LMTS web package from the TUI to any web-visible directory you choose.
 For an existing local or remote database, use TUI -> MySQL -> Install schema instead.
 EOF

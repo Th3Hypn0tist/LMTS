@@ -49,6 +49,45 @@
       </section>
     </section>
 
+    <section class="panel studio-panel">
+      <div class="studio-head">
+        <div>
+          <h2>Studio</h2>
+          <p class="hint">Author validated Input Templates and Visualization Presets. System definitions are read-only.</p>
+        </div>
+        <div id="studio-root" class="studio-root"></div>
+      </div>
+
+      <div class="studio-grid">
+        <div class="studio-controls">
+          <label>
+            Definition type
+            <select id="studio-kind">
+              <option value="input-template">Input Template</option>
+              <option value="visualization-preset">Visualization Preset</option>
+            </select>
+          </label>
+          <label>
+            Registered definition
+            <select id="studio-definition"></select>
+          </label>
+          <div class="actions wrap">
+            <button id="studio-load" type="button">Load</button>
+            <button id="studio-new" type="button">New</button>
+            <button id="studio-create" type="button">Create</button>
+            <button id="studio-update" type="button">Update</button>
+            <button id="studio-refresh" type="button">Refresh registry</button>
+          </div>
+          <p id="studio-message" class="hint">Create and Update are separate operations. The server validates every definition before persistence.</p>
+        </div>
+
+        <label class="studio-editor-label">
+          Definition JSON
+          <textarea id="studio-editor" class="studio-editor" spellcheck="false"></textarea>
+        </label>
+      </div>
+    </section>
+
     <section class="panel">
       <h2>Projection / Visual Plan</h2>
       <pre id="output">No output.</pre>

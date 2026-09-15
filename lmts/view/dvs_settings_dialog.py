@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 from lmts.core.settings import DVSSettings
 from lmts.lib.view import choose_with_preview
 from lmts.tools.dvs_service import DVSServiceStatus, dvs_status, restart_dvs, start_dvs, stop_dvs
+from lmts.tools.s3d_repo import sync_s3d_repository
 
 
 def _single_line(host, stdscr, title: str, *, initial: str = '', allow_empty: bool = False) -> str | None:
@@ -38,7 +40,7 @@ def status_lines(settings: DVSSettings, status: DVSServiceStatus) -> tuple[str, 
 def manage_dvs(host, stdscr, current: DVSSettings) -> tuple[DVSSettings, DVSServiceStatus, str]:
     settings = current
     status = dvs_status(settings)
-    options = ['Refresh status', 'Start', 'Stop', 'Restart', 'Edit configuration']
+    options = ['Refresh status', 'Start', 'Stop', 'Restart', 'Fetch / Update S3D', 'Edit configuration']
 
     def preview(_index: int) -> tuple[str, ...]:
         return status_lines(settings, status)
@@ -74,6 +76,19 @@ def manage_dvs(host, stdscr, current: DVSSettings) -> tuple[DVSSettings, DVSServ
         except RuntimeError as exc:
             status = dvs_status(settings)
             return settings, status, f'DVS restart failed: {exc}'
+
+    if chosen == 4:
+        if not settings.s3d_root.strip():
+            return settings, status, 'S3D root is not configured'
+        if status.state in {'running', 'starting'}:
+            return settings, status, 'stop DVS before updating S3D'
+        target = Path(settings.s3d_root).expanduser().resolve()
+        try:
+            result = sync_s3d_repository(target)
+        except RuntimeError as exc:
+            return settings, status, f'S3D fetch failed: {exc}'
+        status = dvs_status(settings)
+        return settings, status, f'S3D {result}: {target}'
 
     if status.state in {'running', 'starting'}:
         return settings, status, 'stop DVS before changing its configuration'

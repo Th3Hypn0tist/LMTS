@@ -11,7 +11,19 @@ from lmts.core.settings import MySQLSettings
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / 'install' / 'schema_v1.sql'
 
 
+def _client_error(stderr: bytes, returncode: int) -> str:
+    text = stderr.decode('utf-8', errors='replace').strip()
+    if not text:
+        return f'MySQL schema install failed with exit code {returncode}'
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    non_warnings = [line for line in lines if not line.casefold().startswith('warning:')]
+    return (non_warnings or lines)[-1]
+
+
 def install_mysql_schema(mysql: MySQLSettings, *, schema_path: Path = SCHEMA_PATH) -> None:
+    if not mysql.password:
+        raise ValueError('MySQL password must not be empty for schema installation')
+
     client = shutil.which('mariadb') or shutil.which('mysql')
     if client is None:
         raise RuntimeError('mariadb/mysql client is required to install the LMTS schema')
@@ -43,5 +55,4 @@ def install_mysql_schema(mysql: MySQLSettings, *, schema_path: Path = SCHEMA_PAT
         raise RuntimeError(f'cannot run MySQL client: {exc}') from exc
 
     if completed.returncode != 0:
-        error = completed.stderr.decode('utf-8', errors='replace').strip()
-        raise RuntimeError(error or f'MySQL schema install failed with exit code {completed.returncode}')
+        raise RuntimeError(_client_error(completed.stderr, completed.returncode))

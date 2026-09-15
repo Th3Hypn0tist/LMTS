@@ -23,7 +23,7 @@ def _template(item_id: str, *, column: str = 'value') -> dict:
         'source_format': 'example/1.0',
         'reader': 'json',
         'rows': 'records[*]',
-        'columns': [{'name': column, 'selector': column}],
+        'columns': [{'name': column, 'selector': column, 'type': 'number', 'nullable': True}],
     }
 
 
@@ -38,7 +38,11 @@ def _preset(item_id: str, template_id: str, *, column: str = 'value') -> dict:
             'id': 'root',
             'primitive': 'box',
             'bindings': {
-                'scale.y': {'column': column, 'interpretation': 'number'},
+                'scale.y': {
+                    'column': column,
+                    'interpretation': 'number-or-null',
+                    'transform': {'null': 'not-rendered'},
+                },
             },
         }],
     }
@@ -116,7 +120,12 @@ def test_studio_http_create_and_update_template(studio_server) -> None:
         updated,
     )
     assert status == 200
-    assert body['input_template']['columns'] == [{'name': 'score', 'selector': 'score'}]
+    assert body['input_template']['columns'] == [{
+        'name': 'score',
+        'selector': 'score',
+        'type': 'number',
+        'nullable': True,
+    }]
     assert [column.name for column in registry.templates.get('user/template').columns] == ['score']
 
 
@@ -131,7 +140,11 @@ def test_studio_http_create_and_update_preset(studio_server) -> None:
     assert body['visualization_preset']['id'] == 'view'
 
     payload['generations'][0]['bindings'] = {
-        'position.y': {'column': 'value', 'interpretation': 'number'},
+        'position.y': {
+            'column': 'value',
+            'interpretation': 'number-or-null',
+            'transform': {'null': 'not-rendered'},
+        },
     }
     status, body = _request(
         base_url,
@@ -216,7 +229,7 @@ def test_studio_http_validates_draft_template_without_persistence(studio_server)
     assert not registry.templates.contains('draft')
 
 
-def test_studio_http_previews_draft_template_against_source(studio_server) -> None:
+def test_studio_http_previews_typed_draft_template_against_source(studio_server) -> None:
     base_url, registry = studio_server
     status, body = _request(
         base_url,
@@ -224,12 +237,35 @@ def test_studio_http_previews_draft_template_against_source(studio_server) -> No
         '/api/studio/preview/input-template',
         {
             'definition': _template('draft'),
-            'source': {'records': [{'value': 5}, {'value': None}]},
+            'source': {'records': [{'value': '5.5'}, {'value': None}]},
         },
     )
     assert status == 200
     assert body['columns'] == ['value']
-    assert body['rows'] == [['5'], ['null']]
+    assert body['column_types'] == ['number']
+    assert body['rows'] == [[5.5], [None]]
+    assert body['parameters'] == {}
+    assert not registry.templates.contains('draft')
+
+
+def test_studio_http_finds_typed_range_before_scaling(studio_server) -> None:
+    base_url, registry = studio_server
+    definition = _template('draft')
+    definition['columns'][0]['scale'] = {'low': 0, 'high': 100, 'power': 2}
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/studio/range/input-template',
+        {
+            'definition': definition,
+            'source': {'records': [{'value': '1.5'}, {'value': None}, {'value': 8}]},
+            'column': 'value',
+        },
+    )
+    assert status == 200
+    assert body['column'] == 'value'
+    assert body['low'] == 1.5
+    assert body['high'] == 8.0
     assert not registry.templates.contains('draft')
 
 

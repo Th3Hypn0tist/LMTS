@@ -226,6 +226,13 @@ def run() -> None:
             del lines[0]
         return tuple(lines)
 
+    def live_run_panes(main_lines) -> tuple[LayoutPane, ...]:
+        return (
+            LayoutPane(1, 'Main', main_lines, primary=True),
+            LayoutPane(2, 'Results', benchmark_results_lines, title='Results', auto_hide_empty=True),
+            LayoutPane(3, 'Console', controller.response_monitor.lines, title='Console', auto_hide_empty=True, follow_tail=True),
+        )
+
     def layout_panes() -> tuple[LayoutPane, ...]:
         tab = current_tab()
         if tab == 'profile':
@@ -234,11 +241,11 @@ def run() -> None:
                 LayoutPane(2, 'Console', lambda: tuple(profile_console), title='Console', auto_hide_empty=True, follow_tail=True),
             )
         if tab == 'benchmark':
-            return (
-                LayoutPane(1, 'Main', lambda: _benchmark_lines(projector), primary=True),
-                LayoutPane(2, 'Results', benchmark_results_lines, title='Results', auto_hide_empty=True),
-                LayoutPane(3, 'Console', controller.response_monitor.lines, title='Console', auto_hide_empty=True, follow_tail=True),
-            )
+            return live_run_panes(lambda: _benchmark_lines(projector))
+        if tab == 'deep':
+            return live_run_panes(deep_lines)
+        if tab == 'cw_bench':
+            return live_run_panes(cw_bench_page.lines)
         return (LayoutPane(1, 'Main', render_lines, primary=True),)
 
     def app(stdscr: curses.window) -> None:
@@ -279,10 +286,6 @@ def run() -> None:
                 open_tab('benchmark')
                 return
             open_tab(parent.id)
-
-        def show_progress() -> None:
-            host.progress_dialog(stdscr, 'Test progress', controller.state.progress_lines, lambda: not controller.state.running, cancel=controller.cancel)
-            set_message(controller.state.message)
 
         def select_targets(_stdscr: curses.window) -> None:
             if controller.state.running:
@@ -353,9 +356,7 @@ def run() -> None:
             if not controller.set_suite_level('deep'):
                 set_message(controller.state.message)
                 return
-            controller.select_all_tests()
-            if controller.run_selected():
-                show_progress()
+            controller.run_all_tests()
             set_message(controller.state.message)
 
         def choose_matrix_result(title: str, predicate=None):
@@ -470,8 +471,7 @@ def run() -> None:
                 set_message(f'report publish failed: {exc}')
 
         def run_cw_bench(_stdscr: curses.window) -> None:
-            if cw_bench_page.run(host):
-                show_progress()
+            cw_bench_page.run(host)
             set_message(controller.state.message)
 
         def profile_system(_stdscr: curses.window) -> None:

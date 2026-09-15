@@ -18,7 +18,7 @@ def _write_template(root: Path, item_id: str, *, source_format: str = 'example/1
         'source_format': source_format,
         'reader': 'json',
         'rows': 'records[*]',
-        'columns': [{'name': 'value', 'selector': 'value'}],
+        'columns': [{'name': 'value', 'selector': 'value', 'type': 'number'}],
     }), encoding='utf-8')
     return path.resolve()
 

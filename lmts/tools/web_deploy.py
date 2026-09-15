@@ -189,7 +189,7 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
-$config = require dirname(__DIR__, 2) . '/config/db.php';
+$config = require dirname(__DIR__) . '/config/db.php';
 require_once dirname(__DIR__) . '/lib/report_contract.php';
 
 function fail_response(int $status, string $message): never {
@@ -301,7 +301,7 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
-$config = require dirname(__DIR__, 2) . '/config/db.php';
+$config = require dirname(__DIR__) . '/config/db.php';
 
 try {
     $pdo = new PDO($config['dsn'], $config['user'], $config['password'], [
@@ -327,13 +327,13 @@ def web_root_files() -> dict[str, str]:
     db_config = (package_root / 'config' / 'db.php').read_text(encoding='utf-8')
     report_contract = (package_root / 'reporting' / REPORT_CONTRACT_NAME).read_text(encoding='utf-8')
     return {
-        'public/index.html': INDEX_HTML,
-        'public/app.js': APP_JS,
-        'public/assets/lmts.css': CSS,
-        'public/api/report.php': REPORT_PHP,
-        'public/api/reports.php': REPORTS_PHP,
-        'public/lib/report_contract.php': REPORT_CONTRACT_VALIDATOR_PHP,
-        f'public/contracts/{REPORT_CONTRACT_NAME}': report_contract,
+        'index.html': INDEX_HTML,
+        'app.js': APP_JS,
+        'assets/lmts.css': CSS,
+        'api/report.php': REPORT_PHP,
+        'api/reports.php': REPORTS_PHP,
+        'lib/report_contract.php': REPORT_CONTRACT_VALIDATOR_PHP,
+        f'contracts/{REPORT_CONTRACT_NAME}': report_contract,
         'config/db.php': db_config,
     }
 

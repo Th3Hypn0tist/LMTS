@@ -15,8 +15,9 @@ SCHEMA = Path('lmts/reporting/LMTS_Benchmark_Report_Template_v1.1.schema.json')
 
 def _bundle() -> dict:
     return {
-        'format': 'lmts.matrix-bundle',
-        'version': 1,
+        'schema_version': 1,
+        'export_type': 'lmts.matrix_bundle',
+        'exported_at': '2026-09-01T12:01:00+00:00',
         'matrix': {
             'matrix_id': 'matrix-1',
             'started_at': '2026-09-01T12:00:00+00:00',
@@ -52,8 +53,12 @@ def _bundle() -> dict:
                 'started_at': '2026-09-01T12:00:00+00:00',
                 'completed_at': '2026-09-01T12:00:01+00:00',
                 'score': {'total': 1.0, 'maximum': 1.0},
-                'usage': {'input_tokens': 10, 'output_tokens': 5},
-                'timing': {'ttft_seconds': 0.1, 'total_seconds': 1.0},
+                'metrics': {
+                    'input_tokens': 10,
+                    'output_tokens': 5,
+                    'ttft_ms': 100.0,
+                    'total_ms': 1000.0,
+                },
                 'system_context': {'profile_id': 'profile-a'},
             }
         ],
@@ -70,7 +75,7 @@ def test_projector_emits_report_v11() -> None:
     report = project_matrix_bundle(_bundle())
     assert report['format'] == REPORT_FORMAT
     assert report['version'] == REPORT_VERSION
-    assert report['source']['type'] == 'lmts.matrix-bundle'
+    assert report['source']['type'] == 'lmts.matrix_bundle'
     assert report['summary']['records'] == 1
     assert report['summary']['targets'] == 1
     assert report['summary']['tests'] == 1

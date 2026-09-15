@@ -137,10 +137,13 @@ def interpret_binding(
     raise ValueError(f'{label} unsupported interpretation: {interpretation!r}')
 
 
-def _rows_from_template(source: Any, template: InputTemplate) -> tuple[list[dict[str, str]], list[int]]:
+def _rows_from_template(
+    source: Any,
+    template: InputTemplate,
+) -> tuple[list[dict[str, str]], list[int], dict[str, Any]]:
     extracted = template.extract(source)
     rows = [dict(zip(extracted.columns, row, strict=True)) for row in extracted.rows]
-    return rows, list(range(len(rows)))
+    return rows, list(range(len(rows))), dict(extracted.parameters)
 
 
 def _group_rows(
@@ -184,8 +187,13 @@ def _project_generation(
     rows: Sequence[dict[str, str]],
     source_indices: Sequence[int],
     categorical_maps: dict[str, dict[str, int]],
+    input_parameters: dict[str, Any],
 ) -> dict[str, Any]:
     projected_groups: list[dict[str, Any]] = []
+    bound_parameters = {
+        local_name: input_parameters[parameter_ref]
+        for local_name, parameter_ref in generation.parameters.items()
+    }
     for key, group_rows, group_indices in _group_rows(generation, rows, source_indices):
         channels: dict[str, float] = {}
         visible = True
@@ -204,7 +212,7 @@ def _project_generation(
             channels[channel] = float(interpreted)
 
         children = [
-            _project_generation(child, group_rows, group_indices, categorical_maps)
+            _project_generation(child, group_rows, group_indices, categorical_maps, input_parameters)
             for child in generation.children
         ]
         projected_groups.append({
@@ -212,6 +220,7 @@ def _project_generation(
             'primitive': generation.primitive,
             'visible': visible,
             'channels': channels,
+            'parameters': dict(bound_parameters),
             'source_rows': list(group_indices),
             'children': children,
         })
@@ -223,7 +232,7 @@ def _project_generation(
 
 def project_visualization(source: Any, template: InputTemplate, preset: VisualizationPreset) -> dict[str, Any]:
     preset.validate_against(template)
-    rows, source_indices = _rows_from_template(source, template)
+    rows, source_indices, input_parameters = _rows_from_template(source, template)
     categorical_maps = _categorical_maps(rows)
     return {
         'format': 's3d.dvs.visual-plan',
@@ -232,8 +241,9 @@ def project_visualization(source: Any, template: InputTemplate, preset: Visualiz
         'input_template_id': template.id,
         'visualization_preset_id': preset.id,
         'row_count': len(rows),
+        'parameters': dict(input_parameters),
         'generations': [
-            _project_generation(generation, rows, source_indices, categorical_maps)
+            _project_generation(generation, rows, source_indices, categorical_maps, input_parameters)
             for generation in preset.generations
         ],
     }

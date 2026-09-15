@@ -13,10 +13,10 @@ def _template() -> InputTemplate:
         'reader': 'json',
         'rows': 'records[*]',
         'columns': [
-            {'name': 'target', 'selector': 'target'},
-            {'name': 'test', 'selector': 'test'},
-            {'name': 'run', 'selector': 'run'},
-            {'name': 'score', 'selector': 'score'},
+            {'name': 'target', 'selector': 'target', 'type': 'string'},
+            {'name': 'test', 'selector': 'test', 'type': 'string'},
+            {'name': 'run', 'selector': 'run', 'type': 'string'},
+            {'name': 'score', 'selector': 'score', 'type': 'number'},
         ],
     })
 

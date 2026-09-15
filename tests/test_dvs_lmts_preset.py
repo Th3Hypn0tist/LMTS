@@ -48,9 +48,15 @@ def test_lmts_report_template_and_benchmark_preset_are_compatible() -> None:
     assert preset.source_format == template.source_format
     assert preset.input_template_ref == template.id
     assert {column.type for column in template.columns} <= {'string', 'number', 'boolean'}
+    score_column = template.column('score_percent')
+    assert score_column.scale is not None
+    assert score_column.scale.to_dict() == {'low': 0.0, 'high': 100.0, 'power': 1.0}
+
     generation = preset.generations[0]
     assert generation.group_by == ('target', 'test')
+    assert generation.parameters == {'score_scale': 'scale.score_percent'}
     assert generation.bindings['scale.y'].column == 'score_percent'
+    assert generation.bindings['scale.y'].transform['domain'] == [0.0, 1.0]
     assert generation.bindings['color.r'].column == 'result'
 
 
@@ -61,15 +67,18 @@ def test_default_dvs_registry_loads_lmts_benchmark_preset() -> None:
     preset.validate_against(template)
 
 
-def test_lmts_report_input_template_preserves_typed_values_and_explicit_null() -> None:
+def test_lmts_report_input_template_preserves_types_and_normalizes_score() -> None:
     template, _ = _template_and_preset()
     report = {'records': [_record('run-1', 'model-a', 'test-a', 'pass', 100.0)]}
     table = template.extract(report)
     row = dict(zip(table.columns, table.rows[0], strict=True))
-    assert row['score_percent'] == 100.0
+    assert row['score_percent'] == 1.0
     assert row['ttft_ms'] is None
     assert row['started_at'] == '2026-09-15T06:00:00+00:00'
     assert row['passed'] is True
+    assert table.parameters == {
+        'scale.score_percent': {'low': 0.0, 'high': 100.0, 'power': 1.0},
+    }
 
 
 def test_lmts_benchmark_visual_plan_maps_categories_score_and_result() -> None:
@@ -84,14 +93,17 @@ def test_lmts_benchmark_visual_plan_maps_categories_score_and_result() -> None:
     plan = project_visualization(report, template, preset)
     generation = plan['generations'][0]
     first, second = generation['groups']
+    expected_scale = {'low': 0.0, 'high': 100.0, 'power': 1.0}
 
     assert plan['format'] == 's3d.dvs.visual-plan'
     assert plan['source_format'] == 'lmts.report/1.1'
     assert plan['row_count'] == 2
+    assert plan['parameters'] == {'scale.score_percent': expected_scale}
 
     assert first['key'] == {'target': 'model-a', 'test': 'test-a'}
     assert first['source_rows'] == [0]
     assert first['visible'] is True
+    assert first['parameters'] == {'score_scale': expected_scale}
     assert first['channels']['position.x'] == 0.0
     assert first['channels']['position.z'] == 0.0
     assert first['channels']['scale.y'] == 3.0
@@ -102,6 +114,7 @@ def test_lmts_benchmark_visual_plan_maps_categories_score_and_result() -> None:
     assert second['key'] == {'target': 'model-b', 'test': 'test-b'}
     assert second['source_rows'] == [1]
     assert second['visible'] is True
+    assert second['parameters'] == {'score_scale': expected_scale}
     assert second['channels']['position.x'] == 2.0
     assert second['channels']['position.z'] == 2.0
     assert second['channels']['scale.y'] == 1.55

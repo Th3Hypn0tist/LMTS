@@ -11,6 +11,12 @@ from typing import Any
 from .registry import DVSRegistry
 from .runtime import project_visualization
 from .studio import DVSStudioStore
+from .studio_preview import (
+    preview_input_template,
+    preview_visualization_preset,
+    validate_input_template,
+    validate_visualization_preset,
+)
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -120,6 +126,7 @@ class Handler(BaseHTTPRequestHandler):
                     'studio': {
                         'root': str(STUDIO_ROOT),
                         'write_api': True,
+                        'draft_api': True,
                     },
                 })
             if path == '/api/input-templates':
@@ -139,6 +146,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
         try:
+            if path == '/api/studio/validate/input-template':
+                return self._json({'ok': True, 'input_template': validate_input_template(self._body())})
+            if path == '/api/studio/preview/input-template':
+                return self._json({'ok': True, **preview_input_template(self._body())})
+            if path == '/api/studio/validate/visualization-preset':
+                return self._json({
+                    'ok': True,
+                    'visualization_preset': validate_visualization_preset(self._body(), REGISTRY),
+                })
+            if path == '/api/studio/preview/visualization-preset':
+                return self._json({'ok': True, **preview_visualization_preset(self._body(), REGISTRY)})
             if path == '/api/studio/input-templates':
                 item = STUDIO.create_input_template(self._body())
                 return self._json({'ok': True, 'input_template': item.to_dict()}, 201)

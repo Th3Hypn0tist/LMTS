@@ -21,6 +21,17 @@ def _preview_request(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str,
     return definition, source
 
 
+def _range_request(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], str]:
+    if set(payload) != {'definition', 'source', 'column'}:
+        raise ValueError('Studio range scan requires exactly definition, source and column')
+    definition = _require_object(payload['definition'], 'definition')
+    source = _require_object(payload['source'], 'source')
+    column = payload['column']
+    if not isinstance(column, str) or not column.strip():
+        raise ValueError('Studio range scan column must be a non-empty string')
+    return definition, source, column.strip()
+
+
 def validate_input_template(payload: dict[str, Any]) -> dict[str, Any]:
     return InputTemplate.from_dict(_require_object(payload, 'Input Template')).to_dict()
 
@@ -33,6 +44,19 @@ def preview_input_template(payload: dict[str, Any]) -> dict[str, Any]:
         'input_template': template.to_dict(),
         'columns': list(extracted.columns),
         'rows': [list(row) for row in extracted.rows],
+        'parameters': dict(extracted.parameters),
+    }
+
+
+def find_input_template_range(payload: dict[str, Any]) -> dict[str, Any]:
+    definition, source, column = _range_request(payload)
+    template = InputTemplate.from_dict(definition)
+    low, high = template.find_raw_range(source, column)
+    return {
+        'input_template_id': template.id,
+        'column': column,
+        'low': low,
+        'high': high,
     }
 
 

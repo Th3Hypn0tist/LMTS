@@ -9,10 +9,9 @@ from typing import Any
 DVS_INPUT_TEMPLATE_FORMAT = 's3d.dvs.input-template'
 DVS_VISUALIZATION_PRESET_FORMAT = 's3d.dvs.visualization-preset'
 DVS_FORMAT_VERSION = '1.0'
-INPUT_COLUMN_TYPES = frozenset({'string', 'number', 'integer', 'boolean'})
+INPUT_COLUMN_TYPES = frozenset({'string', 'number', 'boolean'})
 
 _SEGMENT_RE = re.compile(r'^(?P<name>[^.\[\]]+)(?P<wildcard>\[\*\])?$')
-_INTEGER_RE = re.compile(r'^[+-]?\d+$')
 
 
 def _text(value: Any, label: str) -> str:
@@ -113,23 +112,6 @@ def _parse_number(value: Any, label: str) -> float:
     return result
 
 
-def _parse_integer(value: Any, label: str) -> int:
-    if isinstance(value, bool):
-        raise ValueError(f'{label} must be an integer or integer string')
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value) or not value.is_integer():
-            raise ValueError(f'{label} must be an integer or integer string')
-        return int(value)
-    if isinstance(value, str):
-        raw = value.strip()
-        if _INTEGER_RE.fullmatch(raw) is None:
-            raise ValueError(f'{label} must be an integer or integer string')
-        return int(raw)
-    raise ValueError(f'{label} must be an integer or integer string')
-
-
 def _parse_boolean(value: Any, label: str) -> bool:
     if isinstance(value, bool):
         return value
@@ -147,8 +129,6 @@ def parse_input_value(value: Any, value_type: str, label: str) -> Any:
         return _parse_string(value, label)
     if value_type == 'number':
         return _parse_number(value, label)
-    if value_type == 'integer':
-        return _parse_integer(value, label)
     if value_type == 'boolean':
         return _parse_boolean(value, label)
     raise ValueError(f'{label} has unsupported Input Column type {value_type!r}')
@@ -182,7 +162,7 @@ class InputScale:
             power=_number(payload.get('power', 1.0), 'InputScale.power'),
         )
 
-    def apply(self, value: int | float) -> float:
+    def apply(self, value: float) -> float:
         input_value = _number(value, 'scaled input')
         normalized = (input_value - self.low) / (self.high - self.low)
         if normalized < 0 and not self.power.is_integer():
@@ -201,13 +181,16 @@ class InputColumn:
     name: str
     selector: str
     type: str
+    nullable: bool = False
     scale: InputScale | None = None
 
     def __post_init__(self) -> None:
         if self.type not in INPUT_COLUMN_TYPES:
             raise ValueError(f'InputColumn.type must be one of: {", ".join(sorted(INPUT_COLUMN_TYPES))}')
-        if self.scale is not None and self.type not in {'number', 'integer'}:
-            raise ValueError('InputColumn.scale requires type number or integer')
+        if not isinstance(self.nullable, bool):
+            raise ValueError('InputColumn.nullable must be boolean')
+        if self.scale is not None and self.type != 'number':
+            raise ValueError('InputColumn.scale requires type number')
 
     @property
     def scale_parameter_id(self) -> str | None:
@@ -216,24 +199,45 @@ class InputColumn:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> 'InputColumn':
         payload = _object(payload, 'InputColumn')
-        _require_keys(payload, {'name', 'selector', 'type'}, {'name', 'selector', 'type', 'scale'}, 'InputColumn')
+        _require_keys(
+            payload,
+            {'name', 'selector', 'type'},
+            {'name', 'selector', 'type', 'nullable', 'scale'},
+            'InputColumn',
+        )
         raw_scale = payload.get('scale')
+        nullable = payload.get('nullable', False)
+        if not isinstance(nullable, bool):
+            raise ValueError('InputColumn.nullable must be boolean')
         return cls(
             name=_text(payload['name'], 'InputColumn.name'),
             selector=_text(payload['selector'], 'InputColumn.selector'),
             type=_text(payload['type'], 'InputColumn.type'),
+            nullable=nullable,
             scale=None if raw_scale is None else InputScale.from_dict(raw_scale),
         )
 
     def parse(self, value: Any) -> Any:
+        if value is None:
+            if self.nullable:
+                return None
+            raise ValueError(f'InputColumn {self.name!r} does not allow null')
         return parse_input_value(value, self.type, f'InputColumn {self.name!r}')
 
     def project(self, value: Any) -> Any:
         typed_value = self.parse(value)
+        if typed_value is None:
+            return None
         return self.scale.apply(typed_value) if self.scale is not None else typed_value
 
     def to_dict(self) -> dict[str, Any]:
-        result: dict[str, Any] = {'name': self.name, 'selector': self.selector, 'type': self.type}
+        result: dict[str, Any] = {
+            'name': self.name,
+            'selector': self.selector,
+            'type': self.type,
+        }
+        if self.nullable:
+            result['nullable'] = True
         if self.scale is not None:
             result['scale'] = self.scale.to_dict()
         return result
@@ -253,6 +257,8 @@ class _InputTable:
             raise ValueError('runtime input table column names must be unique')
         if len(self.column_types) != len(self.columns):
             raise ValueError('runtime input table column type width must match columns')
+        if any(value not in INPUT_COLUMN_TYPES for value in self.column_types):
+            raise ValueError('runtime input table contains unsupported column type')
         width = len(self.columns)
         for row in self.rows:
             if len(row) != width:
@@ -330,7 +336,7 @@ class InputTemplate:
 
     def find_typed_range(self, source: Any, column_name: str) -> tuple[float, float]:
         column = self.column(column_name)
-        if column.type not in {'number', 'integer'}:
+        if column.type != 'number':
             raise ValueError(f'InputTemplate range scan requires numeric column, got {column.type!r}')
         rows = select_many(source, self.rows_selector)
         if not rows:
@@ -340,11 +346,14 @@ class InputTemplate:
             try:
                 raw_value = select_one(row, column.selector)
                 typed_value = column.parse(raw_value)
-                values.append(float(typed_value))
+                if typed_value is not None:
+                    values.append(float(typed_value))
             except (KeyError, ValueError) as exc:
                 raise ValueError(
                     f'InputTemplate {self.id!r} row {row_index} column {column.name!r}: {exc}'
                 ) from exc
+        if not values:
+            raise ValueError(f'InputTemplate {self.id!r} column {column.name!r} has no numeric values to scan')
         return min(values), max(values)
 
     def extract(self, source: Any) -> _InputTable:
@@ -383,7 +392,12 @@ class VisualBinding:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> 'VisualBinding':
         payload = _object(payload, 'VisualBinding')
-        _require_keys(payload, {'column', 'interpretation'}, {'column', 'interpretation', 'transform'}, 'VisualBinding')
+        _require_keys(
+            payload,
+            {'column', 'interpretation'},
+            {'column', 'interpretation', 'transform'},
+            'VisualBinding',
+        )
         transform = payload.get('transform', {})
         if not isinstance(transform, dict):
             raise ValueError('VisualBinding.transform must be an object')

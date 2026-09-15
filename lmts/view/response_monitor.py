@@ -15,7 +15,7 @@ class ResponseMonitor:
         self._source_id = ""
         self._channel = ""
         self._lines: deque[str] = deque(maxlen=max_lines)
-        self._partial: dict[str, str] = {"thinking": "", "text": "", "tool": "", "meta": ""}
+        self._partial: dict[str, str] = {"input": "", "thinking": "", "text": "", "tool": "", "meta": ""}
 
     def reset(self, source_id: str = "") -> None:
         with self._lock:

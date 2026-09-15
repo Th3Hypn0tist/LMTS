@@ -43,6 +43,7 @@ def preview_input_template(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         'input_template': template.to_dict(),
         'columns': list(extracted.columns),
+        'column_types': list(extracted.column_types),
         'rows': [list(row) for row in extracted.rows],
         'parameters': dict(extracted.parameters),
     }
@@ -51,7 +52,7 @@ def preview_input_template(payload: dict[str, Any]) -> dict[str, Any]:
 def find_input_template_range(payload: dict[str, Any]) -> dict[str, Any]:
     definition, source, column = _range_request(payload)
     template = InputTemplate.from_dict(definition)
-    low, high = template.find_raw_range(source, column)
+    low, high = template.find_typed_range(source, column)
     return {
         'input_template_id': template.id,
         'column': column,

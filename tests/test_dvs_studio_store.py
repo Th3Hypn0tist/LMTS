@@ -17,7 +17,7 @@ def _template(item_id: str, *, column: str = 'value', source_format: str = 'exam
         'source_format': source_format,
         'reader': 'json',
         'rows': 'records[*]',
-        'columns': [{'name': column, 'selector': column}],
+        'columns': [{'name': column, 'selector': column, 'type': 'number'}],
     }
 
 

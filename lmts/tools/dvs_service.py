@@ -88,6 +88,24 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _process_instance_id(pid: int) -> str | None:
+    """Return the managed DVS instance id carried by a live Linux process.
+
+    None means ownership could not be established. An empty string means the
+    process environment was readable but it is not an LMTS-managed DVS process.
+    """
+    environ = Path(f'/proc/{pid}/environ')
+    try:
+        raw = environ.read_bytes()
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+    prefix = b'LMTS_DVS_INSTANCE_ID='
+    for entry in raw.split(b'\0'):
+        if entry.startswith(prefix):
+            return entry[len(prefix):].decode('utf-8', errors='replace')
+    return ''
+
+
 def _health(settings: DVSSettings, *, timeout: float = 0.5) -> dict[str, object] | None:
     try:
         with urllib.request.urlopen(_health_url(settings), timeout=timeout) as response:
@@ -143,14 +161,24 @@ def dvs_status(
 
     if not _pid_alive(pid):
         _remove_state(state_path)
+        return DVSServiceStatus('stopped', settings.host, settings.port, log_path=str(log_path))
+
+    process_instance = _process_instance_id(pid)
+    if process_instance is not None and process_instance != instance_id:
+        _remove_state(state_path)
+        if health is None:
+            return DVSServiceStatus('stopped', settings.host, settings.port, log_path=str(log_path))
         return DVSServiceStatus(
-            'error',
+            'unmanaged',
             settings.host,
             settings.port,
-            pid=pid,
-            instance_id=instance_id,
+            instance_id=health_instance or None,
+            health_ok=True,
+            s3d_configured=bool(s3d.get('configured')),
+            s3d_ready=bool(s3d.get('ready')),
+            studio_root=str(studio.get('root') or ''),
             log_path=str(log_path),
-            error='managed DVS process exited',
+            error='stale DVS state removed; endpoint belongs to another process',
         )
 
     if health is None:
@@ -298,8 +326,16 @@ def stop_dvs(
         return DVSServiceStatus('stopped', settings.host, settings.port, log_path=str(log_path))
 
     health = _health(settings)
-    if health is None or str(health.get('instance_id') or '') != instance_id:
-        raise RuntimeError('refusing to stop DVS because managed instance ownership cannot be verified')
+    if health is not None:
+        if str(health.get('instance_id') or '') != instance_id:
+            raise RuntimeError('refusing to stop DVS because health endpoint belongs to a different instance')
+    else:
+        process_instance = _process_instance_id(pid)
+        if process_instance is not None and process_instance != instance_id:
+            _remove_state(state_path)
+            return DVSServiceStatus('stopped', settings.host, settings.port, log_path=str(log_path))
+        if process_instance is None:
+            raise RuntimeError('refusing to stop DVS because managed instance ownership cannot be verified')
 
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + timeout

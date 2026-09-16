@@ -17,6 +17,7 @@ def lmts_path(*parts: str) -> Path:
 SETTINGS_PATH = lmts_path('settings.json')
 SYSTEM_PROFILE_PATH = lmts_path('system-profile.json')
 RUNTIME_TARGETS_PATH = lmts_path('runtime-targets.json')
+RUNTIME_SECRETS_PATH = lmts_path('runtime-secrets.json')
 DVS_SERVICE_STATE_PATH = lmts_path('dvs-service.json')
 DVS_SERVICE_LOG_PATH = lmts_path('dvs-service.log')
 FTP_PROFILES_PATH = lmts_path('ftp-profiles.json')

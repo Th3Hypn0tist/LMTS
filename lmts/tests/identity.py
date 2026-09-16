@@ -90,4 +90,16 @@ def test_snapshot(test: Any) -> dict[str, Any]:
     mandatory = getattr(test, 'mandatory', None)
     if mandatory is not None:
         snapshot['mandatory'] = bool(mandatory)
+    category = getattr(test, 'category', None)
+    subcategory = getattr(test, 'subcategory', None)
+    if category is not None or subcategory is not None:
+        if not isinstance(category, str) or not category.strip():
+            raise ValueError('configured test category must be a non-empty string')
+        if not isinstance(subcategory, str) or not subcategory.strip():
+            raise ValueError('configured test subcategory must be a non-empty string')
+        snapshot['taxonomy'] = {
+            'category': category,
+            'subcategory': subcategory,
+            'ref': f'{category}/{subcategory}',
+        }
     return snapshot

@@ -337,7 +337,7 @@ else
 fi
 
 # ------------------------------------------------------------
-# 7. LMTS user settings. No web root or server path is owned here.
+# 7. LMTS user settings. No web-root location is owned here.
 # ------------------------------------------------------------
 echo "[7/8] Converging LMTS user settings..."
 mkdir -p "${SETTINGS_DIR}"
@@ -354,7 +354,7 @@ except (OSError, ValueError, TypeError):
 if not isinstance(current, dict):
     current = {}
 desired = dict(current)
-desired['schema_version'] = 2
+desired['schema_version'] = 3
 desired.setdefault('output_folder', 'exports')
 desired['mysql'] = {
     'host': os.environ['DB_HOST'],
@@ -363,6 +363,12 @@ desired['mysql'] = {
     'password': os.environ['DB_PASSWORD'],
     'publish_key': os.environ['PUBLISH_KEY'],
 }
+desired.setdefault('dvs', {
+    'host': '127.0.0.1',
+    'port': 8775,
+    's3d_root': '../S3D',
+    'studio_root': '.lmts/dvs',
+})
 if current == desired:
     print('0')
 else:
@@ -383,7 +389,7 @@ fi
 
 # ------------------------------------------------------------
 # 8. Apache/PHP environment and final verification.
-# LMTS does not own any vhost, domain, alias or DocumentRoot here.
+# LMTS does not own any vhost, domain, alias or web-root path here.
 # ------------------------------------------------------------
 echo "[8/8] Verifying server environment..."
 apache2ctl configtest
@@ -429,7 +435,7 @@ Secrets remain in:
   ${SETTINGS_FILE}
 
 Secrets are not printed to stdout.
-No domain, virtual host, alias, DocumentRoot or web deployment path is configured by this script.
+No domain, virtual host, alias or web deployment path is configured by this script.
 Deploy the LMTS web package from the TUI to any web-visible directory you choose.
 For an existing local or remote database, use TUI -> MySQL -> Install schema instead.
 EOF

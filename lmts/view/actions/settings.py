@@ -9,8 +9,9 @@ from lmts.tools.mysql_schema import install_mysql_schema
 from ..dialogs.server_setup import manage_server_setup
 from ..dvs_settings_dialog import manage_dvs
 from ..output_dialog import manage_ftp_profiles, manage_report_profiles
+from ..registries import build_shortcut_registry
 from ..runtime_target_dialog import manage_runtime_targets
-from ..shortcut_settings import build_shortcut_registry, normalise_sequence_text, save_shortcut_overrides
+from ..shortcut_settings import normalise_sequence_text, save_shortcut_overrides
 from ..tui_common import single_line
 from .base import TUIActions
 

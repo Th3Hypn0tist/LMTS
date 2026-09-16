@@ -8,7 +8,7 @@ from lmts.tests.catalog import (
     AUTOMATED_SUITE_EXCLUSIONS,
     CANDIDATE_TEST_IDS,
     default_test_type_registry,
-    test_matrix_for_level,
+    test_matrix_for_level as matrix_for_level,
 )
 from lmts.tests.requirements import validate_requirements
 
@@ -41,8 +41,8 @@ def test_runtime_candidate_tests_have_explicit_subject_domains() -> None:
 
 def test_candidate_tests_are_not_automatic_reference_suite_members() -> None:
     assert CANDIDATE_TEST_IDS <= AUTOMATED_SUITE_EXCLUSIONS
-    moderate_ids = {test.id for test in test_matrix_for_level('moderate').tests()}
-    deep_ids = {test.id for test in test_matrix_for_level('deep').tests()}
+    moderate_ids = {test.id for test in matrix_for_level('moderate').tests()}
+    deep_ids = {test.id for test in matrix_for_level('deep').tests()}
     assert not (CANDIDATE_TEST_IDS & moderate_ids)
     assert not (CANDIDATE_TEST_IDS & deep_ids)
 

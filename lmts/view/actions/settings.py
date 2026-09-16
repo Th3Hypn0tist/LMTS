@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import replace
 
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, MySQLSettings, save_settings
-from lmts.lib.view import choose_directory
 from lmts.tools.mysql_schema import install_mysql_schema
 
 from ..dialogs.server_setup import manage_server_setup
@@ -18,7 +17,11 @@ from .base import TUIActions
 
 class SettingsActions(TUIActions):
     def edit_output_folder(self, _stdscr) -> None:
-        selected = choose_directory(self.host, self.stdscr, 'Output folder', initial=self.state.settings.output_folder)
+        selected = self.host.choose_directory(
+            self.stdscr,
+            'Output folder',
+            initial=self.state.settings.output_folder,
+        )
         if selected is None:
             return
         self.state.settings = replace(self.state.settings, output_folder=str(selected))

@@ -1,4 +1,4 @@
-from lmts.view.tui import _reference_suite_lines
+from lmts.view.tui_render import _reference_suite_lines
 
 
 def test_reference_suite_lines_render_each_test_and_summary() -> None:

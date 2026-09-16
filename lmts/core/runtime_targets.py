@@ -12,10 +12,11 @@ from urllib import request
 
 from .executor import RuntimeExecutor
 from .models import ModelCapabilities, NormalizedPerformance, NormalizedResponse, NormalizedTiming, NormalizedUsage
+from .paths import RUNTIME_TARGETS_PATH
 from .subject import EvaluationSubject, SubjectMember
 
 RUNTIME_TARGETS_SCHEMA_VERSION = 1
-DEFAULT_RUNTIME_TARGETS_PATH = Path('.lmts/runtime-targets.json')
+DEFAULT_RUNTIME_TARGETS_PATH = RUNTIME_TARGETS_PATH
 RuntimeTransport = Literal['http', 'subprocess']
 RuntimeKind = Literal['bot', 'composition']
 

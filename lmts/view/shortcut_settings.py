@@ -4,9 +4,11 @@ import json
 import os
 from pathlib import Path
 
+from lmts.core.paths import SHORTCUT_SETTINGS_PATH
+
 
 SHORTCUT_SETTINGS_SCHEMA_VERSION = 1
-DEFAULT_SHORTCUT_SETTINGS_PATH = Path('.lmts/shortcuts.json')
+DEFAULT_SHORTCUT_SETTINGS_PATH = SHORTCUT_SETTINGS_PATH
 
 
 def normalise_sequence_text(value: str) -> tuple[str, ...]:

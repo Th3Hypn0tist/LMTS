@@ -47,8 +47,12 @@ TEST_TAXONOMY: dict[str, TestTaxonomy] = {
     "composition.constraint_integration": TestTaxonomy("composition", "constraint_integration"),
     "composition.conflict_resolution": TestTaxonomy("composition", "conflict_resolution"),
 
-    # Sealed neuro-symbolic tests. Challenge generation and oracle state live outside LMTS.
-    "neuro_symbolic.sealed_reasoning": TestTaxonomy("neuro_symbolic", "sealed_reasoning"),
+    # Neuro-symbolic black-box candidate probes. The evaluated implementation is unknown;
+    # LMTS controls the tasks, expected answers, scaling parameters and measurements.
+    "neuro_symbolic.rule_chaining": TestTaxonomy("neuro_symbolic", "deduction"),
+    "neuro_symbolic.graph_reachability": TestTaxonomy("neuro_symbolic", "graph_reasoning"),
+    "neuro_symbolic.state_transitions": TestTaxonomy("neuro_symbolic", "state_tracking"),
+    "neuro_symbolic.constraint_ordering": TestTaxonomy("neuro_symbolic", "constraint_solving"),
 
     # Reasoning.
     "reasoning.carwash_transport": TestTaxonomy("reasoning", "goal_reasoning"),

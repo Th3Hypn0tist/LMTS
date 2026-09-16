@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from lmts.core.control import RunControl
 from lmts.core.executor import TestExecutor
@@ -10,6 +10,9 @@ from lmts.core.models import NormalizedResponse, ResponseStreamChunk
 from lmts.core.scoring import TestScore
 from lmts.lib.workspace import Workspace
 from lmts.tests.identity import TestIdentity, identity_for_test, parse_test_ref, test_ref, test_snapshot
+
+TestSubjectKind = Literal["model", "bot", "composition"]
+ALL_TEST_SUBJECT_KINDS: tuple[TestSubjectKind, ...] = ("model", "bot", "composition")
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +25,16 @@ class TestRequirements:
     workspace_read: bool = False
     workspace_write: bool = False
     multi_file_output: bool = False
+    subject_kinds: tuple[TestSubjectKind, ...] = ALL_TEST_SUBJECT_KINDS
+
+    def __post_init__(self) -> None:
+        if not self.subject_kinds:
+            raise ValueError("test requirements must allow at least one subject kind")
+        if len(self.subject_kinds) != len(set(self.subject_kinds)):
+            raise ValueError("test requirement subject kinds must be unique")
+        invalid = [kind for kind in self.subject_kinds if kind not in ALL_TEST_SUBJECT_KINDS]
+        if invalid:
+            raise ValueError("unsupported test subject kind: " + ", ".join(invalid))
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,11 +77,13 @@ class TestModule(Protocol):
 
 
 __all__ = [
+    'ALL_TEST_SUBJECT_KINDS',
     'TestContext',
     'TestIdentity',
     'TestModule',
     'TestRequirements',
     'TestResult',
+    'TestSubjectKind',
     'identity_for_test',
     'parse_test_ref',
     'test_ref',

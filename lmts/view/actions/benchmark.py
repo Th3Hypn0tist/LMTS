@@ -13,6 +13,9 @@ class BenchmarkActions(TUIActions):
         super().__init__(state, host, stdscr)
         self.navigation = navigation
 
+    def before_run_choice(self, choice: int) -> bool:
+        return True
+
     def select_suite(self, level: str, tab_id: str = 'benchmark') -> None:
         if not self.controller.set_suite_level(level):
             self.set_message(self.controller.state.message)
@@ -248,6 +251,8 @@ class BenchmarkActions(TUIActions):
 
         chosen = self.host.choose_with_preview(self.stdscr, 'Run', options, preview)
         if chosen is None:
+            return
+        if not self.before_run_choice(chosen):
             return
         if chosen == 0:
             self.controller.run_selected()

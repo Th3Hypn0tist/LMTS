@@ -3,8 +3,8 @@ from __future__ import annotations
 import curses
 
 from lmts.cli import default_provider_registry
-from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
 from lmts.lib.view import UIEventBus
+from lmts.services.settings import SettingsService
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tools.dvs_service import dvs_status
 
@@ -18,7 +18,6 @@ from .cw_bench_page import CWBenchPage
 from .lmts_host import LMTSInteractiveHost
 from .projector import LMTSViewProjector
 from .registries import build_shortcut_registry
-from .shortcut_settings import DEFAULT_SHORTCUT_SETTINGS_PATH, load_shortcut_overrides
 from .tui_render import TUIRenderer
 from .tui_state import TUIState
 
@@ -29,8 +28,9 @@ class TUIApplication:
         matrix = default_test_matrix(test_types)
         controller = LMTSViewController(default_provider_registry(), test_types, matrix)
         controller.refresh()
-        settings = load_settings(DEFAULT_SETTINGS_PATH)
-        shortcut_overrides = load_shortcut_overrides(DEFAULT_SHORTCUT_SETTINGS_PATH)
+        settings_service = SettingsService()
+        settings = settings_service.load_core()
+        shortcut_overrides = settings_service.load_shortcuts()
         shortcuts = build_shortcut_registry(shortcut_overrides)
         events = UIEventBus()
         self.state = TUIState(
@@ -38,6 +38,7 @@ class TUIApplication:
             projector=LMTSViewProjector(controller.state),
             cw_bench_page=CWBenchPage(controller),
             settings=settings,
+            settings_service=settings_service,
             dvs_service_state=dvs_status(settings.dvs),
             shortcut_overrides=shortcut_overrides,
             shortcuts=shortcuts,

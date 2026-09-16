@@ -4,7 +4,7 @@ import curses
 
 from lmts.cli import default_provider_registry
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
-from lmts.lib.view import RegistrySplitCursesViewHost
+from lmts.lib.view import UIEventBus
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tools.dvs_service import dvs_status
 
@@ -15,6 +15,7 @@ from .actions.results import ResultActions
 from .actions.settings import SettingsActions
 from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
+from .lmts_host import LMTSInteractiveHost
 from .projector import LMTSViewProjector
 from .registries import build_shortcut_registry
 from .shortcut_settings import DEFAULT_SHORTCUT_SETTINGS_PATH, load_shortcut_overrides
@@ -31,6 +32,7 @@ class TUIApplication:
         settings = load_settings(DEFAULT_SETTINGS_PATH)
         shortcut_overrides = load_shortcut_overrides(DEFAULT_SHORTCUT_SETTINGS_PATH)
         shortcuts = build_shortcut_registry(shortcut_overrides)
+        events = UIEventBus()
         self.state = TUIState(
             controller=controller,
             projector=LMTSViewProjector(controller.state),
@@ -39,6 +41,7 @@ class TUIApplication:
             dvs_service_state=dvs_status(settings.dvs),
             shortcut_overrides=shortcut_overrides,
             shortcuts=shortcuts,
+            events=events,
         )
         self.renderer = TUIRenderer(self.state)
 
@@ -47,7 +50,7 @@ class TUIApplication:
 
     def _run_curses(self, stdscr: curses.window) -> None:
         controller = self.state.controller
-        host = RegistrySplitCursesViewHost(
+        host = LMTSInteractiveHost(
             'AIGM LMTS - Profile',
             self.renderer.render_lines,
             self.renderer.tabs_line,
@@ -57,10 +60,11 @@ class TUIApplication:
             layout_panes=self.renderer.layout_panes,
             monitor_title='Console',
             monitor_fraction=1 / 3,
+            events=self.state.events,
         )
         if controller.state.profile_required:
             controller.profile()
-        host.message = controller.state.message
+        self.state.events.publish('ui.message', controller.state.message, source='tui_app')
 
         navigation = NavigationActions(self.state, host, stdscr)
         profile = ProfileActions(self.state, host, stdscr)
@@ -70,7 +74,7 @@ class TUIApplication:
 
         def run_cw_bench(_stdscr) -> None:
             self.state.cw_bench_page.run(host)
-            host.message = controller.state.message
+            self.state.events.publish('ui.message', controller.state.message, source='cw_bench')
 
         bindings = {
             'tab.profile': lambda _: navigation.open_tab('profile'),

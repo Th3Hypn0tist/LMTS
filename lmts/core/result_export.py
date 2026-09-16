@@ -38,6 +38,40 @@ def export_run_json(run_data: dict, output_folder: Path) -> Path:
     return _write_json(path, run_data)
 
 
+def _resolve_run_path(results_root: Path, locator: str) -> Path:
+    root = results_root.expanduser().resolve()
+    candidate = Path(locator).expanduser()
+    resolved = candidate.resolve() if candidate.is_absolute() else (root / candidate).resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ValueError(f'canonical run result escapes results root: {locator!r}')
+    return resolved
+
+
+def _validate_cell_run(cell: dict, run_data: dict, run_id: str) -> None:
+    expected = {
+        'run_id': run_id,
+        'executor_id': str(cell.get('target_id') or ''),
+        'executor_kind': str(cell.get('target_kind') or ''),
+        'test_ref': str(cell.get('test_ref') or ''),
+        'status': str(cell.get('status') or ''),
+        'passed': cell.get('passed'),
+    }
+    actual = {
+        'run_id': str(run_data.get('run_id') or ''),
+        'executor_id': str(run_data.get('executor_id') or ''),
+        'executor_kind': str(run_data.get('executor_kind') or ''),
+        'test_ref': str(run_data.get('test_ref') or ''),
+        'status': str(run_data.get('status') or ''),
+        'passed': run_data.get('passed'),
+    }
+    for field, expected_value in expected.items():
+        if actual[field] != expected_value:
+            raise ValueError(
+                f'canonical matrix/run mismatch for {run_id}: {field} '
+                f'{expected_value!r} != {actual[field]!r}'
+            )
+
+
 def build_matrix_bundle(matrix_data: dict, *, results_root: Path) -> dict:
     matrix_id = str(matrix_data.get('matrix_id') or '').strip()
     if not matrix_id:
@@ -55,12 +89,11 @@ def build_matrix_bundle(matrix_data: dict, *, results_root: Path) -> dict:
         result_path_text = str(cell.get('result_path') or '').strip()
         if not run_id or not result_path_text:
             raise ValueError('canonical matrix cell is missing run_id or result_path')
-        result_path = Path(result_path_text).expanduser()
+        result_path = _resolve_run_path(results_root, result_path_text)
         if not result_path.is_file():
             raise FileNotFoundError(f'canonical run result missing: {result_path}')
         run_data = store.load(result_path)
-        if str(run_data.get('run_id') or '') != run_id:
-            raise ValueError(f'canonical run_id mismatch for matrix cell: {run_id}')
+        _validate_cell_run(cell, run_data, run_id)
         runs.append(run_data)
 
     return {

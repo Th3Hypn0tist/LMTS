@@ -69,10 +69,11 @@ def _ftp_mkdirs(ftp: FTP, path: PurePosixPath) -> None:
 
 def _write_ftp(target: FTPOutputTarget, files: list[tuple[PurePosixPath, bytes]]) -> list[str]:
     profile = target.profile
+    password = profile.resolve_password()
     written: list[str] = []
     with FTP_TLS() as ftp:
         ftp.connect(profile.host, profile.port, timeout=20)
-        ftp.login(profile.username, profile.password)
+        ftp.login(profile.username, password)
         ftp.prot_p()
         ftp.set_pasv(True)
         if profile.root:

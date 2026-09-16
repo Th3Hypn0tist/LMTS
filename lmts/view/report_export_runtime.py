@@ -12,14 +12,14 @@ from lmts.tools.report_export import export_report_json
 from lmts.tools.report_profiles import ReportProfile, load_report_profiles
 from lmts.tools.report_publish import publish_report
 
+from .actions.benchmark import BenchmarkActions
 from .controller import LMTSViewController
 from .lmts_host import LMTSInteractiveHost
 from .output_dialog import choose_report_profile
+from .tui_app import TUIApplication
 
 
 _ACTIVE_CONTROLLER: 'ReportExportController | None' = None
-_ACTIVE_HOST: 'ReportExportHost | None' = None
-_RUN_OPTIONS = ('Run', 'Run all tests', 'Run all tests to all models')
 
 
 def _select_report_profile(host: LMTSInteractiveHost, stdscr: curses.window) -> ReportProfile | None:
@@ -80,8 +80,6 @@ class ReportExportHost(LMTSInteractiveHost):
     def __init__(self, *args, **kwargs) -> None:
         self._handled_completion_ids: set[str] = set()
         super().__init__(*args, on_idle=self._global_completion_idle, **kwargs)
-        global _ACTIVE_HOST
-        _ACTIVE_HOST = self
 
     def _completed_report(self, controller: ReportExportController, matrix_path: Path) -> dict[str, object]:
         if not matrix_path.is_file():
@@ -101,8 +99,6 @@ class ReportExportHost(LMTSInteractiveHost):
         if not matrix_id or not matrix_path_text or matrix_id in self._handled_completion_ids:
             return
 
-        # Claim the event before opening any modal so one completed matrix can
-        # never produce duplicate dialogs on subsequent idle ticks.
         self._handled_completion_ids.add(matrix_id)
         matrix_path = Path(matrix_path_text)
         try:
@@ -121,7 +117,7 @@ class ReportExportHost(LMTSInteractiveHost):
             self.message = f'report projection failed: {exc}'
             return
 
-        action = super().choose(
+        action = self.choose(
             stdscr,
             'Test complete',
             ['Export to server', 'Export to file', 'Keep local'],
@@ -151,61 +147,48 @@ class ReportExportHost(LMTSInteractiveHost):
             self.message = f'report file export failed: {exc}; canonical result kept local'
 
 
-def _run_target_count(controller: ReportExportController, choice: int) -> int:
-    if choice == 0:
-        return len(controller.state.selected_targets)
-    if choice == 1:
-        return len(controller.state.selected_targets)
-    return sum(1 for target in controller.state.targets if target.kind == 'model')
+class ReportExportBenchmarkActions(BenchmarkActions):
+    def _run_target_count(self, choice: int) -> int:
+        if choice in {0, 1}:
+            return len(self.controller.state.selected_targets)
+        return sum(1 for target in self.controller.state.targets if target.kind == 'model')
 
-
-def _install_run_publish_prompt(tui_module) -> None:
-    current = tui_module.choose_with_preview
-    original = getattr(current, '_lmts_report_original', current)
-
-    def choose_with_report_prompt(stdscr, title, options, preview, *args, **kwargs):
-        choice = original(stdscr, title, options, preview, *args, **kwargs)
-        if choice is None or title != 'Run' or tuple(options) != _RUN_OPTIONS:
-            return choice
-
-        controller = _ACTIVE_CONTROLLER
-        host = _ACTIVE_HOST
-        if controller is None or host is None:
-            return choice
+    def before_run_choice(self, choice: int) -> bool:
+        controller = self.controller
+        if not isinstance(controller, ReportExportController):
+            raise TypeError('report-aware benchmark actions require ReportExportController')
 
         controller.configure_next_publish(None)
-        if _run_target_count(controller, choice) <= 1:
-            return choice
+        if self._run_target_count(choice) <= 1:
+            return True
 
-        publish_choice = host.choose(
-            stdscr,
+        publish_choice = self.host.choose(
+            self.stdscr,
             'Export reports to server as they complete?',
             ['Yes', 'No'],
             0,
         )
         if publish_choice is None:
-            return None
+            return False
         if publish_choice == 1:
-            return choice
+            return True
 
-        profile = _select_report_profile(host, stdscr)
+        profile = _select_report_profile(self.host, self.stdscr)
         if profile is None:
-            host.message = 'run cancelled: no report server selected'
-            return None
+            self.set_message('run cancelled: no report server selected')
+            return False
         controller.configure_next_publish(profile)
-        return choice
+        return True
 
-    choose_with_report_prompt._lmts_report_original = original
-    tui_module.choose_with_preview = choose_with_report_prompt
+
+class ReportExportTUIApplication(TUIApplication):
+    controller_class = ReportExportController
+    host_class = ReportExportHost
+    benchmark_actions_class = ReportExportBenchmarkActions
 
 
 def run_tui() -> None:
-    from . import tui
-
-    tui.LMTSViewController = ReportExportController
-    tui.RegistrySplitCursesViewHost = ReportExportHost
-    _install_run_publish_prompt(tui)
-    tui.run()
+    ReportExportTUIApplication().run()
 
 
 def main() -> int:

@@ -8,6 +8,26 @@ Location = Literal["local", "remote"]
 ResponseStreamChannel = Literal["input", "thinking", "text", "tool", "meta"]
 
 
+def _canonical_ref(value: str, *, field_name: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(f"{field_name} must be a non-empty canonical string")
+    return value
+
+
+def canonical_model_id(provider_ref: str, model_ref: str) -> str:
+    """Return the canonical provider-qualified identity for one model.
+
+    Provider refs may not contain ':' so the first ':' is an unambiguous
+    provider/model boundary. Model refs intentionally may contain ':' because
+    provider-native names commonly use tags such as ``llama3.2:3b``.
+    """
+    provider = _canonical_ref(provider_ref, field_name="provider_ref")
+    model = _canonical_ref(model_ref, field_name="model_ref")
+    if ":" in provider:
+        raise ValueError("provider_ref must not contain ':'")
+    return f"{provider}:{model}"
+
+
 @dataclass(frozen=True, slots=True)
 class ModelCapabilities:
     text: bool = True
@@ -29,6 +49,17 @@ class ModelDescriptor:
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
     metadata: dict[str, Any] = field(default_factory=dict)
     runtime_configuration: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        canonical = canonical_model_id(self.provider_ref, self.model_ref)
+        if self.id != canonical:
+            raise ValueError(f"model id must be canonical provider-qualified identity: {canonical}")
+        if self.location not in {"local", "remote"}:
+            raise ValueError(f"unsupported model location: {self.location}")
+
+    @property
+    def canonical_id(self) -> str:
+        return self.id
 
 
 @dataclass(frozen=True, slots=True)

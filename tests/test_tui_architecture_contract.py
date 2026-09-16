@@ -50,6 +50,18 @@ def test_actions_do_not_bypass_message_or_modal_boundaries() -> None:
     assert 'self.host.choose_directory(' in settings
 
 
+def test_tui_uses_settings_service_as_persistence_boundary() -> None:
+    app = APP.read_text(encoding='utf-8')
+    settings = Path('lmts/view/actions/settings.py').read_text(encoding='utf-8')
+    assert 'SettingsService()' in app
+    assert 'load_settings' not in app
+    assert 'load_shortcut_overrides' not in app
+    assert 'save_settings' not in settings
+    assert 'save_shortcut_overrides' not in settings
+    assert 'self.settings_service.save_core(' in settings
+    assert 'self.settings_service.save_shortcuts(' in settings
+
+
 def test_remote_server_deploy_is_not_implemented_in_tui_entrypoint_or_settings_action() -> None:
     entrypoint = TUI.read_text(encoding='utf-8')
     settings = Path('lmts/view/actions/settings.py').read_text(encoding='utf-8')

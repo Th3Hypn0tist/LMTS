@@ -40,6 +40,16 @@ def test_installer_writes_generated_settings_for_sudo_user() -> None:
     assert 'chmod 600 "${SETTINGS_FILE}"' in text
 
 
+def test_installer_fails_closed_on_malformed_existing_settings() -> None:
+    text = _text()
+    settings_block = text.split("path = Path(os.environ['SETTINGS_FILE'])", 1)[1].split('desired = dict(current)', 1)[0]
+    assert 'if path.exists():' in settings_block
+    assert "json.loads(path.read_text(encoding='utf-8'))" in settings_block
+    assert "raise ValueError(f'LMTS settings root must be an object: {path}')" in settings_block
+    assert 'except ' not in settings_block
+    assert 'current = {}' in settings_block
+
+
 def test_installer_does_not_print_generated_secrets() -> None:
     text = _text()
     assert 'Secrets are not printed to stdout.' in text

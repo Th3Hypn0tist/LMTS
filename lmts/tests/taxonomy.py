@@ -47,6 +47,9 @@ TEST_TAXONOMY: dict[str, TestTaxonomy] = {
     "composition.constraint_integration": TestTaxonomy("composition", "constraint_integration"),
     "composition.conflict_resolution": TestTaxonomy("composition", "conflict_resolution"),
 
+    # Sealed neuro-symbolic tests. Challenge generation and oracle state live outside LMTS.
+    "neuro_symbolic.sealed_reasoning": TestTaxonomy("neuro_symbolic", "sealed_reasoning"),
+
     # Reasoning.
     "reasoning.carwash_transport": TestTaxonomy("reasoning", "goal_reasoning"),
     "reasoning.arithmetic_chain": TestTaxonomy("reasoning", "arithmetic"),

@@ -2,46 +2,32 @@
 
 **Local-first evaluation laboratory for models, bots, compositions and reproducible AI-system evidence.**
 
-AIGM LMTS is a testing, benchmarking, profiling, reporting and visualization system for measuring capability, behavior, execution characteristics and system-level performance under reusable, versioned tests.
+LMTS is a testing, benchmarking, profiling, reporting and visualization system for measuring capability, behavior, execution characteristics and system-level performance under reusable, versioned tests.
 
-The goal is not to produce a universal leaderboard. LMTS produces reproducible evidence about how an evaluation target behaves on a known system under a known protocol, then lets that evidence be inspected, compared, exported, published and visualized without creating duplicate truth.
+The goal is not to manufacture one universal leaderboard. LMTS produces reproducible evidence about how an evaluation target behaves on a known system under a known protocol, then keeps that evidence inspectable, comparable, exportable and visualizable without creating duplicate truth.
 
 **One evaluation model. Many target types. No duplicate truth.**
 
-LMTS separates target identity, test semantics, execution, canonical evidence, report transport and presentation. Providers do not own tests. Views do not own results. Report servers do not become an alternate evaluation authority. DVS does not reconstruct missing evidence. Invalid or missing canonical data remains visible instead of being replaced by fallback behavior.
+## Current baseline
 
-## Current implementation baseline
-
-This README describes the current `main` implementation. Features listed as current are present in code. Known integration boundaries are listed explicitly later in this document.
-
-| Area | Current baseline |
+| Area | Current implementation |
 | --- | --- |
 | Evaluation targets | Models, standalone bots and bot compositions |
 | Providers | Provider-neutral core with Ollama local-provider support |
 | Runtime targets | HTTP and subprocess transports through LMTS Runtime Protocol v1 |
-| Test system | Versioned registry, configurable instances, requirements, parameters, mandatory tests and cumulative levels |
+| Test registry | 44 versioned test types |
 | Automatic suites | Quick 19, Moderate 35, Deep 35 + Deep workflows |
+| Candidate pool | 4 runtime-behavior candidates + 4 neuro-symbolic scaling candidates |
+| Test classification | Level + taxonomy + subject applicability |
 | Deep evaluation | CW Bench with Structure/CIC round-trip comparison |
-| Workspace | Isolated `input/`, `work/`, `output/` execution boundary and Workspace Protocol v1 |
 | Profiling | CPU, memory, GPU and NPU identity plus reference-performance suites |
 | Runtime evidence | Token usage, TTFT, total time, telemetry, artifacts, workspace traces and structured errors |
 | Results | Canonical append-only RunResult and MatrixRunRecord evidence |
 | Result UI | Live target x test matrix, historical matrices, run drill-down and target comparison |
 | Reporting | LMTS Benchmark Report Template `lmts.report/1.1` |
-| Single-test report flow | Post-run `Export to server` is the first/default action, followed by file export or keep-local |
-| Multi-target report flow | Optional per-run publish to report server as each target finishes |
 | Report server | Immutable/idempotent `lmts.report/1.1` GET/POST service backed by MariaDB/MySQL |
-| Web deployment | Root-relative deploy package with no forced domain, vhost or DocumentRoot |
-| TUI | Registry-driven Profile, Benchmark, Deep/CW Bench, Model Downloader and Settings surfaces |
-| DVS lifecycle | Managed Status, Start, Stop, Restart, configuration and S3D Fetch/Update from Settings |
-| DVS Input Templates | Strict extraction with typed `string`, `number`, `boolean` columns |
-| DVS input scaling | Numeric `low`, `high`, `power` scale owned by the Input Template |
-| DVS Visualization Presets | Recursive generations, explicit channel bindings and parameter bindings |
-| DVS Studio | Authoring, validation and preview of templates and presets |
-| DVS Visualizer | Generic visual-plan rendering through S3D |
-| LMTS DVS preset | `lmts.benchmark.landscape.v1` |
-| S3D integration | Packed instancing with uniform or strict per-face RGBA channels |
-| Model Downloader | Modular downloader core, FIFO queues, progress, cancellation and Ollama integration |
+| DVS | Data Visualizer Studio with strict input templates, presets and S3D integration |
+| Model Downloader | Modular downloader core with Ollama integration |
 | AIGMos View | `|lmts:view` adapter |
 | Runtime dependencies | Python 3.11+, zero third-party Python runtime dependencies |
 
@@ -82,20 +68,20 @@ Runtime target -> RuntimeExecutor ------------------------+
 
 The boundaries are intentional:
 
-- **providers** own model discovery and generation, not test semantics
-- **runtime targets** adapt standalone bots and compositions into the same execution boundary
-- **EvaluationSubject** identifies what is evaluated independently from how it is executed
-- **test definitions** own evaluation semantics, requirements, parameters and minimum test level
-- **TestRunner** executes tests without target-specific or CW-specific knowledge
-- **canonical stores** own run and matrix evidence
-- **reports** are projections of canonical evidence
-- **report servers** persist report documents, not evaluation truth
-- **DVS** consumes formal report/input contracts and produces visual plans
-- **views** consume state; they do not become alternate storage authorities
+- providers own model discovery and generation, not test semantics
+- runtime targets adapt standalone bots and compositions into the same execution boundary
+- `EvaluationSubject` identifies what is evaluated independently from how it is executed
+- test definitions own evaluation semantics, requirements, parameters, level, taxonomy and applicability
+- `TestRunner` executes tests without provider-specific knowledge
+- canonical stores own run and matrix evidence
+- reports are projections of canonical evidence
+- report servers persist report documents, not evaluation truth
+- DVS consumes formal report/input contracts and produces visual plans
+- views consume state; they do not become alternate storage authorities
 
 ## Evaluation targets
 
-LMTS uses one evaluation model for three subject kinds:
+LMTS evaluates three subject kinds through one execution architecture:
 
 | Kind | Source | Execution |
 | --- | --- | --- |
@@ -107,11 +93,27 @@ Models can be discovered through providers. The current local provider path supp
 
 Standalone bots and compositions are configured through `.lmts/runtime-targets.json` and can use HTTP or subprocess transport. Both transports use LMTS Runtime Protocol v1 and normalize output into the same response model used by provider-backed models.
 
-A bot can be evaluated standalone and the same bot can also participate in a larger composition. Target IDs must be unique across models, bots and compositions.
+A bot can be evaluated standalone and the same bot can also participate in a larger composition.
+
+### Subject applicability
+
+Tests explicitly declare which subject kinds they can run against:
+
+```text
+model
+bot
+composition
+```
+
+General capability and behavior probes can apply to all three. Runtime-specific probes can be restricted to only `bot` or only `composition`.
+
+Applicability is enforced before execution. A composition-only test cannot silently run against a model, and a standalone-bot-only test cannot silently run against a composition.
+
+Canonical test snapshots retain the declared `subject_kinds` used for each run.
 
 ## Test system
 
-A test type is independent of a model or runtime provider. LMTS separates the reusable test definition from a configured test instance:
+A reusable test type and a configured test instance are separate concepts:
 
 ```text
 TestTypeDefinition
@@ -121,18 +123,81 @@ TestTypeDefinition
   -> parameters
   -> minimum_level
   -> mandatory
+  -> category
+  -> subcategory
   -> factory
 
 ConfiguredTest
   -> type_ref
   -> instance_id
   -> concrete parameters
+  -> taxonomy
+  -> subject applicability
   -> executable test module
 ```
 
-The default registry currently contains **36 test types**.
+The default registry currently contains **44 test types**.
 
-### Cumulative test levels
+### Independent classification axes
+
+LMTS keeps different concepts separate:
+
+```text
+1. Level
+   quick / moderate / deep
+   -> how deep, expensive or demanding the test is
+
+2. Taxonomy
+   category / subcategory
+   -> what capability or behavior is measured
+
+3. Subject applicability
+   model / bot / composition
+   -> what kind of target can validly run the test
+
+4. Lifecycle status
+   baseline / candidate / future locked reference
+   -> how stable the test is for longitudinal comparison
+```
+
+A candidate can therefore be a Moderate-level test without being part of the automatic Moderate reference suite.
+
+### Taxonomy
+
+Current top-level taxonomy categories include:
+
+```text
+core
+bot
+bot_runtime
+composition
+neuro_symbolic
+reasoning
+context
+robustness
+performance
+research
+```
+
+Examples:
+
+```text
+bot/grounding
+bot/constraints
+bot/uncertainty
+bot/goal_management
+bot/recovery
+bot_runtime/scope_control
+composition/conflict_resolution
+neuro_symbolic/rule_chaining
+neuro_symbolic/state_transitions
+context/distractor_resistance
+performance/latency
+```
+
+Taxonomy is canonical metadata, not something reconstructed later from a test ID.
+
+### Automatic levels
 
 | Level | Meaning | Automatic suite |
 | --- | --- | ---: |
@@ -140,41 +205,178 @@ The default registry currently contains **36 test types**.
 | **Moderate** | Quick + automatically configured Moderate tests | 35 |
 | **Deep** | Moderate automatic suite + Deep-specific workflows | 35 + CW Bench |
 
-`research.free_prompt_consistency@1.0.0` requires a user-supplied prompt and is intentionally excluded from automatic suites.
-
 The default Benchmark matrix is **Moderate**.
 
-Two tests are mandatory:
+`research.free_prompt_consistency@1.0.0` requires explicit input and is intentionally excluded from automatic suites.
+
+Two current tests are mandatory:
 
 ```text
 reasoning.carwash_transport@1.0.0
 context.carwash_goal_persistence@1.0.0
 ```
 
-The current registry covers:
+## Candidate test pool
+
+Candidate tests are versioned and runnable from the registry but deliberately excluded from automatic Quick/Moderate/Deep suites until empirical comparison shows which tests are stable and discriminating enough to become locked references.
+
+Current candidate families:
+
+### Standalone bot runtime
 
 ```text
-core
-performance
-bot behavior
-reasoning
-context retention
-robustness
-workspace execution
-research/manual consistency
+bot_runtime.no_phantom_completion
+bot_runtime.scope_boundary
 ```
 
-New test types can be added without coupling them to providers, target implementations or presentation layers.
+These tests apply only to standalone bot subjects.
+
+### Composition behavior
+
+```text
+composition.constraint_integration
+composition.conflict_resolution
+```
+
+These tests apply only to composition subjects.
+
+Current LMTS Runtime Protocol v1 exposes the composition as a black-box prompt/response target. Internal routing, delegation and member provenance are therefore not scored unless a future runtime protocol exposes canonical evidence for them.
+
+## Neuro-symbolic AI tests
+
+LMTS includes a dedicated candidate domain for black-box evaluation of neuro-symbolic systems.
+
+The implementation of the evaluated system does **not** need to be known to LMTS. LMTS defines the task, knows the expected result and measures whether the external system actually delivers the claimed behavior.
+
+Current candidate families:
+
+```text
+neuro_symbolic.rule_chaining
+neuro_symbolic.graph_reachability
+neuro_symbolic.state_transitions
+neuro_symbolic.constraint_ordering
+```
+
+Each family is a scaling test rather than one fixed prompt.
+
+Default configuration:
+
+```text
+max_complexity   16
+cases_per_level   2
+```
+
+Complexity grows geometrically:
+
+```text
+2 -> 4 -> 8 -> 16 -> ...
+```
+
+The upper limit can currently be configured up to `256`.
+
+### What the scaling tests measure
+
+For each family LMTS records:
+
+- exact correctness per case
+- accuracy across all generated cases
+- accuracy by complexity level
+- first complexity level containing a failure
+- highest contiguous complexity level solved completely
+- complexity-ceiling score
+- mean latency by complexity level
+- TTFT by complexity level when available
+- latency growth ratio
+- input/output token counts when available
+- deterministic prompt hash
+- expected and actual answer for candidate-stage auditability
+
+This produces a capacity curve rather than a single opaque benchmark number.
+
+Example interpretation:
+
+```text
+complexity   accuracy   mean latency
+2            100%       220 ms
+4            100%       270 ms
+8            100%       390 ms
+16            50%       810 ms
+32             0%      1900 ms
+```
+
+That makes it possible to identify not only whether a system works, but where correctness, stability or execution cost begins to degrade.
+
+### Neuro-symbolic families
+
+`rule_chaining` measures exact deductive implication chains with distractors and deliberately broken chains.
+
+`graph_reachability` measures directed path reasoning with increasing path length and unrelated graph structure.
+
+`state_transitions` measures exact symbolic state tracking over increasingly long sequences of `FLIP`, `COPY` and `SWAP` operations.
+
+`constraint_ordering` measures integration of ordering constraints and recovery of the exact total order as the problem grows.
+
+These tests are currently **candidates**, not locked benchmark references. Their job is to generate empirical evidence about which forms and complexity ranges discriminate systems reliably.
+
+## Reference-set lifecycle
+
+LMTS separates experimental test development from longitudinal reference measurements.
+
+```text
+Candidate tests
+      |
+      v
+empirical runs across diverse targets
+      |
+      v
+Reference candidates
+      |
+      v
+Locked versioned reference set
+```
+
+A useful locked reference test should be:
+
+- reproducible
+- discriminating across targets
+- narrow enough to measure a meaningful capability
+- resistant to superficial formatting effects
+- stable across repeated runs
+- useful relative to its execution cost
+
+A locked test is not silently edited. A semantic change requires a new version so historical numbers continue to mean the same thing.
+
+Potential future locked profiles include:
+
+```text
+LMTS Quick Reference v1
+LMTS Moderate Reference v1
+LMTS Deep Reference v1
+LMTS Bot Reference v1
+LMTS Composition Reference v1
+```
+
+No final universal reference profile is locked yet.
 
 ## Running LMTS
 
 From the repository root:
 
 ```bash
-python3 -m lmts
+python -m pip install -e .
+lmts-tui
 ```
 
-Top-level tabs:
+Alternative entry points:
+
+```text
+lmts
+lmts-tui
+lmts-view
+lmts-dvs
+```
+
+Top-level TUI tabs:
 
 ```text
 1 Profile
@@ -183,24 +385,7 @@ Top-level tabs:
 4 Settings
 ```
 
-Global navigation:
-
-```text
-Esc       Back
-q q q     Quit
-Ctrl+L    Layout controls
-```
-
-Layout mode:
-
-```text
-Ctrl+L    Actions -> Layout
-0         toggle all panes
-1..9      toggle pane by slot
-Ctrl+L    cancel Layout -> Actions
-```
-
-### Benchmark actions
+Benchmark actions:
 
 ```text
 t Tests
@@ -220,60 +405,7 @@ Run all tests to all models all configured tests -> all model targets
 
 Bots and compositions remain available through selected-target execution. `Run all tests to all models` intentionally selects model targets only.
 
-Benchmark layout:
-
-```text
-1 Main
-2 Results
-3 Console
-```
-
-The Results pane is the live target x test matrix. Console is the live response monitor.
-
-## Report export during test execution
-
-LMTS projects test evidence into the same canonical report contract regardless of output destination:
-
-```text
-RunResult / Matrix evidence
-          |
-          v
-     lmts.report/1.1
-       /          \
-      v            v
-    file       report server
-```
-
-### Single target + single test
-
-When a 1x1 run finishes, the TUI opens:
-
-```text
-Test complete
-
-> Export to server
-  Export to file
-  Keep local
-```
-
-`Export to server` is the first and default selection. If exactly one report profile exists, pressing Enter is enough to publish the report without another server-selection dialog.
-
-Publishing never replaces the local canonical RunResult. A publish failure leaves the canonical result intact.
-
-### Multi-target runs
-
-Before a run with multiple selected targets, LMTS asks:
-
-```text
-Export reports to server as they complete?
-
-> Yes
-  No
-```
-
-When `Yes` is selected, every non-cancelled run is projected into its own `lmts.report/1.1` document and published as soon as that target completes. LMTS does not wait for the whole matrix before publishing completed reports.
-
-Publish errors are recorded separately from evaluation verdicts and do not rewrite PASS/FAIL/ERROR result evidence.
+Candidate tests are selected manually from the registry.
 
 ## Canonical result storage
 
@@ -293,13 +425,25 @@ results/
     └── <matrix-id>.json
 ```
 
-RunResult and MatrixRunRecord evidence is the measurement source of truth. Reports, databases, public pages and visualizations are projections of that evidence.
+`RunResult` and `MatrixRunRecord` evidence is the measurement source of truth. Reports, databases, public pages and visualizations are projections of that evidence.
 
-Execution state and evaluation verdict remain separate. A run may execute successfully and receive `FAIL`; protocol or execution failure can be represented as `ERROR`.
+Execution state and evaluation verdict remain separate. A run may execute successfully and receive `FAIL`; protocol or execution failure is represented separately.
 
-## LMTS Benchmark Report Template v1.1
+## Result and report flow
 
-The report interchange contract is:
+LMTS projects canonical evidence into one report contract:
+
+```text
+RunResult / Matrix evidence
+          |
+          v
+     lmts.report/1.1
+       /          \
+      v            v
+    file       report server
+```
+
+The interchange contract is:
 
 ```text
 lmts/reporting/LMTS_Benchmark_Report_Template_v1.1.schema.json
@@ -312,33 +456,13 @@ format  = lmts.report
 version = 1.1
 ```
 
-The contract fixes structural meaning while keeping report, source, entity, metric, summary, evidence and view fields open for extension.
+The report server does not become a second evaluation authority. It stores and serves report projections while canonical run evidence remains local and append-only.
 
-Transport is deliberately simple:
-
-```text
-canonical LMTS evidence
-        |
-        v
-LMTS Benchmark Report Template 1.1
-        |
-        +------ JSON file
-        +------ POST report server
-        +------ GET report server
-        +------ DVS Input Template
-```
-
-The report server does not translate the document into another LMTS report model. The same semantic `lmts.report/1.1` document is stored and returned.
-
-Unavailable known measurements are represented explicitly as JSON `null`. A missing field means the producer did not define that field. Consumers must not invent replacement values.
-
-The Template records tests that were actually executed. It does **not** define a locked universal benchmark suite.
-
-`AIGM LM Benchmark Report` remains reserved for a future locked benchmark profile. That profile is not part of the current implementation baseline.
+Unavailable known measurements are represented explicitly as JSON `null`. Consumers must not invent replacement values.
 
 ## Result server
 
-The generated result-server implementation accepts only `lmts.report/1.1`.
+The current result server accepts only `lmts.report/1.1`.
 
 Report IDs are immutable:
 
@@ -348,15 +472,9 @@ Report IDs are immutable:
 - GET with `?id=<report-id>` returns that report
 - GET without an ID returns the newest report
 
-Publishing uses an `X-LMTS-Key` publish key configured through saved report profiles.
+The current persistence implementation is MariaDB/MySQL.
 
-The current server persistence implementation is MariaDB/MySQL. The schema lives at:
-
-```text
-lmts/install/schema_v1.sql
-```
-
-The runtime database account is intentionally restricted to:
+Runtime database permissions are intentionally restricted to:
 
 ```text
 SELECT
@@ -369,34 +487,11 @@ The privileged bootstrap installer is:
 lmts/install/install_server.sh
 ```
 
-Its responsibility is environment and local database bootstrap. It does **not** own a domain, Apache virtual host, Alias, DocumentRoot or web deployment path.
-
-For an existing local or remote database, schema installation is available from the TUI MySQL settings without requiring the privileged bootstrap path.
-
-## Web deployment
-
-The generated LMTS web package starts directly at the target directory. There is no forced `public/` subdirectory.
-
-Representative layout:
-
-```text
-<target>/
-├── index.html
-├── app.js
-├── assets/
-├── api/
-├── config/
-├── contracts/
-└── lib/
-```
-
-Browser and PHP paths are relative so deployment location is not tied to a specific domain or DocumentRoot.
-
-Host ownership and permissions are outside the generic deployment contract. The host administrator owns the target directory, Apache/Nginx configuration and filesystem access policy.
+Generic deployment tooling does not own domains, virtual hosts, DocumentRoots or host filesystem policy.
 
 ## DVS - Data Visualizer Studio
 
-DVS turns formal input data into reusable S3D visualizations without embedding LMTS-specific rendering semantics into S3D.
+DVS turns formal result data into reusable S3D visualizations without embedding LMTS-specific rendering semantics into S3D.
 
 ```text
 formal source format
@@ -422,73 +517,6 @@ generic visual plan
        S3D
 ```
 
-### Managed DVS lifecycle
-
-DVS is managed from the LMTS TUI instead of requiring a manual shell command:
-
-```text
-Settings -> DVS
-```
-
-Available actions:
-
-```text
-Refresh status
-Start
-Stop
-Restart
-Fetch / Update S3D
-Edit configuration
-```
-
-The Settings page exposes DVS status, endpoint and S3D readiness.
-
-Default configuration:
-
-```text
-host        127.0.0.1
-port        8775
-S3D root    ../S3D
-Studio root .lmts/dvs
-```
-
-Managed runtime state:
-
-```text
-.lmts/dvs-service.json
-.lmts/dvs-service.log
-```
-
-Start validates the configured S3D root and requires `s3d.js` when S3D is enabled.
-
-Stop does not blindly kill an arbitrary PID. LMTS verifies managed-process ownership using the DVS instance identity. On Linux, stale-state recovery can additionally verify the process environment through `/proc/<pid>/environ` before sending SIGTERM.
-
-### S3D repository management
-
-`Fetch / Update S3D` uses the configured `S3D root`.
-
-With the default LMTS/S3D sibling layout:
-
-```text
-AIGM/
-├── LMTS/
-└── S3D/
-```
-
-LMTS resolves `../S3D` to the sibling repository.
-
-Behavior is strict:
-
-- missing target -> clone canonical `Th3Hypn0tist/S3D`
-- existing canonical repo -> fetch + fast-forward only
-- dirty repo -> fail without overwriting local changes
-- wrong origin -> fail
-- missing `s3d.js` after sync -> fail
-
-DVS must be stopped before S3D is updated.
-
-### Input Templates
-
 Canonical Input Column types are:
 
 ```text
@@ -497,68 +525,9 @@ number
 boolean
 ```
 
-`number` means a finite numeric value. Numeric strings may be parsed by the Input Template. `null` is not a type; nullability is declared separately with `nullable: true`.
+Input Templates own extraction, typing, nullability and optional numeric input scaling.
 
-Input Templates own:
-
-- source-format identity
-- source reader
-- row selector
-- named columns
-- selector per column
-- column type
-- optional nullability
-- optional numeric scale
-
-Numeric scale belongs to the Input Template:
-
-```text
-low
-high
-power
-```
-
-Typing happens before scaling:
-
-```text
-output = ((input - low) / (high - low)) ^ power
-```
-
-There is no implicit clamp.
-
-Studio can scan a selected numeric column to find typed pre-scale low/high values. Nullable null values are skipped. If no numeric values remain, range discovery fails instead of inventing a range.
-
-A scaled column exposes:
-
-```text
-scale.<column>
-```
-
-The LMTS report Input Template is:
-
-```text
-lmts/dvs/templates/lmts-report-v1.1.json
-```
-
-It consumes `lmts.report/1.1`; DVS does not maintain a parallel LMTS report model.
-
-### Visualization Presets
-
-A Visualization Preset defines how typed projected columns become visual structure.
-
-It declares:
-
-- source-format compatibility
-- Input Template reference
-- recursive visual generations
-- primitive per generation
-- optional grouping
-- visual-channel bindings
-- Input Template parameter bindings
-- interpretation metadata
-- transform metadata
-
-Every channel binding must reference an actual Input Template column. Every parameter binding must reference an actual Input Template parameter. Invalid or ambiguous mappings fail instead of falling back.
+Visualization Presets own visual meaning and bindings.
 
 The first LMTS-specific preset is:
 
@@ -566,98 +535,13 @@ The first LMTS-specific preset is:
 lmts.benchmark.landscape.v1
 ```
 
-Its current mapping uses:
-
-```text
-target         -> position.x categorical index
-test           -> position.z categorical index
-score_percent  -> position.y + scale.y
-result         -> uniform RGB channels
-```
-
-### Generic visual plan
-
-DVS projects source data into:
+DVS projects renderer input into:
 
 ```text
 s3d.dvs.visual-plan/1.0
 ```
 
-The visual plan is renderer input, not a second application-data authority.
-
-Current generic interpretations include:
-
-```text
-categorical-index
-number
-number-or-null
-category-channel
-```
-
-Transforms are strict. Unsupported transform fields fail. Recursive child generations operate on their parent row subset while preserving source-row indices.
-
-For `number-or-null`, explicit null can map to `not-rendered`; DVS does not manufacture a substitute value.
-
-### DVS API
-
-Current Python DVS runtime endpoints include:
-
-```text
-GET  /api/health
-GET  /api/input-templates
-GET  /api/input-templates/<id>
-GET  /api/visualization-presets
-GET  /api/visualization-presets/<id>
-POST /api/extract
-POST /api/visualize
-```
-
-There is deliberately no `/api/table` compatibility alias.
-
-## S3D visualization boundary
-
-DVS delegates generic 3D mechanics to S3D.
-
-Uniform box channels:
-
-```text
-position.x/y/z
-rotation.x/y/z
-scale.x/y/z
-color.r/g/b/a
-```
-
-S3D owns the canonical packed box representation. The current packed box instance uses 33 floats:
-
-```text
-position XYZ                    3
-scale XYZ                       3
-rotation XYZ                    3
-face z- RGBA                    4
-face z+ RGBA                    4
-face x- RGBA                    4
-face x+ RGBA                    4
-face y- RGBA                    4
-face y+ RGBA                    4
----------------------------------
-total                          33 floats / instance
-```
-
-Canonical face order:
-
-```text
-z-, z+, x-, x+, y-, y+
-```
-
-Generic per-face channels use:
-
-```text
-face.<S3D-face-id>.color.r/g/b/a
-```
-
-If any per-face color channel is used, the complete `6 x RGBA` set is required. Partial face definitions and unknown face IDs are errors.
-
-High-density visualization stays packed instead of creating one SceneObject per observation.
+High-density visualization stays packed instead of creating one scene object per observation.
 
 ## Deep testing and CW Bench
 
@@ -689,7 +573,7 @@ The comparison is **CW to CW**, not generated-source-text scoring.
 
 Import failure, unexpected output files, unsupported language mapping or semantic mismatch is a test failure. There is no textual fallback evaluator.
 
-Current CW Bench output-file mapping supports:
+Current output-file mapping supports:
 
 ```text
 python
@@ -700,13 +584,9 @@ css
 
 The default CIC root is `../Structure`.
 
-CW Bench uses the same controller run path, live matrix state, response monitor, cancellation and canonical MatrixRunRecord storage as normal benchmark execution.
+## System profile and performance evidence
 
-## System profile and reference benchmarks
-
-Benchmark evidence remains attached to a canonical system profile.
-
-The profile covers:
+Benchmark evidence remains attached to a canonical system profile covering:
 
 ```text
 CPU
@@ -716,22 +596,13 @@ NPU
 reference performance suites
 ```
 
-Reference benchmark domains are:
-
-```text
-cpu
-memory
-gpu
-npu
-```
-
 Run evidence can include:
 
 - input tokens
 - output tokens
 - TTFT
 - total generation time
-- provider-reported throughput/performance values
+- provider-reported throughput
 - runtime telemetry
 - response text and normalized response data
 - score dimensions
@@ -782,37 +653,16 @@ LMTS exposes an AIGMos View adapter at:
 
 The adapter projects LMTS state while leaving render ownership to the AIGMos layout system.
 
-## Runtime
-
-LMTS requires Python 3.11 or newer.
-
-The Python runtime has zero third-party runtime dependencies:
-
-```toml
-dependencies = []
-```
-
-Repository entry points include:
-
-```text
-lmts
-lmts-tui
-lmts-view
-lmts-dvs
-```
-
-`lmts` and `lmts-tui` route through the report-aware TUI runtime so the post-run export workflow is active regardless of which normal TUI entry point is used.
-
 ## Repository structure
 
 ```text
 lmts/
 ├── core/        execution, subjects, stores, matrices, downloader and CW Bench core
 ├── providers/   model provider adapters
-├── tests/       test contracts, registry, catalog and executable test modules
+├── tests/       test contracts, taxonomy, registry, catalog and executable test modules
 ├── tools/       profiling, telemetry, report, server and deployment utilities
 ├── view/        TUI, controller, dialogs, projections and AIGMos View adapter
-├── reporting/   LMTS benchmark-report projection and schemas
+├── reporting/   benchmark-report projection and schemas
 ├── dvs/         Data Visualizer Studio, templates, presets, server and viewer assets
 ├── lib/         shared bounded runtime/view primitives
 ├── config/      server/database configuration assets
@@ -825,34 +675,33 @@ tests/           repository-level verification tests
 
 ## Current integration boundaries
 
-These are current implementation boundaries, not hidden fallbacks:
+These are explicit implementation boundaries, not hidden fallbacks:
 
-- The current report-server persistence implementation is **MariaDB/MySQL**. A PostgreSQL report-server adapter is not yet part of `main`.
-- DVS consumes canonical `lmts.report/1.1` documents, but direct report-server browsing/selection is not yet wired into the DVS Studio UI.
-- A DVS **Show public page** action is not yet wired.
-- The generated public viewer/API package exists, but viewer dependency packaging is still being hardened; the current viewer code expects the WebGUI module at `./WebGUI/webgui.js`.
+- LMTS Runtime Protocol v1 currently exposes bot/composition execution as prompt -> normalized response. Internal composition routing, delegation and member provenance are not yet canonical runtime evidence.
+- The current report-server persistence implementation is MariaDB/MySQL.
+- DVS consumes canonical `lmts.report/1.1` documents, but direct report-server browsing/selection is not yet wired into DVS Studio.
+- A DVS public-page action is not yet wired.
 - `AIGM LM Benchmark Report` is not yet a locked benchmark profile.
-- The final discriminating benchmark test set, mandatory metric set, scoring and aggregation for that future profile are not locked.
+- The final discriminating reference-test set, mandatory metric set, scoring and aggregation are not yet locked.
+- Neuro-symbolic, standalone-bot-runtime and composition-specific tests are currently candidate tests and remain outside automatic suites until measured empirically.
 
-LMTS fails visibly at these boundaries rather than pretending unsupported behavior exists.
+LMTS fails visibly at unsupported boundaries rather than pretending unsupported behavior exists.
 
 ## Design rules
-
-LMTS is built around explicit architectural constraints:
 
 1. **Canonical evidence first.** Results are stored before they are projected.
 2. **No duplicate truth.** Views, reports, databases and visualizations do not become alternate result authorities.
 3. **No silent fallback.** Missing protocol data, invalid configuration and failed imports remain visible failures.
-4. **Source formats own missing-data semantics.** DVS never manufactures absent source values.
-5. **Input Templates own extraction, basic typing and numeric input scaling.** Visualization Presets own visual meaning.
-6. **Tests are provider-neutral.** Providers generate; tests evaluate.
-7. **Targets are broader than models.** Models, bots and compositions share one evaluation architecture.
-8. **System context matters.** Benchmark evidence stays attached to the machine and runtime context that produced it.
-9. **Execution is bounded.** Workspace and runtime boundaries are explicit rather than implied.
-10. **Dense visualization stays dense.** High-observation-count rendering uses packed buffers rather than per-observation scene objects.
-11. **S3D owns generic 3D mechanics.** DVS does not duplicate packed layout or face-order truth.
+4. **Tests are provider-neutral.** Providers generate; tests evaluate.
+5. **Classification axes stay separate.** Level, taxonomy, subject applicability and lifecycle status do not replace one another.
+6. **Targets are broader than models.** Models, bots and compositions share one evaluation architecture.
+7. **Subject applicability is enforced.** A test cannot silently execute against an invalid target kind.
+8. **Candidate tests earn reference status empirically.** Stable longitudinal suites are locked only after comparison data exists.
+9. **System context matters.** Benchmark evidence stays attached to the machine and runtime context that produced it.
+10. **Execution is bounded.** Workspace and runtime boundaries are explicit rather than implied.
+11. **Dense visualization stays dense.** High-observation-count rendering uses packed buffers rather than per-observation scene objects.
 12. **Presentation is replaceable.** TUI, reports, public pages, DVS and AIGMos View consume canonical state instead of owning it.
 13. **Host configuration is external.** Generic deploy tooling does not own domains, vhosts, DocumentRoots or filesystem policy.
 14. **Secure by limitations.** Capabilities are explicit, bounded and reject invalid states rather than guessing.
 
-LMTS is therefore not just a collection of prompts. It is a controlled evaluation runtime for producing structured evidence that can be compared, inspected, exported, published and visualized without losing the context that produced it.
+LMTS is not just a collection of prompts. It is a controlled evaluation runtime for producing structured evidence that can be compared, inspected, exported, published and visualized without losing the context that produced it.

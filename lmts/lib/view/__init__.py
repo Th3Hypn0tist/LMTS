@@ -1,7 +1,9 @@
 """Host-neutral view primitives."""
 
 from .curses_host import CursesViewHost
+from .events import UIEvent, UIEventBus
 from .layout import LayoutPane
+from .modals import ModalManager, ModalState
 from .model import ViewFrame, ViewItem
 from .path_dialog import choose_directory
 from .preview_dialog import choose_with_preview
@@ -19,6 +21,10 @@ __all__ = [
     "ViewItem",
     "choose_directory",
     "choose_with_preview",
+    "UIEvent",
+    "UIEventBus",
+    "ModalManager",
+    "ModalState",
     "ShortcutDefinition",
     "ShortcutMatch",
     "ShortcutRegistry",

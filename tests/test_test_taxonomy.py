@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lmts.tests.base import test_snapshot
+from lmts.tests.base import test_snapshot as snapshot_for_test
 from lmts.tests.catalog import default_test_type_registry
 from lmts.tests.taxonomy import taxonomy_for
 
@@ -28,7 +28,7 @@ def test_taxonomy_does_not_change_canonical_test_identity() -> None:
 def test_configured_test_snapshot_contains_taxonomy_metadata() -> None:
     definition = default_test_type_registry().get('bot.missing_information@1.0.0')
     configured = definition.configure('bot-missing-information')
-    snapshot = test_snapshot(configured)
+    snapshot = snapshot_for_test(configured)
     assert snapshot['identity']['type_id'] == 'bot.missing_information'
     assert snapshot['taxonomy'] == {
         'category': 'bot',

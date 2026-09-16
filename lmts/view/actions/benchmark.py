@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from lmts.lib.view import choose_with_preview
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import test_matrix_for_level
 from lmts.tests.types import TestParameter
@@ -172,7 +171,13 @@ class BenchmarkActions(TUIActions):
             )
 
         selected = levels.index(self.controller.state.suite_level) if self.controller.state.suite_level in levels else 1
-        chosen = choose_with_preview(self.stdscr, 'Tests', options, preview, selected=selected)
+        chosen = self.host.choose_with_preview(
+            self.stdscr,
+            'Tests',
+            options,
+            preview,
+            selected=selected,
+        )
         if chosen is None:
             return
         if chosen < 3:
@@ -223,7 +228,7 @@ class BenchmarkActions(TUIActions):
                 'Bots and compositions are not included.',
             )
 
-        chosen = choose_with_preview(self.stdscr, 'Run', options, preview)
+        chosen = self.host.choose_with_preview(self.stdscr, 'Run', options, preview)
         if chosen is None:
             return
         if chosen == 0:

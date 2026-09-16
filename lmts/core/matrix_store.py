@@ -63,12 +63,32 @@ class MatrixRunStore:
     def path_for_id(self, matrix_id: str) -> Path:
         return self.root / "matrices" / f"{safe_component(matrix_id)}.json"
 
+    def _portable_result_path(self, value: str) -> str:
+        candidate = Path(value).expanduser()
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+            try:
+                return resolved.relative_to(self.root).as_posix()
+            except ValueError as exc:
+                raise ValueError(f"matrix run result is outside results root: {resolved}") from exc
+        if not candidate.parts or any(part == '..' for part in candidate.parts):
+            raise ValueError(f"invalid matrix run result locator: {value!r}")
+        return candidate.as_posix()
+
     def append(self, record: MatrixRunRecord) -> Path:
         path = self.path_for_id(record.matrix_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists():
             raise FileExistsError(f"matrix result already exists: {path}")
-        payload = json.dumps(record.to_dict(), indent=2, ensure_ascii=False) + "\n"
+        document = record.to_dict()
+        cells = document.get('cells')
+        if not isinstance(cells, list):
+            raise ValueError('matrix cells must be a list')
+        for cell in cells:
+            if not isinstance(cell, dict):
+                raise ValueError('matrix cell must be an object')
+            cell['result_path'] = self._portable_result_path(str(cell.get('result_path') or ''))
+        payload = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
         temp = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
         temp.write_text(payload, encoding="utf-8")
         try:

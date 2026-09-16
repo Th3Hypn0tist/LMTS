@@ -12,11 +12,13 @@ from urllib import request
 
 from .executor import RuntimeExecutor
 from .models import ModelCapabilities, NormalizedPerformance, NormalizedResponse, NormalizedTiming, NormalizedUsage
-from .paths import RUNTIME_TARGETS_PATH
+from .paths import RUNTIME_SECRETS_PATH, RUNTIME_TARGETS_PATH
 from .subject import EvaluationSubject, SubjectMember
 
 RUNTIME_TARGETS_SCHEMA_VERSION = 1
+RUNTIME_SECRETS_SCHEMA_VERSION = 1
 DEFAULT_RUNTIME_TARGETS_PATH = RUNTIME_TARGETS_PATH
+DEFAULT_RUNTIME_SECRETS_PATH = RUNTIME_SECRETS_PATH
 RuntimeTransport = Literal['http', 'subprocess']
 RuntimeKind = Literal['bot', 'composition']
 
@@ -31,6 +33,8 @@ class RuntimeTargetDefinition:
     command: tuple[str, ...] = ()
     timeout_seconds: float = 900.0
     members: tuple[SubjectMember, ...] = ()
+    auth_header: str = ''
+    auth_prefix: str = ''
     configuration: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     capabilities: ModelCapabilities = field(default_factory=ModelCapabilities)
@@ -46,8 +50,14 @@ class RuntimeTargetDefinition:
         elif self.transport == 'subprocess':
             if not self.command:
                 raise ValueError('subprocess runtime target requires a command')
+            if self.auth_header or self.auth_prefix:
+                raise ValueError('subprocess runtime target cannot define HTTP authentication')
         else:
             raise ValueError(f'unsupported runtime target transport: {self.transport}')
+        if self.auth_header and any(char in self.auth_header for char in '\r\n:'):
+            raise ValueError('runtime target auth header must be a canonical header name without colon')
+        if '\r' in self.auth_prefix or '\n' in self.auth_prefix:
+            raise ValueError('runtime target auth prefix must not contain line breaks')
         if self.kind == 'composition' and not self.members:
             raise ValueError('composition runtime target requires members')
         if self.timeout_seconds <= 0:
@@ -80,6 +90,8 @@ class RuntimeTargetDefinition:
             'command': list(self.command),
             'timeout_seconds': self.timeout_seconds,
             'members': [{'ref': item.ref, 'role': item.role} for item in self.members],
+            'auth_header': self.auth_header,
+            'auth_prefix': self.auth_prefix,
             'configuration': dict(self.configuration),
             'metadata': dict(self.metadata),
             'capabilities': {
@@ -92,6 +104,77 @@ class RuntimeTargetDefinition:
                 'multi_file_output': self.capabilities.multi_file_output,
             },
         }
+
+
+def _atomic_json_write(path: Path, payload: dict[str, Any]) -> Path:
+    path = path.expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + '\n'
+    temp = path.with_suffix(path.suffix + f'.tmp-{os.getpid()}')
+    temp.write_text(text, encoding='utf-8')
+    try:
+        temp.replace(path)
+        os.chmod(path, 0o600)
+    finally:
+        if temp.exists():
+            temp.unlink()
+    return path
+
+
+def load_runtime_secrets(path: Path = DEFAULT_RUNTIME_SECRETS_PATH) -> dict[str, str]:
+    path = path.expanduser()
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(payload, dict) or payload.get('schema_version') != RUNTIME_SECRETS_SCHEMA_VERSION:
+        raise ValueError('unsupported runtime secrets schema')
+    raw = payload.get('keys')
+    if not isinstance(raw, dict):
+        raise ValueError('runtime secrets keys must be an object')
+    output: dict[str, str] = {}
+    for target_id, value in raw.items():
+        if not isinstance(target_id, str) or not target_id.strip():
+            raise ValueError('runtime secret target id must be a non-empty string')
+        if not isinstance(value, str) or not value:
+            raise ValueError(f'runtime secret for {target_id} must be a non-empty string')
+        output[target_id] = value
+    return output
+
+
+def save_runtime_secrets(keys: dict[str, str], path: Path = DEFAULT_RUNTIME_SECRETS_PATH) -> Path:
+    clean: dict[str, str] = {}
+    for target_id, value in keys.items():
+        target = str(target_id).strip()
+        if not target:
+            raise ValueError('runtime secret target id must be non-empty')
+        if not isinstance(value, str) or not value:
+            raise ValueError(f'runtime secret for {target} must be non-empty')
+        clean[target] = value
+    return _atomic_json_write(path, {'schema_version': RUNTIME_SECRETS_SCHEMA_VERSION, 'keys': clean})
+
+
+def set_runtime_key(target_id: str, key: str, path: Path = DEFAULT_RUNTIME_SECRETS_PATH) -> Path:
+    target = target_id.strip()
+    if not target:
+        raise ValueError('runtime target id must be non-empty')
+    if not key:
+        raise ValueError('runtime target key must be non-empty')
+    keys = load_runtime_secrets(path)
+    keys[target] = key
+    return save_runtime_secrets(keys, path)
+
+
+def delete_runtime_key(target_id: str, path: Path = DEFAULT_RUNTIME_SECRETS_PATH) -> None:
+    keys = load_runtime_secrets(path)
+    if target_id not in keys:
+        return
+    del keys[target_id]
+    if keys:
+        save_runtime_secrets(keys, path)
+    else:
+        path = path.expanduser()
+        if path.exists():
+            path.unlink()
 
 
 def _normalized_response(payload: dict[str, Any], elapsed_ms: float) -> NormalizedResponse:
@@ -125,11 +208,18 @@ def _normalized_response(payload: dict[str, Any], elapsed_ms: float) -> Normaliz
 
 def _http_generate(definition: RuntimeTargetDefinition, prompt: str) -> NormalizedResponse:
     body = json.dumps({'protocol': 'lmts.runtime.v1', 'prompt': prompt}, ensure_ascii=False).encode('utf-8')
+    headers = {'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json'}
+    if definition.auth_header:
+        keys = load_runtime_secrets()
+        key = keys.get(definition.id)
+        if key is None:
+            raise ValueError(f'HTTP runtime target requires configured key: {definition.id}')
+        headers[definition.auth_header] = f'{definition.auth_prefix}{key}'
     req = request.Request(
         definition.endpoint,
         data=body,
         method='POST',
-        headers={'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json'},
+        headers=headers,
     )
     started = time.perf_counter()
     with request.urlopen(req, timeout=definition.timeout_seconds) as response:
@@ -189,6 +279,8 @@ def executor_from_definition(definition: RuntimeTargetDefinition) -> RuntimeExec
             'transport': definition.transport,
             'endpoint': definition.endpoint or None,
             'command': list(definition.command),
+            'auth_header': definition.auth_header or None,
+            'auth_configured': bool(definition.auth_header),
             **definition.metadata,
         },
     )
@@ -230,6 +322,8 @@ def _definition(raw: dict[str, Any]) -> RuntimeTargetDefinition:
         command=command,
         timeout_seconds=float(raw.get('timeout_seconds') or 900.0),
         members=members,
+        auth_header=str(raw.get('auth_header') or '').strip(),
+        auth_prefix=str(raw.get('auth_prefix') or ''),
         configuration=dict(raw.get('configuration') or {}) if isinstance(raw.get('configuration'), dict) else {},
         metadata=dict(raw.get('metadata') or {}) if isinstance(raw.get('metadata'), dict) else {},
         capabilities=_capabilities(raw.get('capabilities')),
@@ -257,16 +351,5 @@ def save_runtime_targets(definitions: tuple[RuntimeTargetDefinition, ...], path:
     ids = [item.id for item in definitions]
     if len(ids) != len(set(ids)):
         raise ValueError('runtime target ids must be unique')
-    path = path.expanduser()
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = {'schema_version': RUNTIME_TARGETS_SCHEMA_VERSION, 'targets': [item.to_dict() for item in definitions]}
-    text = json.dumps(payload, indent=2, ensure_ascii=False) + '\n'
-    temp = path.with_suffix(path.suffix + f'.tmp-{os.getpid()}')
-    temp.write_text(text, encoding='utf-8')
-    try:
-        temp.replace(path)
-        os.chmod(path, 0o600)
-    finally:
-        if temp.exists():
-            temp.unlink()
-    return path
+    return _atomic_json_write(path, payload)

@@ -5,8 +5,11 @@ import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from lmts.core.paths import REPORT_PROFILES_PATH
+
+
 REPORT_PROFILES_SCHEMA_VERSION = 1
-DEFAULT_REPORT_PROFILES_PATH = Path('.lmts/report-profiles.json')
+DEFAULT_REPORT_PROFILES_PATH = REPORT_PROFILES_PATH
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +26,8 @@ class ReportProfile:
             raise ValueError('report endpoint must not be empty')
         if not endpoint.startswith(('http://', 'https://')):
             raise ValueError('report endpoint must use http:// or https://')
+        if not self.publish_key.strip():
+            raise ValueError('report publish key must not be empty')
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -68,7 +73,7 @@ def load_report_profiles(path: Path = DEFAULT_REPORT_PROFILES_PATH) -> ReportPro
         profile = ReportProfile(
             name=str(raw.get('name') or '').strip(),
             endpoint=str(raw.get('endpoint') or '').strip(),
-            publish_key=str(raw.get('publish_key') or 'lmts'),
+            publish_key=str(raw.get('publish_key') or ''),
         )
         if profile.name in names:
             raise ValueError(f'duplicate report profile name: {profile.name}')
@@ -88,6 +93,7 @@ def save_report_profiles(profiles: ReportProfiles, path: Path = DEFAULT_REPORT_P
     text = json.dumps(payload, indent=2, ensure_ascii=False) + '\n'
     temp = path.with_suffix(path.suffix + f'.tmp-{os.getpid()}')
     temp.write_text(text, encoding='utf-8')
+    os.chmod(temp, 0o600)
     try:
         temp.replace(path)
         os.chmod(path, 0o600)

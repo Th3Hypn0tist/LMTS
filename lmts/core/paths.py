@@ -1,0 +1,24 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+
+def lmts_home() -> Path:
+    value = os.environ.get('LMTS_HOME', '').strip()
+    root = Path(value).expanduser() if value else Path.home() / '.lmts'
+    return root.resolve()
+
+
+def lmts_path(*parts: str) -> Path:
+    return lmts_home().joinpath(*parts)
+
+
+SETTINGS_PATH = lmts_path('settings.json')
+SYSTEM_PROFILE_PATH = lmts_path('system-profile.json')
+RUNTIME_TARGETS_PATH = lmts_path('runtime-targets.json')
+DVS_SERVICE_STATE_PATH = lmts_path('dvs-service.json')
+DVS_SERVICE_LOG_PATH = lmts_path('dvs-service.log')
+FTP_PROFILES_PATH = lmts_path('ftp-profiles.json')
+REPORT_PROFILES_PATH = lmts_path('report-profiles.json')
+SHORTCUT_SETTINGS_PATH = lmts_path('shortcuts.json')

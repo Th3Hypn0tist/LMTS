@@ -23,7 +23,7 @@ TEST_TAXONOMY: dict[str, TestTaxonomy] = {
     "core.text_generation": TestTaxonomy("core", "generation"),
     "core.workspace_multifile": TestTaxonomy("core", "workspace"),
 
-    # Bot behavior. These describe behavioral contracts, not model architecture.
+    # General bot behavior probes. These can be compared across model, bot and composition targets.
     "bot.exact_instruction": TestTaxonomy("bot", "instruction_following"),
     "bot.negative_constraint": TestTaxonomy("bot", "constraints"),
     "bot.missing_information": TestTaxonomy("bot", "uncertainty"),
@@ -38,6 +38,14 @@ TEST_TAXONOMY: dict[str, TestTaxonomy] = {
     "bot.stop_condition": TestTaxonomy("bot", "completion_control"),
     "bot.closed_world_unknown": TestTaxonomy("bot", "grounding"),
     "bot.self_correction": TestTaxonomy("bot", "recovery"),
+
+    # Standalone bot-runtime candidate probes. Restricted to bot subjects.
+    "bot_runtime.no_phantom_completion": TestTaxonomy("bot_runtime", "grounding"),
+    "bot_runtime.scope_boundary": TestTaxonomy("bot_runtime", "scope_control"),
+
+    # Composition/system candidate probes. Restricted to composition subjects.
+    "composition.constraint_integration": TestTaxonomy("composition", "constraint_integration"),
+    "composition.conflict_resolution": TestTaxonomy("composition", "conflict_resolution"),
 
     # Reasoning.
     "reasoning.carwash_transport": TestTaxonomy("reasoning", "goal_reasoning"),

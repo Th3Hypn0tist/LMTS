@@ -54,19 +54,9 @@ def test_install_mysql_schema_uses_settings_and_password_env(tmp_path: Path, mon
     assert seen['stdin'] == b'SELECT 1;\n'
 
 
-def test_install_mysql_schema_rejects_empty_password_before_client_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
-    called = False
-
-    def fake_which(_name):
-        nonlocal called
-        called = True
-        return '/usr/bin/mariadb'
-
-    monkeypatch.setattr(mysql_schema.shutil, 'which', fake_which)
-    settings = MySQLSettings(password='')
+def test_mysql_settings_rejects_empty_password() -> None:
     with pytest.raises(ValueError, match='MySQL password must not be empty'):
-        mysql_schema.install_mysql_schema(settings)
-    assert called is False
+        MySQLSettings(password='')
 
 
 def test_install_mysql_schema_rejects_missing_client(monkeypatch: pytest.MonkeyPatch) -> None:

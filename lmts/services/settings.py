@@ -66,13 +66,28 @@ class SettingsService:
                 return store.path
         raise KeyError(f'unknown settings store: {store_id}')
 
+    def load_core(self) -> LMTSSettings:
+        return load_settings(self.path('core'))
+
+    def load_shortcuts(self) -> dict[str, tuple[str, ...]]:
+        return load_shortcut_overrides(self.path('shortcuts'))
+
+    def load_runtime_targets(self) -> tuple[RuntimeTargetDefinition, ...]:
+        return load_runtime_targets(self.path('runtime_targets'))
+
+    def load_ftp_profiles(self) -> FTPProfiles:
+        return load_ftp_profiles(self.path('ftp_profiles'))
+
+    def load_report_profiles(self) -> ReportProfiles:
+        return load_report_profiles(self.path('report_profiles'))
+
     def load(self) -> SettingsSnapshot:
         return SettingsSnapshot(
-            core=load_settings(self.path('core')),
-            shortcuts=load_shortcut_overrides(self.path('shortcuts')),
-            runtime_targets=load_runtime_targets(self.path('runtime_targets')),
-            ftp_profiles=load_ftp_profiles(self.path('ftp_profiles')),
-            report_profiles=load_report_profiles(self.path('report_profiles')),
+            core=self.load_core(),
+            shortcuts=self.load_shortcuts(),
+            runtime_targets=self.load_runtime_targets(),
+            ftp_profiles=self.load_ftp_profiles(),
+            report_profiles=self.load_report_profiles(),
         )
 
     def save_core(self, settings: LMTSSettings) -> Path:

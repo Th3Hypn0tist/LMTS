@@ -59,8 +59,8 @@ def create_ftp_profile(
     username = _single_line(host, stdscr, 'FTPS username')
     if username is None:
         return None
-    password = _single_line(host, stdscr, 'FTPS password')
-    if password is None:
+    password_env = _single_line(host, stdscr, 'FTPS password environment variable')
+    if password_env is None:
         return None
     root = _single_line(host, stdscr, 'FTPS target root')
     if root is None:
@@ -71,12 +71,12 @@ def create_ftp_profile(
         host=host_name,
         port=port,
         username=username,
-        password=password,
+        password_env=password_env,
         root=root,
     )
     profiles = load_ftp_profiles(store_path).upsert(profile)
     save_ftp_profiles(profiles, store_path)
-    host.message = f'FTPS profile saved: {profile.name}'
+    host.message = f'FTPS profile saved: {profile.name} (secret: ${profile.password_env})'
     return profile
 
 

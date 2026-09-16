@@ -10,12 +10,12 @@ from lmts.services.profile import SystemProfileService
 from lmts.services.results import ResultService
 from lmts.services.run_lifecycle import RunLifecycleService
 from lmts.services.targets import TargetDiscoveryService
-from lmts.tests.base import TestModule, test_ref
-from lmts.tests.catalog import test_matrix_for_level
+from lmts.tests.base import TestModule
 from lmts.tests.types import ConfiguredTest, TestLevel, TestMatrix, TestTypeRegistry
 from lmts.tools.profile import DEFAULT_PROFILE_PATH
 
 from .evaluation_state import EvaluationViewState
+from .matrix_state import MatrixViewState
 from .projector import LMTSViewState
 from .response_monitor import ResponseMonitor
 
@@ -34,7 +34,6 @@ class LMTSViewController:
     ) -> None:
         self.providers = providers
         self.test_types = test_types
-        self.matrix = matrix
         self.results_root = results_root
         self.workspace_root = workspace_root
         self.logs_root = logs_root
@@ -60,38 +59,20 @@ class LMTSViewController:
             self.response_monitor,
             self.evaluation_service,
         )
+        self.matrix_view = MatrixViewState(self.state, test_types, matrix)
         self._sync_profile_state()
+
+    @property
+    def matrix(self) -> TestMatrix:
+        return self.matrix_view.matrix
 
     def _sync_profile_state(self) -> None:
         status = self.profile_service.status()
         self.state.profile_required = status.required
         self.state.profiled_at = status.profiled_at
 
-    def _clear_live_matrix(self) -> None:
-        self.state.live_target_ids = ()
-        self.state.live_target_kinds = {}
-        self.state.live_test_refs = ()
-        self.state.live_cells = {}
-
-    def _sync_matrix_state(self) -> None:
-        previous = set(self.state.selected_test_refs)
-        self.state.tests = list(self.matrix.tests())
-        available = {test_ref(test) for test in self.state.tests}
-        self.state.selected_test_refs = previous & available
-        if not self.state.selected_test_refs and self.state.tests:
-            self.state.selected_test_refs = set(available)
-
     def set_suite_level(self, level: TestLevel) -> bool:
-        if self.state.running:
-            self.state.message = 'cannot change suite while test matrix is running'
-            return False
-        self.matrix = test_matrix_for_level(level, self.test_types)
-        self.state.suite_level = level
-        self._sync_matrix_state()
-        self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
-        self._clear_live_matrix()
-        self.state.message = f'suite level: {level.upper()} ({len(self.state.tests)} configured test(s))'
-        return True
+        return self.matrix_view.set_suite_level(level)
 
     def refresh(self) -> None:
         if self.state.running:
@@ -109,7 +90,7 @@ class LMTSViewController:
         self.state.selected_target_ids = previous_targets & available_target_ids
         if not self.state.selected_target_ids and self.state.targets:
             self.state.selected_target_ids = {self.state.targets[0].id}
-        self._sync_matrix_state()
+        self.matrix_view.sync()
         self._sync_profile_state()
         counts = {
             kind: sum(1 for target in self.state.targets if target.kind == kind)
@@ -135,74 +116,28 @@ class LMTSViewController:
         instance_id: str,
         params: dict[str, object] | None = None,
     ) -> ConfiguredTest | None:
-        if self.state.running:
-            self.state.message = 'cannot change matrix while test matrix is running'
-            return None
-        try:
-            configured = self.test_types.get(type_ref).configure(instance_id, params)
-            self.matrix.add(configured)
-        except (KeyError, ValueError) as exc:
-            self.state.message = f'cannot add test: {exc}'
-            return None
-        self._sync_matrix_state()
-        self.state.selected_test_refs.add(configured.ref)
-        self._clear_live_matrix()
-        self.state.message = f'added configured test: {configured.ref}'
-        return configured
+        return self.matrix_view.add_test(type_ref, instance_id, params)
 
     def remove_test(self, instance_id: str) -> bool:
-        if self.state.running:
-            self.state.message = 'cannot change matrix while test matrix is running'
-            return False
-        try:
-            removed = self.matrix.remove(instance_id)
-        except KeyError as exc:
-            self.state.message = str(exc)
-            return False
-        self._sync_matrix_state()
-        self._clear_live_matrix()
-        self.state.message = f'removed configured test: {removed.ref}'
-        return True
+        return self.matrix_view.remove_test(instance_id)
 
     def select_targets(self, indices: set[int]) -> None:
-        if not self.state.running:
-            self.state.selected_target_ids = {
-                self.state.targets[index].id
-                for index in sorted(indices)
-                if 0 <= index < len(self.state.targets)
-            }
-            self._clear_live_matrix()
+        self.matrix_view.select_targets(indices)
 
     def select_target_ids(self, target_ids: set[str]) -> None:
-        if not self.state.running:
-            available = {target.id for target in self.state.targets}
-            self.state.selected_target_ids = set(target_ids) & available
-            self._clear_live_matrix()
+        self.matrix_view.select_target_ids(target_ids)
 
     def select_all_targets(self) -> None:
-        if not self.state.running:
-            self.state.selected_target_ids = {target.id for target in self.state.targets}
-            self._clear_live_matrix()
+        self.matrix_view.select_all_targets()
 
     def select_tests(self, indices: set[int]) -> None:
-        if not self.state.running:
-            self.state.selected_test_refs = {
-                test_ref(self.state.tests[index])
-                for index in sorted(indices)
-                if 0 <= index < len(self.state.tests)
-            }
-            self._clear_live_matrix()
+        self.matrix_view.select_tests(indices)
 
     def select_test_refs(self, refs: set[str]) -> None:
-        if not self.state.running:
-            available = {test_ref(test) for test in self.state.tests}
-            self.state.selected_test_refs = set(refs) & available
-            self._clear_live_matrix()
+        self.matrix_view.select_test_refs(refs)
 
     def select_all_tests(self) -> None:
-        if not self.state.running:
-            self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
-            self._clear_live_matrix()
+        self.matrix_view.select_all_tests()
 
     def _start_run(
         self,

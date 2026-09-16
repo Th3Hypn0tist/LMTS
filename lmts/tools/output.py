@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from ftplib import FTP
+from ftplib import FTP, FTP_TLS
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Mapping
@@ -70,9 +70,10 @@ def _ftp_mkdirs(ftp: FTP, path: PurePosixPath) -> None:
 def _write_ftp(target: FTPOutputTarget, files: list[tuple[PurePosixPath, bytes]]) -> list[str]:
     profile = target.profile
     written: list[str] = []
-    with FTP() as ftp:
+    with FTP_TLS() as ftp:
         ftp.connect(profile.host, profile.port, timeout=20)
         ftp.login(profile.username, profile.password)
+        ftp.prot_p()
         ftp.set_pasv(True)
         if profile.root:
             ftp.cwd(profile.root)

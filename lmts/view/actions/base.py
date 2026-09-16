@@ -14,4 +14,4 @@ class TUIActions:
         return self.state.controller
 
     def set_message(self, value: str = '') -> None:
-        self.host.message = value
+        self.state.events.publish('ui.message', value, source=type(self).__name__)

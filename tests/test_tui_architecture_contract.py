@@ -30,6 +30,26 @@ def test_tui_application_uses_extracted_action_domains() -> None:
         assert module in text
 
 
+def test_tui_application_owns_one_event_bus_and_interactive_host_boundary() -> None:
+    text = APP.read_text(encoding='utf-8')
+    assert 'UIEventBus()' in text
+    assert 'LMTSInteractiveHost(' in text
+    assert 'RegistrySplitCursesViewHost(' not in text
+    assert 'events=self.state.events' in text
+
+
+def test_actions_do_not_bypass_message_or_modal_boundaries() -> None:
+    base = Path('lmts/view/actions/base.py').read_text(encoding='utf-8')
+    benchmark = Path('lmts/view/actions/benchmark.py').read_text(encoding='utf-8')
+    settings = Path('lmts/view/actions/settings.py').read_text(encoding='utf-8')
+    assert 'self.host.message =' not in base
+    assert "publish('ui.message'" in base
+    assert 'from lmts.lib.view import choose_with_preview' not in benchmark
+    assert 'self.host.choose_with_preview(' in benchmark
+    assert 'from lmts.lib.view import choose_directory' not in settings
+    assert 'self.host.choose_directory(' in settings
+
+
 def test_remote_server_deploy_is_not_implemented_in_tui_entrypoint_or_settings_action() -> None:
     entrypoint = TUI.read_text(encoding='utf-8')
     settings = Path('lmts/view/actions/settings.py').read_text(encoding='utf-8')

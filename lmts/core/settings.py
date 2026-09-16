@@ -5,9 +5,11 @@ import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .paths import SETTINGS_PATH
+
 
 SETTINGS_SCHEMA_VERSION = 3
-DEFAULT_SETTINGS_PATH = Path('.lmts/settings.json')
+DEFAULT_SETTINGS_PATH = SETTINGS_PATH
 DEFAULT_OUTPUT_FOLDER = 'exports'
 
 
@@ -24,6 +26,7 @@ class MySQLSettings:
             ('host', self.host),
             ('database', self.database),
             ('username', self.username),
+            ('password', self.password),
             ('publish_key', self.publish_key),
         ):
             if not str(value).strip():
@@ -63,8 +66,10 @@ def _normalise_output_folder(value: object) -> str:
 
 
 def _mysql_from_payload(value: object) -> MySQLSettings:
-    if not isinstance(value, dict):
+    if value is None:
         return MySQLSettings()
+    if not isinstance(value, dict):
+        raise ValueError('settings.mysql must be an object')
     return MySQLSettings(
         host=str(value.get('host') or 'localhost').strip(),
         database=str(value.get('database') or 'lmts').strip(),
@@ -75,8 +80,10 @@ def _mysql_from_payload(value: object) -> MySQLSettings:
 
 
 def _dvs_from_payload(value: object) -> DVSSettings:
-    if not isinstance(value, dict):
+    if value is None:
         return DVSSettings()
+    if not isinstance(value, dict):
+        raise ValueError('settings.dvs must be an object')
     port = value.get('port', 8775)
     if isinstance(port, bool):
         raise ValueError('DVS port must be an integer')
@@ -98,29 +105,29 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
         return LMTSSettings()
     try:
         payload = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError, TypeError):
-        return LMTSSettings()
+    except OSError as exc:
+        raise RuntimeError(f'cannot read LMTS settings: {path}: {exc}') from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'invalid LMTS settings JSON: {path}: {exc}') from exc
     if not isinstance(payload, dict):
-        return LMTSSettings()
+        raise ValueError('LMTS settings root must be an object')
 
     schema_version = payload.get('schema_version')
     if schema_version == 1:
         return LMTSSettings(output_folder=_normalise_output_folder(payload.get('output_folder')))
-    if schema_version not in {2, SETTINGS_SCHEMA_VERSION}:
-        return LMTSSettings()
+    if schema_version == 2:
+        return LMTSSettings(
+            output_folder=_normalise_output_folder(payload.get('output_folder')),
+            mysql=_mysql_from_payload(payload.get('mysql')),
+            dvs=DVSSettings(),
+        )
+    if schema_version != SETTINGS_SCHEMA_VERSION:
+        raise ValueError(f'unsupported LMTS settings schema: {schema_version!r}')
 
-    try:
-        mysql = _mysql_from_payload(payload.get('mysql'))
-    except ValueError:
-        mysql = MySQLSettings()
-    try:
-        dvs = _dvs_from_payload(payload.get('dvs'))
-    except ValueError:
-        dvs = DVSSettings()
     return LMTSSettings(
         output_folder=_normalise_output_folder(payload.get('output_folder')),
-        mysql=mysql,
-        dvs=dvs,
+        mysql=_mysql_from_payload(payload.get('mysql')),
+        dvs=_dvs_from_payload(payload.get('dvs')),
     )
 
 
@@ -130,8 +137,10 @@ def save_settings(settings: LMTSSettings, path: Path = DEFAULT_SETTINGS_PATH) ->
     payload = json.dumps(settings.to_dict(), indent=2, ensure_ascii=False) + '\n'
     temp = path.with_suffix(path.suffix + f'.tmp-{os.getpid()}')
     temp.write_text(payload, encoding='utf-8')
+    os.chmod(temp, 0o600)
     try:
         temp.replace(path)
+        os.chmod(path, 0o600)
     finally:
         if temp.exists():
             temp.unlink()

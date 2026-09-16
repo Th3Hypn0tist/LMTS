@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 import json
 import threading
 import time
@@ -29,7 +30,7 @@ def _wait_for(predicate, *, timeout: float = 2.0) -> None:
 class ControlledDownloader:
     def __init__(self, module_id: str = 'fake') -> None:
         self._id = module_id
-        self.release: dict[str, threading.Event] = {}
+        self.release: defaultdict[str, threading.Event] = defaultdict(threading.Event)
         self.started: list[str] = []
         self.deleted: list[str] = []
         self.installed = [DownloadedModel(module_id, 'installed:1b', 123)]

@@ -42,12 +42,16 @@ class BenchmarkActions(TUIActions):
             self.controller.select_targets(chosen)
             self.set_message(f'selected {len(chosen)} target(s)')
 
+    @staticmethod
+    def _taxonomy_label(test) -> str:
+        return f'{getattr(test, "category", "uncategorized")}/{getattr(test, "subcategory", "general")}'
+
     def select_tests(self, _stdscr) -> None:
         if self.controller.state.running:
             self.set_message('test matrix is running')
             return
         options = [
-            f"[{str(getattr(test, 'minimum_level')).upper()}] {test_ref(test)}"
+            f"[{self._taxonomy_label(test)}] [{str(getattr(test, 'minimum_level')).upper()}] {test_ref(test)}"
             for test in self.controller.state.tests
         ]
         selected = {
@@ -93,7 +97,7 @@ class BenchmarkActions(TUIActions):
         chosen = self.host.choose(
             self.stdscr,
             'Test type registry',
-            [f'[{d.minimum_level.upper()}] {d.ref}  {d.title}' for d in definitions],
+            [f'[{d.taxonomy_ref}] [{d.minimum_level.upper()}] {d.ref}  {d.title}' for d in definitions],
         )
         if chosen is None:
             return
@@ -114,7 +118,11 @@ class BenchmarkActions(TUIActions):
 
     def remove_test(self, _stdscr) -> None:
         tests = list(self.controller.state.tests)
-        chosen = self.host.choose(self.stdscr, 'Remove configured test', [test_ref(test) for test in tests])
+        chosen = self.host.choose(
+            self.stdscr,
+            'Remove configured test',
+            [f'[{self._taxonomy_label(test)}] {test_ref(test)}' for test in tests],
+        )
         if chosen is not None:
             self.controller.remove_test(getattr(tests[chosen], 'instance_id', ''))
             self.set_message(self.controller.state.message)
@@ -136,10 +144,18 @@ class BenchmarkActions(TUIActions):
 
     def suite_preview(self, level: str) -> tuple[str, ...]:
         matrix = test_matrix_for_level(level, self.controller.test_types)
-        refs = [test_ref(test) for test in matrix.tests()]
+        tests = list(matrix.tests())
         current = 'CURRENT' if self.controller.state.suite_level == level else ''
-        lines = [f'{level.upper()}  {len(refs)} automatic test(s)  {current}'.rstrip(), '']
-        lines.extend(f'  {ref}' for ref in refs)
+        lines = [f'{level.upper()}  {len(tests)} automatic test(s)  {current}'.rstrip(), '']
+        last_taxonomy = None
+        for test in tests:
+            taxonomy = self._taxonomy_label(test)
+            if taxonomy != last_taxonomy:
+                if last_taxonomy is not None:
+                    lines.append('')
+                lines.append(f'{taxonomy.upper()}')
+                last_taxonomy = taxonomy
+            lines.append(f'  {test_ref(test)}')
         return tuple(lines)
 
     def tests_dialog(self, _stdscr) -> None:
@@ -153,12 +169,14 @@ class BenchmarkActions(TUIActions):
             if index < 3:
                 return self.suite_preview(levels[index])
             if index == 3:
-                selected = sorted(self.controller.state.selected_test_refs)
-                return (
-                    f'{len(selected)} selected / {len(self.controller.state.tests)} configured',
-                    '',
-                    *[f'  {ref}' for ref in selected],
-                )
+                selected = [
+                    test for test in self.controller.state.tests
+                    if test_ref(test) in self.controller.state.selected_test_refs
+                ]
+                lines = [f'{len(selected)} selected / {len(self.controller.state.tests)} configured', '']
+                for test in selected:
+                    lines.append(f'  [{self._taxonomy_label(test)}] {test_ref(test)}')
+                return tuple(lines)
             if index == 4:
                 return ('Add one configured test instance from the test type registry.',)
             if index == 5:

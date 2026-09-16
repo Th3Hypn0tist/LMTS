@@ -6,13 +6,12 @@ from lmts.core.control import RunControl
 from lmts.core.executor import TestExecutor
 from lmts.core.registry import ProviderRegistry
 from lmts.services.evaluation import EvaluationService, RunCompletedCallback
-from lmts.services.profile import SystemProfileService
+from lmts.services.profile import DEFAULT_PROFILE_PATH, SystemProfileService
 from lmts.services.results import ResultService
 from lmts.services.run_lifecycle import RunLifecycleService
 from lmts.services.targets import TargetDiscoveryService
 from lmts.tests.base import TestModule
 from lmts.tests.types import ConfiguredTest, TestLevel, TestMatrix, TestTypeRegistry
-from lmts.tools.profile import DEFAULT_PROFILE_PATH
 
 from .evaluation_state import EvaluationViewState
 from .matrix_state import MatrixViewState

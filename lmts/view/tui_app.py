@@ -23,10 +23,14 @@ from .tui_state import TUIState
 
 
 class TUIApplication:
+    controller_class = LMTSViewController
+    host_class = LMTSInteractiveHost
+    benchmark_actions_class = BenchmarkActions
+
     def __init__(self) -> None:
         test_types = default_test_type_registry()
         matrix = default_test_matrix(test_types)
-        controller = LMTSViewController(default_provider_registry(), test_types, matrix)
+        controller = self.controller_class(default_provider_registry(), test_types, matrix)
         controller.refresh()
         settings_service = SettingsService()
         settings = settings_service.load_core()
@@ -51,7 +55,7 @@ class TUIApplication:
 
     def _run_curses(self, stdscr: curses.window) -> None:
         controller = self.state.controller
-        host = LMTSInteractiveHost(
+        host = self.host_class(
             'AIGM LMTS - Profile',
             self.renderer.render_lines,
             self.renderer.tabs_line,
@@ -69,7 +73,7 @@ class TUIApplication:
 
         navigation = NavigationActions(self.state, host, stdscr)
         profile = ProfileActions(self.state, host, stdscr)
-        benchmark = BenchmarkActions(self.state, host, stdscr, navigation)
+        benchmark = self.benchmark_actions_class(self.state, host, stdscr, navigation)
         results = ResultActions(self.state, host, stdscr)
         settings = SettingsActions(self.state, host, stdscr)
 

@@ -60,13 +60,20 @@ class OllamaProvider:
         self._capabilities_cache[model_ref] = capabilities
         return capabilities
 
-    def _generation_payload(self, model: ModelDescriptor, prompt: str, *, stream: bool) -> dict[str, object]:
+    @staticmethod
+    def _generation_payload(
+        model: ModelDescriptor,
+        prompt: str,
+        *,
+        stream: bool,
+        capabilities: frozenset[str],
+    ) -> dict[str, object]:
         payload: dict[str, object] = {
             "model": model.model_ref,
             "prompt": prompt,
             "stream": stream,
         }
-        if "thinking" in self._model_capabilities(model.model_ref):
+        if "thinking" in capabilities:
             payload["think"] = True
         return payload
 
@@ -136,10 +143,12 @@ class OllamaProvider:
         )
 
     def generate(self, model: ModelDescriptor, prompt: str) -> NormalizedResponse:
+        capabilities = self._model_capabilities(model.model_ref)
+        payload = self._generation_payload(model, prompt, stream=False, capabilities=capabilities)
         started = time.perf_counter()
         raw = self._json(
             "/api/generate",
-            self._generation_payload(model, prompt, stream=False),
+            payload,
             timeout=self.generation_timeout,
         )
         total_ms = (time.perf_counter() - started) * 1000.0
@@ -152,8 +161,9 @@ class OllamaProvider:
         sink: Callable[[ResponseStreamChunk], None],
     ) -> NormalizedResponse:
         """Generate through Ollama NDJSON and expose provider response channels."""
-        started = time.perf_counter()
-        data = json.dumps(self._generation_payload(model, prompt, stream=True)).encode("utf-8")
+        capabilities = self._model_capabilities(model.model_ref)
+        payload = self._generation_payload(model, prompt, stream=True, capabilities=capabilities)
+        data = json.dumps(payload).encode("utf-8")
         req = request.Request(
             f"{self.base_url}/api/generate",
             data=data,
@@ -164,7 +174,9 @@ class OllamaProvider:
         text_parts: list[str] = []
         raw_chunks: list[dict] = []
         final: dict = {}
-        first_chunk_at: float | None = None
+        first_thinking_at: float | None = None
+        first_text_at: float | None = None
+        started = time.perf_counter()
 
         with request.urlopen(req, timeout=self.generation_timeout) as response:
             for line in response:
@@ -176,21 +188,23 @@ class OllamaProvider:
 
                 thinking = raw.get("thinking")
                 if isinstance(thinking, str) and thinking:
-                    if first_chunk_at is None:
-                        first_chunk_at = time.perf_counter()
+                    if first_thinking_at is None:
+                        first_thinking_at = time.perf_counter()
                     sink(ResponseStreamChunk(source_id=model.id, channel="thinking", text=thinking))
 
                 text = raw.get("response")
                 if isinstance(text, str) and text:
-                    if first_chunk_at is None:
-                        first_chunk_at = time.perf_counter()
+                    if first_text_at is None:
+                        first_text_at = time.perf_counter()
                     text_parts.append(text)
                     sink(ResponseStreamChunk(source_id=model.id, channel="text", text=text))
 
         total_ms = (time.perf_counter() - started) * 1000.0
-        ttft_ms = None if first_chunk_at is None else (first_chunk_at - started) * 1000.0
+        ttft_ms = None if first_text_at is None else (first_text_at - started) * 1000.0
+        thinking_ttft_ms = None if first_thinking_at is None else (first_thinking_at - started) * 1000.0
         final = dict(final)
         final["lmts_stream_chunks"] = raw_chunks
+        final["lmts_thinking_ttft_ms"] = thinking_ttft_ms
         normalized = self._normalized_response(final, "".join(text_parts), total_ms, ttft_ms)
         sink(
             ResponseStreamChunk(
@@ -200,6 +214,7 @@ class OllamaProvider:
                     "finish_reason": normalized.finish_reason,
                     "input_tokens": normalized.usage.input_tokens,
                     "output_tokens": normalized.usage.output_tokens,
+                    "thinking_ttft_ms": thinking_ttft_ms,
                     "ttft_ms": normalized.timing.ttft_ms,
                     "total_ms": normalized.timing.total_ms,
                     "load_ms": normalized.timing.load_ms,

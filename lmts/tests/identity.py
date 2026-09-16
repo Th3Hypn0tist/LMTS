@@ -90,6 +90,10 @@ def test_snapshot(test: Any) -> dict[str, Any]:
     mandatory = getattr(test, 'mandatory', None)
     if mandatory is not None:
         snapshot['mandatory'] = bool(mandatory)
+    requirements = getattr(test, 'requirements', None)
+    subject_kinds = getattr(requirements, 'subject_kinds', None)
+    if isinstance(subject_kinds, tuple):
+        snapshot['subject_kinds'] = list(subject_kinds)
     category = getattr(test, 'category', None)
     subcategory = getattr(test, 'subcategory', None)
     if category is not None or subcategory is not None:

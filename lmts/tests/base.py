@@ -9,6 +9,7 @@ from lmts.core.executor import TestExecutor
 from lmts.core.models import NormalizedResponse, ResponseStreamChunk
 from lmts.core.scoring import TestScore
 from lmts.lib.workspace import Workspace
+from lmts.tests.identity import TestIdentity, identity_for_test, parse_test_ref, test_ref, test_snapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,9 +63,14 @@ class TestModule(Protocol):
     def run(self, context: TestContext) -> TestResult: ...
 
 
-def test_ref(test: TestModule) -> str:
-    """Return configured-instance ref when available, otherwise type ref."""
-    configured = getattr(test, "ref", None)
-    if isinstance(configured, str) and configured:
-        return configured
-    return f"{test.id}@{test.version}"
+__all__ = [
+    'TestContext',
+    'TestIdentity',
+    'TestModule',
+    'TestRequirements',
+    'TestResult',
+    'identity_for_test',
+    'parse_test_ref',
+    'test_ref',
+    'test_snapshot',
+]

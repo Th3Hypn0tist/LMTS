@@ -42,27 +42,27 @@ def create_ftp_profile(
     *,
     store_path: Path = DEFAULT_FTP_PROFILES_PATH,
 ) -> FTPProfile | None:
-    name = _single_line(host, stdscr, 'FTP profile name')
+    name = _single_line(host, stdscr, 'FTPS profile name')
     if name is None:
         return None
-    host_name = _single_line(host, stdscr, 'FTP host')
+    host_name = _single_line(host, stdscr, 'FTPS host')
     if host_name is None:
         return None
-    port_text = _single_line(host, stdscr, 'FTP port', initial='21')
+    port_text = _single_line(host, stdscr, 'FTPS port', initial='21')
     if port_text is None:
         return None
     try:
         port = int(port_text)
     except ValueError:
-        host.message = 'FTP port must be an integer'
+        host.message = 'FTPS port must be an integer'
         return None
-    username = _single_line(host, stdscr, 'FTP username')
+    username = _single_line(host, stdscr, 'FTPS username')
     if username is None:
         return None
-    password = _single_line(host, stdscr, 'FTP password')
+    password = _single_line(host, stdscr, 'FTPS password')
     if password is None:
         return None
-    root = _single_line(host, stdscr, 'FTP web root', initial='/home/www/lmts')
+    root = _single_line(host, stdscr, 'FTPS target root')
     if root is None:
         return None
 
@@ -76,7 +76,7 @@ def create_ftp_profile(
     )
     profiles = load_ftp_profiles(store_path).upsert(profile)
     save_ftp_profiles(profiles, store_path)
-    host.message = f'FTP profile saved: {profile.name}'
+    host.message = f'FTPS profile saved: {profile.name}'
     return profile
 
 
@@ -87,8 +87,8 @@ def choose_ftp_profile(
     store_path: Path = DEFAULT_FTP_PROFILES_PATH,
 ) -> FTPProfile | None:
     profiles = load_ftp_profiles(store_path)
-    options = ['[New FTP profile]', *(profile.name for profile in profiles.profiles)]
-    chosen = host.choose(stdscr, 'FTP profile', options)
+    options = ['[New FTPS profile]', *(profile.name for profile in profiles.profiles)]
+    chosen = host.choose(stdscr, 'FTPS profile', options)
     if chosen is None:
         return None
     if chosen == 0:
@@ -104,18 +104,18 @@ def manage_ftp_profiles(
 ) -> None:
     while True:
         profiles = load_ftp_profiles(store_path)
-        options = ['New FTP profile', *(f'Delete  {profile.name}' for profile in profiles.profiles)]
-        chosen = host.choose(stdscr, 'FTP profiles', options)
+        options = ['New FTPS profile', *(f'Delete  {profile.name}' for profile in profiles.profiles)]
+        chosen = host.choose(stdscr, 'FTPS profiles', options)
         if chosen is None:
             return
         if chosen == 0:
             create_ftp_profile(host, stdscr, store_path=store_path)
             continue
         profile = profiles.profiles[chosen - 1]
-        confirm = host.choose(stdscr, f'Delete FTP profile {profile.name}?', ['No', 'Yes'], 0)
+        confirm = host.choose(stdscr, f'Delete FTPS profile {profile.name}?', ['No', 'Yes'], 0)
         if confirm == 1:
             save_ftp_profiles(profiles.remove(profile.name), store_path)
-            host.message = f'FTP profile deleted: {profile.name}'
+            host.message = f'FTPS profile deleted: {profile.name}'
 
 
 def create_report_profile(
@@ -127,7 +127,7 @@ def create_report_profile(
     name = _single_line(host, stdscr, 'Report profile name')
     if name is None:
         return None
-    endpoint = _single_line(host, stdscr, 'Report API endpoint', initial='http://127.0.0.1/benchmark/api/report.php')
+    endpoint = _single_line(host, stdscr, 'Exact Report API endpoint', initial='http://127.0.0.1/api/report.php')
     if endpoint is None:
         return None
     publish_key = _single_line(host, stdscr, 'Report publish key', initial='lmts')
@@ -184,7 +184,7 @@ def choose_output_target(
     *,
     disk_initial: str | Path = '.',
 ) -> OutputTarget | None:
-    chosen = host.choose(stdscr, 'Output', ['Disk', 'FTP'])
+    chosen = host.choose(stdscr, 'Output', ['Disk', 'FTPS'])
     if chosen is None:
         return None
     if chosen == 0:

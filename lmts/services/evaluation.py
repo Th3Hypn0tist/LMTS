@@ -14,8 +14,7 @@ from lmts.core.registry import ProviderRegistry
 from lmts.core.run import utc_now
 from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
-from lmts.tests.base import test_ref
-from lmts.tests.types import ConfiguredTest
+from lmts.tests.base import TestModule, test_ref
 
 
 RunCompletedCallback = Callable[[dict[str, object]], None]
@@ -73,7 +72,7 @@ class EvaluationService:
     def execute(
         self,
         targets: list[TestExecutor],
-        tests: list[ConfiguredTest],
+        tests: list[TestModule],
         control: RunControl,
         *,
         progress: ProgressCallback | None = None,

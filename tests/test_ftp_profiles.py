@@ -9,10 +9,11 @@ def test_ftp_profiles_round_trip(tmp_path: Path) -> None:
         name='server',
         host='192.0.2.10',
         username='salanimi',
-        password='secret',
+        password_env='LMTS_FTPS_SERVER_PASSWORD',
         root='/home/www/lmts',
     )
     save_ftp_profiles(FTPProfiles(profiles=(profile,)), path)
     loaded = load_ftp_profiles(path)
     assert loaded.profiles == (profile,)
     assert loaded.profiles[0].root == '/home/www/lmts'
+    assert loaded.profiles[0].password_env == 'LMTS_FTPS_SERVER_PASSWORD'

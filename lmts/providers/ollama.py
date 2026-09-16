@@ -12,6 +12,7 @@ from lmts.core.models import (
     NormalizedTiming,
     NormalizedUsage,
     ResponseStreamChunk,
+    canonical_model_id,
 )
 
 
@@ -86,7 +87,7 @@ class OllamaProvider:
                 continue
             descriptors.append(
                 ModelDescriptor(
-                    id=f"{self.id}:{name}",
+                    id=canonical_model_id(self.id, name),
                     provider_ref=self.id,
                     model_ref=name,
                     location="local",

@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lmts.core.benchmark_runner import BenchmarkProgress
 from lmts.core.control import RunControl
 from lmts.core.executor import TestExecutor
 from lmts.core.registry import ProviderRegistry
-from lmts.services.evaluation import EvaluationOutcome, EvaluationService, RunCompletedCallback
+from lmts.services.evaluation import EvaluationService, RunCompletedCallback
 from lmts.services.profile import SystemProfileService
 from lmts.services.results import ResultService
 from lmts.services.run_lifecycle import RunLifecycleService
@@ -16,6 +15,7 @@ from lmts.tests.catalog import test_matrix_for_level
 from lmts.tests.types import ConfiguredTest, TestLevel, TestMatrix, TestTypeRegistry
 from lmts.tools.profile import DEFAULT_PROFILE_PATH
 
+from .evaluation_state import EvaluationViewState
 from .projector import LMTSViewState
 from .response_monitor import ResponseMonitor
 
@@ -54,6 +54,11 @@ class LMTSViewController:
             workspace_root=workspace_root,
             response_sink=self.response_monitor.accept,
             system_context_loader=self.profile_service.context,
+        )
+        self.evaluation_view = EvaluationViewState(
+            self.state,
+            self.response_monitor,
+            self.evaluation_service,
         )
         self._sync_profile_state()
 
@@ -199,7 +204,13 @@ class LMTSViewController:
             self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
             self._clear_live_matrix()
 
-    def _prepare_run(self, targets: list[TestExecutor], tests: list[TestModule]) -> bool:
+    def _start_run(
+        self,
+        targets: list[TestExecutor],
+        tests: list[TestModule],
+        *,
+        on_run_completed: RunCompletedCallback | None = None,
+    ) -> bool:
         if self.state.running:
             self.state.message = 'test matrix already running'
             return False
@@ -210,98 +221,17 @@ class LMTSViewController:
             self.state.message = 'select at least one target and one configured test'
             return False
 
-        self.response_monitor.reset()
-        self.state.running = True
-        self.state.cancel_requested = False
-        self.state.progress_completed = 0
-        self.state.progress_total = len(targets) * len(tests)
-        self.state.progress_passed = 0
-        self.state.progress_failed = 0
-        self.state.progress_errors = 0
-        self.state.progress_cancelled = 0
-        self.state.progress_target_id = ''
-        self.state.progress_test_ref = test_ref(tests[0])
-        self.state.progress_phase = 'starting'
-        self.state.live_target_ids = tuple(target.id for target in targets)
-        self.state.live_target_kinds = {target.id: target.kind for target in targets}
-        self.state.live_test_refs = tuple(test_ref(test) for test in tests)
-        self.state.live_cells = {
-            (target.id, test_ref(test)): '-'
-            for target in targets
-            for test in tests
-        }
-        self.state.last_result = None
-        self.state.message = f'test matrix started: {len(targets)} target(s) x {len(tests)} configured test(s)'
         self.last_errors = []
         self.last_publish_errors = []
-        return True
-
-    def _progress(self, event: BenchmarkProgress) -> None:
-        self.state.progress_target_id = event.target_id
-        self.state.progress_test_ref = event.test_ref
-        if event.phase == 'starting':
-            self.response_monitor.reset(event.target_id)
-            self.state.live_cells[(event.target_id, event.test_ref)] = 'RUN'
-            if not self.state.cancel_requested:
-                self.state.progress_phase = 'starting'
-            return
-
-        self.state.progress_completed += 1
-        if not self.state.cancel_requested:
-            self.state.progress_phase = event.phase
-        verdict = self.evaluation_service.verdict(event)
-        run = event.run
-        if verdict is not None and run is not None:
-            self.state.live_cells[(run.executor_id, run.test_ref)] = verdict
-            if run.status == 'cancelled':
-                self.state.progress_cancelled += 1
-            elif run.status != 'completed':
-                self.state.progress_errors += 1
-            elif run.passed is True:
-                self.state.progress_passed += 1
-            elif run.passed is False:
-                self.state.progress_failed += 1
-
-    def _apply_outcome(self, outcome: EvaluationOutcome, targets: list[TestExecutor], tests: list[TestModule]) -> None:
-        self.last_errors = list(outcome.run_errors)
-        self.last_publish_errors = list(outcome.publish_errors)
-        self.state.progress_completed = outcome.completed
-        self.state.progress_passed = outcome.passed
-        self.state.progress_failed = outcome.failed
-        self.state.progress_errors = outcome.errors
-        self.state.progress_cancelled = outcome.cancelled
-        self.state.last_result = {
-            'suite_level': self.state.suite_level,
-            'matrix': f'{len(targets)} target(s) x {len(tests)} configured test(s)',
-            'matrix_id': outcome.matrix_id,
-            'matrix_path': str(outcome.matrix_path),
-            'runs': outcome.completed,
-            'passed': outcome.passed,
-            'failed': outcome.failed,
-            'errors': outcome.errors,
-            'cancelled': outcome.cancelled,
-            'batch_ids': ', '.join(outcome.batch_ids),
-            'batch_paths': ', '.join(outcome.batch_paths),
-            'publish_errors': len(outcome.publish_errors),
-        }
-        if len(outcome.cells) == 1:
-            self.state.last_result['single_run_id'] = outcome.cells[0].run_id
-            self.state.last_result['single_run_path'] = outcome.cells[0].result_path
-        if outcome.run_errors:
-            self.state.last_result['error_log'] = 'Output -> Export errors'
-
-        if outcome.status == 'cancelled':
-            self.state.progress_phase = 'cancelled'
-            self.state.message = (
-                f'test matrix cancelled: {self.state.progress_completed}/{self.state.progress_total} run(s) reached'
-            )
-        else:
-            self.state.progress_phase = 'finished'
-            self.state.message = (
-                f'test matrix finished: {outcome.passed} passed, {outcome.failed} failed, {outcome.errors} error(s)'
-            )
-            if outcome.publish_errors:
-                self.state.message += f'; {len(outcome.publish_errors)} report publish failure(s)'
+        self.evaluation_view.prepare(targets, tests)
+        started = self.lifecycle.start(
+            lambda control: self._run_matrix(targets, tests, control, on_run_completed),
+        )
+        if started:
+            return True
+        self.evaluation_view.finish()
+        self.state.message = 'test matrix already running'
+        return False
 
     def _run_matrix(
         self,
@@ -315,34 +245,16 @@ class LMTSViewController:
                 targets,
                 tests,
                 control,
-                progress=self._progress,
+                progress=self.evaluation_view.progress,
                 on_run_completed=on_run_completed,
             )
-            self._apply_outcome(outcome, targets, tests)
+            self.last_errors = list(outcome.run_errors)
+            self.last_publish_errors = list(outcome.publish_errors)
+            self.evaluation_view.apply_outcome(outcome, targets, tests)
         except Exception as exc:
-            self.state.progress_errors += 1
-            self.state.progress_phase = 'error'
-            self.state.message = f'test matrix aborted: {type(exc).__name__}: {exc}'
+            self.evaluation_view.abort(exc)
         finally:
-            self.state.running = False
-
-    def _start_run(
-        self,
-        targets: list[TestExecutor],
-        tests: list[TestModule],
-        *,
-        on_run_completed: RunCompletedCallback | None = None,
-    ) -> bool:
-        if not self._prepare_run(targets, tests):
-            return False
-        started = self.lifecycle.start(
-            lambda control: self._run_matrix(targets, tests, control, on_run_completed),
-        )
-        if not started:
-            self.state.running = False
-            self.state.message = 'test matrix already running'
-            return False
-        return True
+            self.evaluation_view.finish()
 
     def run_selected(self, *, on_run_completed: RunCompletedCallback | None = None) -> bool:
         return self._start_run(
@@ -363,9 +275,6 @@ class LMTSViewController:
         return self._start_run(models, list(self.state.tests), on_run_completed=on_run_completed)
 
     def test_all(self, *, on_run_completed: RunCompletedCallback | None = None) -> bool:
-        if self.state.running:
-            self.state.message = 'test matrix already running'
-            return False
         return self._start_run(
             list(self.state.targets),
             list(self.state.tests),
@@ -376,15 +285,16 @@ class LMTSViewController:
         if not self.state.running:
             self.state.message = 'no test matrix is running'
             return False
-        if not self.state.cancel_requested:
-            self.state.cancel_requested = True
-            self.state.progress_phase = 'cancel_requested'
-            self.state.message = 'cancel requested; waiting for current target call to return'
-            if not self.lifecycle.request_cancel():
-                self.state.message = 'no test matrix is running'
-                self.state.running = False
-                return False
-        return True
+        if self.state.cancel_requested:
+            return True
+        self.state.cancel_requested = True
+        self.state.progress_phase = 'cancel_requested'
+        self.state.message = 'cancel requested; waiting for current target call to return'
+        if self.lifecycle.request_cancel():
+            return True
+        self.state.message = 'no test matrix is running'
+        self.state.running = False
+        return False
 
     def export_errors(self, task: str = 'task') -> Path | None:
         if not self.last_errors:

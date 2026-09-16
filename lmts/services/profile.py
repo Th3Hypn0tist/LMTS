@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from lmts.tools.profile import load_system_profile, save_system_profile, scan_system_profile
+from lmts.tools.profile import DEFAULT_PROFILE_PATH, load_system_profile, save_system_profile, scan_system_profile
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,6 +15,13 @@ def includes_level(requested: TestLevel, minimum_level: TestLevel) -> bool:
     return TEST_LEVEL_ORDER[minimum_level] <= TEST_LEVEL_ORDER[requested]
 
 
+def _taxonomy_token(value: str, *, field_name: str) -> str:
+    token = str(value).strip()
+    if not token or any(char.isspace() for char in token):
+        raise ValueError(f"{field_name} must be a non-empty token")
+    return token
+
+
 @dataclass(frozen=True, slots=True)
 class TestParameter:
     name: str
@@ -67,10 +74,24 @@ class TestTypeDefinition:
     parameters: tuple[TestParameter, ...]
     factory: Factory
     mandatory: bool = False
+    category: str = "uncategorized"
+    subcategory: str = "general"
+
+    def __post_init__(self) -> None:
+        _taxonomy_token(self.category, field_name="test category")
+        _taxonomy_token(self.subcategory, field_name="test subcategory")
 
     @property
     def ref(self) -> str:
         return f"{self.id}@{self.version}"
+
+    @property
+    def taxonomy(self) -> tuple[str, str]:
+        return self.category, self.subcategory
+
+    @property
+    def taxonomy_ref(self) -> str:
+        return f"{self.category}/{self.subcategory}"
 
     def configure(self, instance_id: str, values: dict[str, object] | None = None) -> ConfiguredTest:
         if not instance_id or any(char.isspace() for char in instance_id):
@@ -100,6 +121,8 @@ class TestTypeDefinition:
             mandatory=self.mandatory,
             params=normalized,
             module=module,
+            category=self.category,
+            subcategory=self.subcategory,
         )
 
 
@@ -112,6 +135,12 @@ class ConfiguredTest:
     mandatory: bool
     params: dict[str, object]
     module: TestModule
+    category: str = "uncategorized"
+    subcategory: str = "general"
+
+    def __post_init__(self) -> None:
+        _taxonomy_token(self.category, field_name="test category")
+        _taxonomy_token(self.subcategory, field_name="test subcategory")
 
     @property
     def id(self) -> str:
@@ -128,6 +157,14 @@ class ConfiguredTest:
     @property
     def ref(self) -> str:
         return f"{self.type_ref}#{self.instance_id}"
+
+    @property
+    def taxonomy(self) -> tuple[str, str]:
+        return self.category, self.subcategory
+
+    @property
+    def taxonomy_ref(self) -> str:
+        return f"{self.category}/{self.subcategory}"
 
     def run(self, context: TestContext) -> TestResult:
         return self.module.run(context)
@@ -151,7 +188,12 @@ class TestTypeRegistry:
             raise KeyError(f"unknown test type: {ref}") from exc
 
     def definitions(self) -> tuple[TestTypeDefinition, ...]:
-        return tuple(self._definitions[key] for key in sorted(self._definitions))
+        return tuple(
+            sorted(
+                self._definitions.values(),
+                key=lambda item: (item.category.casefold(), item.subcategory.casefold(), item.id.casefold(), item.version),
+            )
+        )
 
     def definitions_for_level(self, level: TestLevel) -> tuple[TestTypeDefinition, ...]:
         return tuple(

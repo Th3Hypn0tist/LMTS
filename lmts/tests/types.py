@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from lmts.tests.base import TestContext, TestModule, TestRequirements, TestResult
+from lmts.tests.taxonomy import TEST_TAXONOMY
 
 ParameterKind = Literal["text", "integer", "boolean", "choice"]
 TestLevel = Literal["quick", "moderate", "deep"]
@@ -78,6 +79,10 @@ class TestTypeDefinition:
     subcategory: str = "general"
 
     def __post_init__(self) -> None:
+        taxonomy = TEST_TAXONOMY.get(self.id)
+        if taxonomy is not None and self.category == "uncategorized" and self.subcategory == "general":
+            object.__setattr__(self, "category", taxonomy.category)
+            object.__setattr__(self, "subcategory", taxonomy.subcategory)
         _taxonomy_token(self.category, field_name="test category")
         _taxonomy_token(self.subcategory, field_name="test subcategory")
 

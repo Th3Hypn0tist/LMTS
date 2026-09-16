@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from lmts.core.settings import DEFAULT_SETTINGS_PATH, MySQLSettings, save_settings
+from lmts.core.settings import MySQLSettings
+from lmts.core.shortcut_settings import normalise_sequence_text
 from lmts.tools.mysql_schema import install_mysql_schema
 
 from ..dialogs.server_setup import manage_server_setup
@@ -10,12 +11,15 @@ from ..dvs_settings_dialog import manage_dvs
 from ..output_dialog import manage_ftp_profiles, manage_report_profiles
 from ..registries import build_shortcut_registry
 from ..runtime_target_dialog import manage_runtime_targets
-from ..shortcut_settings import normalise_sequence_text, save_shortcut_overrides
 from ..tui_common import single_line
 from .base import TUIActions
 
 
 class SettingsActions(TUIActions):
+    @property
+    def settings_service(self):
+        return self.state.settings_service
+
     def edit_output_folder(self, _stdscr) -> None:
         selected = self.host.choose_directory(
             self.stdscr,
@@ -25,7 +29,7 @@ class SettingsActions(TUIActions):
         if selected is None:
             return
         self.state.settings = replace(self.state.settings, output_folder=str(selected))
-        save_settings(self.state.settings, DEFAULT_SETTINGS_PATH)
+        self.settings_service.save_core(self.state.settings)
         self.set_message(f'output folder saved: {self.state.settings.output_folder}')
 
     def edit_mysql(self, _stdscr) -> None:
@@ -72,23 +76,31 @@ class SettingsActions(TUIActions):
                 publish_key=values[4],
             ),
         )
-        save_settings(self.state.settings, DEFAULT_SETTINGS_PATH)
+        self.settings_service.save_core(self.state.settings)
         self.set_message('MySQL settings saved')
 
     def edit_dvs(self, _stdscr) -> None:
         updated, status, message = manage_dvs(self.host, self.stdscr, self.state.settings.dvs)
         if updated != self.state.settings.dvs:
             self.state.settings = replace(self.state.settings, dvs=updated)
-            save_settings(self.state.settings, DEFAULT_SETTINGS_PATH)
+            self.settings_service.save_core(self.state.settings)
         self.state.dvs_service_state = status
         self.set_message(message or f'DVS status: {status.state}')
 
     def ftp_settings(self, _stdscr) -> None:
-        manage_ftp_profiles(self.host, self.stdscr)
+        manage_ftp_profiles(
+            self.host,
+            self.stdscr,
+            store_path=self.settings_service.path('ftp_profiles'),
+        )
         self.set_message('FTP profiles updated')
 
     def report_settings(self, _stdscr) -> None:
-        manage_report_profiles(self.host, self.stdscr)
+        manage_report_profiles(
+            self.host,
+            self.stdscr,
+            store_path=self.settings_service.path('report_profiles'),
+        )
         self.set_message('report profiles updated')
 
     def runtime_target_settings(self, _stdscr) -> None:
@@ -109,7 +121,7 @@ class SettingsActions(TUIActions):
             return
         if chosen == 0:
             self.state.shortcut_overrides.clear()
-            save_shortcut_overrides(self.state.shortcut_overrides)
+            self.settings_service.save_shortcuts(self.state.shortcut_overrides)
             self.state.shortcuts = build_shortcut_registry()
             self.host.shortcuts = self.state.shortcuts
             self.set_message('shortcuts reset to defaults')
@@ -135,7 +147,7 @@ class SettingsActions(TUIActions):
             return
         self.state.shortcut_overrides.clear()
         self.state.shortcut_overrides.update(candidate)
-        save_shortcut_overrides(self.state.shortcut_overrides)
+        self.settings_service.save_shortcuts(self.state.shortcut_overrides)
         self.state.shortcuts = registry
         self.host.shortcuts = registry
         self.set_message(f'shortcut saved: {definition.label}')

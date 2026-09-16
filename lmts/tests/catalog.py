@@ -9,6 +9,7 @@ from lmts.tests.modules.performance import ColdWarmPerformanceTest, RepeatVarian
 from lmts.tests.modules.runtime_behavior import ALL_RUNTIME_BEHAVIOR_CASES, runtime_behavior_test
 from lmts.tests.modules.text_generation import TextGenerationTest
 from lmts.tests.modules.workspace_multifile import WorkspaceMultiFileTest
+from lmts.tests.neuro_symbolic import NEURO_SYMBOLIC_TEST_SPECS, neuro_symbolic_test
 from lmts.tests.types import TestLevel, TestMatrix, TestParameter, TestTypeDefinition, TestTypeRegistry
 
 
@@ -54,14 +55,12 @@ MODERATE_TEST_IDS = {
     "robustness.repeated_instruction",
 }
 
-# Candidate probes are versioned and runnable from the registry, but deliberately
-# excluded from automatic Quick/Moderate/Deep suites until empirical comparison
-# identifies which ones deserve locked reference status.
 CANDIDATE_TEST_IDS = {
     "bot_runtime.no_phantom_completion",
     "bot_runtime.scope_boundary",
     "composition.constraint_integration",
     "composition.conflict_resolution",
+    *(spec["id"] for spec in NEURO_SYMBOLIC_TEST_SPECS),
 }
 
 MANDATORY_TEST_IDS = {
@@ -69,8 +68,6 @@ MANDATORY_TEST_IDS = {
     "context.carwash_goal_persistence",
 }
 
-# Free-prompt requires explicit input. Candidate probes remain manual until they
-# are promoted into a locked reference set.
 AUTOMATED_SUITE_EXCLUSIONS = {
     "research.free_prompt_consistency",
     *CANDIDATE_TEST_IDS,
@@ -112,6 +109,7 @@ def default_test_type_registry() -> TestTypeRegistry:
         *(case["id"] for case in BOT_CORE_CASES),
         *(case["id"] for case in ALL_CAPABILITY_CASES),
         *(case["id"] for case in ALL_RUNTIME_BEHAVIOR_CASES),
+        *(spec["id"] for spec in NEURO_SYMBOLIC_TEST_SPECS),
     }
     _validate_level_contract(static_case_ids)
 
@@ -160,27 +158,10 @@ def default_test_type_registry() -> TestTypeRegistry:
             minimum_level=_minimum_level("research.free_prompt_consistency"),
             requirements=TestRequirements(text_generation=True),
             parameters=(
-                TestParameter(
-                    name="prompt",
-                    label="Prompt",
-                    kind="text",
-                    required=True,
-                    multiline=True,
-                ),
-                TestParameter(
-                    name="repeats",
-                    label="Repeats per model",
-                    kind="integer",
-                    required=True,
-                    default=3,
-                    minimum=1,
-                    maximum=100,
-                ),
+                TestParameter(name="prompt", label="Prompt", kind="text", required=True, multiline=True),
+                TestParameter(name="repeats", label="Repeats per model", kind="integer", required=True, default=3, minimum=1, maximum=100),
             ),
-            factory=lambda values: FreePromptConsistencyTest(
-                prompt=str(values["prompt"]),
-                repeats=int(values["repeats"]),
-            ),
+            factory=lambda values: FreePromptConsistencyTest(prompt=str(values["prompt"]), repeats=int(values["repeats"])),
         ),
         TestTypeDefinition(
             id="performance.cold_warm",
@@ -193,10 +174,7 @@ def default_test_type_registry() -> TestTypeRegistry:
                 TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly PERF_OK", multiline=True),
                 TestParameter(name="warm_repeats", label="Warm repeats", kind="integer", required=True, default=5, minimum=1, maximum=100),
             ),
-            factory=lambda values: ColdWarmPerformanceTest(
-                prompt=str(values["prompt"]),
-                warm_repeats=int(values["warm_repeats"]),
-            ),
+            factory=lambda values: ColdWarmPerformanceTest(prompt=str(values["prompt"]), warm_repeats=int(values["warm_repeats"])),
         ),
         TestTypeDefinition(
             id="performance.repeat_variance",
@@ -209,12 +187,10 @@ def default_test_type_registry() -> TestTypeRegistry:
                 TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly VAR_OK", multiline=True),
                 TestParameter(name="repeats", label="Repeats", kind="integer", required=True, default=10, minimum=2, maximum=100),
             ),
-            factory=lambda values: RepeatVarianceTest(
-                prompt=str(values["prompt"]),
-                repeats=int(values["repeats"]),
-            ),
+            factory=lambda values: RepeatVarianceTest(prompt=str(values["prompt"]), repeats=int(values["repeats"])),
         ),
     ]
+
     for case in BOT_CORE_CASES:
         test_id = case["id"]
         definitions.append(
@@ -230,6 +206,7 @@ def default_test_type_registry() -> TestTypeRegistry:
                 factory=lambda values, case=case: bot_core_test(case),
             )
         )
+
     for case in ALL_CAPABILITY_CASES:
         test_id = case["id"]
         definitions.append(
@@ -245,6 +222,7 @@ def default_test_type_registry() -> TestTypeRegistry:
                 factory=lambda values, case=case: capability_test(case),
             )
         )
+
     for case in ALL_RUNTIME_BEHAVIOR_CASES:
         test_id = case["id"]
         module = runtime_behavior_test(case)
@@ -260,13 +238,35 @@ def default_test_type_registry() -> TestTypeRegistry:
                 factory=lambda values, case=case: runtime_behavior_test(case),
             )
         )
+
+    for spec in NEURO_SYMBOLIC_TEST_SPECS:
+        test_id = str(spec["id"])
+        family = str(spec["family"])
+        definitions.append(
+            TestTypeDefinition(
+                id=test_id,
+                version="0.1.0-candidate",
+                title=str(spec["title"]),
+                description=str(spec["description"]),
+                minimum_level=_minimum_level(test_id),
+                requirements=TestRequirements(text_generation=True),
+                parameters=(
+                    TestParameter(name="max_complexity", label="Maximum complexity", kind="integer", required=True, default=16, minimum=2, maximum=256),
+                    TestParameter(name="cases_per_level", label="Cases per complexity level", kind="integer", required=True, default=2, minimum=1, maximum=10),
+                ),
+                factory=lambda values, test_id=test_id, family=family: neuro_symbolic_test(
+                    test_id,
+                    family,
+                    max_complexity=int(values["max_complexity"]),
+                    cases_per_level=int(values["cases_per_level"]),
+                ),
+            )
+        )
+
     return TestTypeRegistry(definitions)
 
 
-def test_matrix_for_level(
-    level: TestLevel,
-    registry: TestTypeRegistry | None = None,
-) -> TestMatrix:
+def test_matrix_for_level(level: TestLevel, registry: TestTypeRegistry | None = None) -> TestMatrix:
     types = registry if registry is not None else default_test_type_registry()
     matrix = TestMatrix()
     for definition in types.definitions_for_level(level):

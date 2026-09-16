@@ -123,7 +123,11 @@ class TestRunner:
         sampler = self.telemetry_factory()
         sampler.start()
         try:
-            validate_requirements(test.requirements, executor.capabilities)
+            validate_requirements(
+                test.requirements,
+                executor.capabilities,
+                subject_kind=evaluation_subject.kind,
+            )
             context.checkpoint()
             result = test.run(context)
             context.checkpoint()

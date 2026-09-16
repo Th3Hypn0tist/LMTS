@@ -347,11 +347,11 @@ import os
 from pathlib import Path
 
 path = Path(os.environ['SETTINGS_FILE'])
-try:
-    current = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else {}
-except (OSError, ValueError, TypeError):
-    current = {}
-if not isinstance(current, dict):
+if path.exists():
+    current = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(current, dict):
+        raise ValueError(f'LMTS settings root must be an object: {path}')
+else:
     current = {}
 desired = dict(current)
 desired['schema_version'] = 3

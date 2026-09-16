@@ -34,7 +34,9 @@ def test_installer_runtime_account_is_least_privilege() -> None:
 def test_installer_writes_generated_settings_for_sudo_user() -> None:
     text = _text()
     assert 'CALLER_USER="${SUDO_USER:-}"' in text
+    assert "desired['schema_version'] = 3" in text
     assert "desired['mysql']" in text
+    assert "desired.setdefault('dvs'" in text
     assert 'chmod 600 "${SETTINGS_FILE}"' in text
 
 
@@ -73,7 +75,7 @@ def test_installer_does_not_own_web_host_configuration() -> None:
     assert 'Alias /benchmark/' not in text
     assert 'ServerName aigm.fi' not in text
     assert 'APACHE_SITE=' not in text
-    assert 'No domain, virtual host, alias, DocumentRoot or web deployment path is configured by this script.' in text
+    assert 'No domain, virtual host, alias or web deployment path is configured by this script.' in text
 
 
 def test_installer_reports_convergence_summary() -> None:

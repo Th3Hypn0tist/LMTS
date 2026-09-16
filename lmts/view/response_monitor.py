@@ -25,9 +25,16 @@ class ResponseMonitor:
             for key in self._partial:
                 self._partial[key] = ""
 
+    def _flush_partial(self, channel: str) -> None:
+        partial = self._partial.get(channel, "")
+        if partial:
+            self._lines.append(partial)
+            self._partial[channel] = ""
+
     def accept(self, chunk: ResponseStreamChunk) -> None:
         with self._lock:
             if chunk.source_id and chunk.source_id != self._source_id:
+                self._flush_partial(self._channel)
                 self._source_id = chunk.source_id
                 self._channel = ""
                 self._lines.clear()
@@ -36,6 +43,7 @@ class ResponseMonitor:
 
             channel = chunk.channel
             if channel != self._channel:
+                self._flush_partial(self._channel)
                 if self._lines and self._lines[-1] != "":
                     self._lines.append("")
                 self._lines.append(channel.upper())

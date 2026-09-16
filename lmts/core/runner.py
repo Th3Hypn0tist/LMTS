@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from lmts.lib.workspace import Workspace
-from lmts.tests.base import TestContext, TestModule, test_ref
+from lmts.tests.base import TestContext, TestModule, test_ref, test_snapshot
 from lmts.tests.requirements import validate_requirements
 from lmts.tools.profile import DEFAULT_PROFILE_PATH, load_system_profile
 from lmts.tools.telemetry import TelemetrySampler
@@ -98,12 +98,7 @@ class TestRunner:
             subject_fingerprint=evaluation_subject.fingerprint,
             metadata=dict(executor.metadata),
         )
-        minimum_level = getattr(test, "minimum_level", None)
-        if minimum_level is not None:
-            execution_metadata["test_minimum_level"] = minimum_level
-        test_mandatory = getattr(test, "mandatory", None)
-        if test_mandatory is not None:
-            execution_metadata["test_mandatory"] = bool(test_mandatory)
+        execution_metadata["test"] = test_snapshot(test)
 
         common: dict[str, object] = {
             "run_id": run_id,

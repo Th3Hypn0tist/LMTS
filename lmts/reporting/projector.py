@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
+
+from lmts.tests.identity import parse_test_ref
 
 
 REPORT_FORMAT = 'lmts.report'
 REPORT_VERSION = '1.1'
-
-_TEST_REF_RE = re.compile(r'^(?P<namespace>[A-Za-z0-9_.-]+)@(?P<version>[^#]+)#(?P<instance>.+)$')
 
 _METRIC_UNITS: dict[str, tuple[str, str | None]] = {
     'input_tokens': ('input_tokens', 'tokens'),
@@ -31,20 +30,22 @@ def _human_label(value: str) -> str:
 
 
 def _test_entity(test_ref: str, run: dict[str, Any]) -> dict[str, Any]:
-    match = _TEST_REF_RE.fullmatch(test_ref)
-    if match is None:
-        raise ValueError(f'invalid canonical test_ref: {test_ref!r}')
-    instance = match.group('instance')
+    identity = parse_test_ref(test_ref)
     metadata = run.get('execution_metadata') if isinstance(run.get('execution_metadata'), dict) else {}
+    snapshot = metadata.get('test') if isinstance(metadata.get('test'), dict) else {}
+    configuration = snapshot.get('configuration') if isinstance(snapshot.get('configuration'), dict) else {}
+    label_source = identity.instance_id or identity.type_id.rsplit('.', 1)[-1]
+    properties: dict[str, Any] = {
+        'namespace': identity.type_id,
+        'version': identity.version,
+        'instance': identity.instance_id,
+        'minimum_level': snapshot.get('minimum_level'),
+        'mandatory': snapshot.get('mandatory'),
+        'configuration': configuration,
+    }
     return {
-        'label': _human_label(instance),
-        'properties': {
-            'namespace': match.group('namespace'),
-            'version': match.group('version'),
-            'instance': instance,
-            'minimum_level': metadata.get('test_minimum_level'),
-            'mandatory': metadata.get('test_mandatory'),
-        },
+        'label': _human_label(label_source),
+        'properties': {key: value for key, value in properties.items() if value is not None},
     }
 
 

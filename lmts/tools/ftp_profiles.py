@@ -5,9 +5,11 @@ import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from lmts.core.paths import FTP_PROFILES_PATH
+
 
 FTP_PROFILES_SCHEMA_VERSION = 2
-DEFAULT_FTP_PROFILES_PATH = Path('.lmts/ftp-profiles.json')
+DEFAULT_FTP_PROFILES_PATH = FTP_PROFILES_PATH
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,13 +23,17 @@ class FTPProfile:
 
     def __post_init__(self) -> None:
         if not self.name.strip():
-            raise ValueError('FTP profile name must not be empty')
+            raise ValueError('FTPS profile name must not be empty')
         if not self.host.strip():
-            raise ValueError('FTP host must not be empty')
+            raise ValueError('FTPS host must not be empty')
         if not self.username.strip():
-            raise ValueError('FTP username must not be empty')
+            raise ValueError('FTPS username must not be empty')
+        if not self.password:
+            raise ValueError('FTPS password must not be empty')
+        if not self.root.strip():
+            raise ValueError('FTPS target root must not be empty')
         if not 1 <= int(self.port) <= 65535:
-            raise ValueError('FTP port must be between 1 and 65535')
+            raise ValueError('FTPS port must be between 1 and 65535')
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -60,18 +66,18 @@ def load_ftp_profiles(path: Path = DEFAULT_FTP_PROFILES_PATH) -> FTPProfiles:
         return FTPProfiles()
     payload = json.loads(path.read_text(encoding='utf-8'))
     if not isinstance(payload, dict):
-        raise ValueError('FTP profile store must be an object')
+        raise ValueError('FTPS profile store must be an object')
     if payload.get('schema_version') != FTP_PROFILES_SCHEMA_VERSION:
-        raise ValueError('unsupported FTP profile store schema')
+        raise ValueError('unsupported FTPS profile store schema')
     raw_profiles = payload.get('profiles')
     if not isinstance(raw_profiles, list):
-        raise ValueError('FTP profile store profiles must be a list')
+        raise ValueError('FTPS profile store profiles must be a list')
 
     profiles: list[FTPProfile] = []
     names: set[str] = set()
     for raw in raw_profiles:
         if not isinstance(raw, dict):
-            raise ValueError('FTP profile must be an object')
+            raise ValueError('FTPS profile must be an object')
         profile = FTPProfile(
             name=str(raw.get('name') or '').strip(),
             host=str(raw.get('host') or '').strip(),
@@ -81,7 +87,7 @@ def load_ftp_profiles(path: Path = DEFAULT_FTP_PROFILES_PATH) -> FTPProfiles:
             port=int(raw.get('port') or 21),
         )
         if profile.name in names:
-            raise ValueError(f'duplicate FTP profile name: {profile.name}')
+            raise ValueError(f'duplicate FTPS profile name: {profile.name}')
         names.add(profile.name)
         profiles.append(profile)
     profiles.sort(key=lambda item: item.name.casefold())
@@ -98,6 +104,7 @@ def save_ftp_profiles(profiles: FTPProfiles, path: Path = DEFAULT_FTP_PROFILES_P
     text = json.dumps(payload, indent=2, ensure_ascii=False) + '\n'
     temp = path.with_suffix(path.suffix + f'.tmp-{os.getpid()}')
     temp.write_text(text, encoding='utf-8')
+    os.chmod(temp, 0o600)
     try:
         temp.replace(path)
         os.chmod(path, 0o600)

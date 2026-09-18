@@ -8,6 +8,8 @@ from lmts.lib.view import choose_with_preview
 from lmts.tools.dvs_service import DVSServiceStatus, dvs_status, restart_dvs, start_dvs, stop_dvs
 from lmts.tools.s3d_repo import sync_s3d_repository
 
+from .dvs_database_sources_dialog import manage_dvs_database_sources
+
 
 def _single_line(host, stdscr, title: str, *, initial: str = '', allow_empty: bool = False) -> str | None:
     while True:
@@ -40,7 +42,7 @@ def status_lines(settings: DVSSettings, status: DVSServiceStatus) -> tuple[str, 
 def manage_dvs(host, stdscr, current: DVSSettings) -> tuple[DVSSettings, DVSServiceStatus, str]:
     settings = current
     status = dvs_status(settings)
-    options = ['Refresh status', 'Start', 'Stop', 'Restart', 'Fetch / Update S3D', 'Edit configuration']
+    options = ['Refresh status', 'Start', 'Stop', 'Restart', 'Fetch / Update S3D', 'Database sources', 'Edit configuration']
 
     def preview(_index: int) -> tuple[str, ...]:
         return status_lines(settings, status)
@@ -89,6 +91,11 @@ def manage_dvs(host, stdscr, current: DVSSettings) -> tuple[DVSSettings, DVSServ
             return settings, status, f'S3D fetch failed: {exc}'
         status = dvs_status(settings)
         return settings, status, f'S3D {result}: {target}'
+
+    if chosen == 5:
+        manage_dvs_database_sources(host, stdscr)
+        status = dvs_status(settings)
+        return settings, status, host.message or 'DVS database sources updated'
 
     if status.state in {'running', 'starting'}:
         return settings, status, 'stop DVS before changing its configuration'

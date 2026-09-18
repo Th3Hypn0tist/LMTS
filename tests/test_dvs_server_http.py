@@ -315,3 +315,67 @@ def test_studio_http_draft_preview_rejects_closed_shape_violation(studio_server)
     assert status == 400
     assert body['ok'] is False
     assert 'requires exactly definition and source' in body['error']
+
+
+def test_studio_http_lists_database_sources_without_secrets(studio_server, monkeypatch) -> None:
+    base_url, _ = studio_server
+
+    class Source:
+        def public_dict(self):
+            return {
+                'id': 'local',
+                'label': 'Local',
+                'host': '127.0.0.1',
+                'port': 3306,
+                'database': 'lmts',
+                'username': 'lmts',
+            }
+
+    monkeypatch.setattr(server_module, 'load_dvs_database_sources', lambda: (Source(),))
+    status, body = _request(base_url, 'GET', '/api/database-sources')
+    assert status == 200
+    assert body['database_sources'][0]['id'] == 'local'
+    assert 'password' not in body['database_sources'][0]
+
+
+def test_studio_http_lists_reports_from_multiple_selected_databases(studio_server, monkeypatch) -> None:
+    base_url, _ = studio_server
+    calls = []
+
+    def fake_list(source_ids, *, limit_per_source):
+        calls.append((source_ids, limit_per_source))
+        return [
+            {'database_source_id': 'a', 'report_id': 'r-a'},
+            {'database_source_id': 'b', 'report_id': 'r-b'},
+        ]
+
+    monkeypatch.setattr(server_module, 'list_database_reports', fake_list)
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/database-reports',
+        {'source_ids': ['a', 'b'], 'limit_per_source': 25},
+    )
+    assert status == 200
+    assert calls == [(['a', 'b'], 25)]
+    assert [item['report_id'] for item in body['reports']] == ['r-a', 'r-b']
+
+
+def test_studio_http_loads_one_report_from_explicit_database(studio_server, monkeypatch) -> None:
+    base_url, _ = studio_server
+    calls = []
+
+    def fake_load(source_id, report_id):
+        calls.append((source_id, report_id))
+        return {'format': 'lmts.report', 'version': '1.1', 'report': {'id': report_id}}
+
+    monkeypatch.setattr(server_module, 'load_database_report', fake_load)
+    status, body = _request(
+        base_url,
+        'POST',
+        '/api/database-report',
+        {'source_id': 'archive', 'report_id': 'r-42'},
+    )
+    assert status == 200
+    assert calls == [('archive', 'r-42')]
+    assert body['source']['report']['id'] == 'r-42'

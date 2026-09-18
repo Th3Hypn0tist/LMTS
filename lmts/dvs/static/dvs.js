@@ -57,6 +57,55 @@ function errorReportText(errors = dvsErrors, environment = {}) {
   ].join('\n');
 }
 
+function openErrorReportDialog(text) {
+  if (typeof document === 'undefined') return false;
+  const dialog = document.querySelector('#errorReportDialog');
+  const textarea = document.querySelector('#errorReportText');
+  if (!dialog || !textarea) return false;
+  textarea.value = text;
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else dialog.setAttribute('open', '');
+  textarea.focus();
+  textarea.select();
+  return true;
+}
+
+async function copyTextToClipboard(text) {
+  let nativeError = null;
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return 'clipboard';
+    } catch (error) {
+      nativeError = error;
+    }
+  }
+
+  if (typeof document !== 'undefined' && typeof document.execCommand === 'function') {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.setAttribute('aria-hidden', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-10000px';
+    textarea.style.top = '0';
+    document.body.append(textarea);
+    try {
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      if (document.execCommand('copy')) return 'legacy';
+    } finally {
+      textarea.remove();
+    }
+  }
+
+  const detail = nativeError instanceof Error ? `: ${nativeError.message}` : '';
+  throw new Error(`Clipboard copy unavailable${detail}`);
+}
+
+
 async function requestJson(method, path, body = undefined) {
   let response;
   try {
@@ -746,14 +795,41 @@ if (typeof window !== 'undefined') {
 
 if (typeof document !== 'undefined') {
   const errorButton = document.querySelector('#errorReportButton');
+  const errorDialog = document.querySelector('#errorReportDialog');
+  const errorTextarea = document.querySelector('#errorReportText');
+  const errorSelect = document.querySelector('#errorReportSelect');
+  const errorClose = document.querySelector('#errorReportClose');
+
   if (errorButton) {
     errorButton.addEventListener('click', async () => {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
-      await navigator.clipboard.writeText(errorReportText());
-      errorButton.textContent = `COPIED ${dvsErrors.length}`;
-      setTimeout(refreshErrorButton, 900);
+      const report = errorReportText();
+      try {
+        await copyTextToClipboard(report);
+        errorButton.textContent = `COPIED ${dvsErrors.length}`;
+        setTimeout(refreshErrorButton, 900);
+      } catch (error) {
+        reportDvsError(error, { type: 'clipboard_error' });
+        openErrorReportDialog(errorReportText());
+        errorButton.textContent = `OPEN ${dvsErrors.length}`;
+        setTimeout(refreshErrorButton, 900);
+      }
     });
   }
+
+  if (errorSelect && errorTextarea) {
+    errorSelect.addEventListener('click', () => {
+      errorTextarea.focus();
+      errorTextarea.select();
+    });
+  }
+
+  if (errorClose && errorDialog) {
+    errorClose.addEventListener('click', () => {
+      if (typeof errorDialog.close === 'function') errorDialog.close();
+      else errorDialog.removeAttribute('open');
+    });
+  }
+
   refreshErrorButton();
 
   main().catch(error => {
@@ -769,6 +845,8 @@ export {
   compatiblePresets,
   dvsErrors,
   errorReportText,
+  copyTextToClipboard,
+  openErrorReportDialog,
   reportDvsError,
   databaseReportLabel,
   definitionDocument,

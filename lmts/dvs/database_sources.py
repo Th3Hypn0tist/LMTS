@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from lmts.core.paths import DVS_DATABASE_SOURCES_PATH
+from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
 
 
 DVS_DATABASE_SOURCES_SCHEMA_VERSION = 1
+CORE_DATABASE_SOURCE_ID = 'lmts-core'
 DEFAULT_DVS_DATABASE_SOURCES_PATH = DVS_DATABASE_SOURCES_PATH
 
 
@@ -87,11 +89,33 @@ def load_dvs_database_sources(
     return tuple(sorted(sources, key=lambda item: item.id.casefold()))
 
 
+def load_all_dvs_database_sources(
+    sources_path: Path = DEFAULT_DVS_DATABASE_SOURCES_PATH,
+    settings_path: Path = DEFAULT_SETTINGS_PATH,
+) -> tuple[DVSDatabaseSource, ...]:
+    settings = load_settings(settings_path)
+    core = DVSDatabaseSource(
+        id=CORE_DATABASE_SOURCE_ID,
+        label='LMTS core',
+        host=settings.mysql.host,
+        port=3306,
+        database=settings.mysql.database,
+        username=settings.mysql.username,
+        password=settings.mysql.password,
+    )
+    extras = load_dvs_database_sources(sources_path)
+    if any(source.id == CORE_DATABASE_SOURCE_ID for source in extras):
+        raise ValueError(f'DVS database source id is reserved: {CORE_DATABASE_SOURCE_ID}')
+    return (core, *extras)
+
+
 def save_dvs_database_sources(
     sources: tuple[DVSDatabaseSource, ...],
     path: Path = DEFAULT_DVS_DATABASE_SOURCES_PATH,
 ) -> Path:
     ids = [source.id for source in sources]
+    if CORE_DATABASE_SOURCE_ID in ids:
+        raise ValueError(f'DVS database source id is reserved: {CORE_DATABASE_SOURCE_ID}')
     if len(ids) != len(set(ids)):
         raise ValueError('DVS database source ids must be unique')
     path = path.expanduser()
@@ -166,7 +190,7 @@ def list_database_reports(
         raise ValueError('select at least one DVS database source')
     if not 1 <= limit_per_source <= 1000:
         raise ValueError('limit_per_source must be within 1..1000')
-    configured = load_dvs_database_sources(sources_path)
+    configured = load_all_dvs_database_sources(sources_path)
     if len(source_ids) != len(set(source_ids)):
         raise ValueError('DVS database source selection must not contain duplicates')
     reports: list[dict[str, Any]] = []
@@ -201,7 +225,7 @@ def load_database_report(
 ) -> dict[str, Any]:
     if not report_id.strip():
         raise ValueError('report_id must not be empty')
-    configured = load_dvs_database_sources(sources_path)
+    configured = load_all_dvs_database_sources(sources_path)
     source = _by_id(source_id, configured)
     report_id_hex = report_id.encode('utf-8').hex()
     rows = _query(

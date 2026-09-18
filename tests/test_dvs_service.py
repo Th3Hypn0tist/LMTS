@@ -119,3 +119,9 @@ def test_pid_alive_rejects_linux_zombie(monkeypatch) -> None:
 
     monkeypatch.setattr(dvs_service, 'Path', lambda value: FakeStatPath())
     assert dvs_service._pid_alive(123) is False
+
+
+def test_dvs_defaults_bind_all_interfaces_but_health_checks_loopback() -> None:
+    settings = DVSSettings()
+    assert settings.host == '0.0.0.0'
+    assert dvs_service._health_url(settings) == 'http://127.0.0.1:8775/api/health'

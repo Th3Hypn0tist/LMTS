@@ -203,11 +203,11 @@ def load_database_report(
         raise ValueError('report_id must not be empty')
     configured = load_dvs_database_sources(sources_path)
     source = _by_id(source_id, configured)
-    escaped = report_id.replace('\\', '\\\\').replace("'", "\\'")
+    report_id_hex = report_id.encode('utf-8').hex()
     rows = _query(
         source,
-        "SELECT TO_BASE64(report_json) FROM reports "
-        f"WHERE report_id = '{escaped}' LIMIT 1",
+        "SELECT REPLACE(TO_BASE64(report_json), CHAR(10), '') FROM reports "
+        f"WHERE report_id = CONVERT(0x{report_id_hex} USING utf8mb4) LIMIT 1",
     )
     if not rows:
         raise KeyError(f'report not found in DVS database source {source_id}: {report_id}')

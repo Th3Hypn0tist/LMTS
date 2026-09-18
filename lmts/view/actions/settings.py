@@ -141,35 +141,43 @@ class SettingsActions(TUIActions):
         self.settings_service.save_core(self.state.settings)
         self.set_message(f'{label} settings saved')
 
-    def report_settings(self, _stdscr) -> None:
+    def report_output_settings(self, _stdscr) -> None:
         while True:
             s = self.state.settings
             mysql = s.mysql
             options = [
+                'Server setup',
                 f'DVStudio / MySQL  {mysql.username}@{mysql.host}/{mysql.database}',
                 f'DVStudio / PHP API  {s.dvstudio_php_api.base_url or "not configured"}',
                 f'DVisualizer / PHP API  {s.dvisualizer_php_api.base_url or "not configured"}',
                 f'Auto-publish target  {s.auto_publish_target or "none"}',
+                'FTP',
             ]
-            chosen = self.host.choose(self.stdscr, 'Destinations', options)
+            chosen = self.host.choose(self.stdscr, 'Report output', options)
             if chosen is None:
                 return
             if chosen == 0:
-                self.edit_mysql(self.stdscr)
+                self.server_setup(self.stdscr)
                 continue
             if chosen == 1:
+                self.edit_mysql(self.stdscr)
+                continue
+            if chosen == 2:
                 self._edit_php_api(
                     label='DVStudio / PHP API',
                     field_name='dvstudio_php_api',
                     target_id='dvstudio.php_api',
                 )
                 continue
-            if chosen == 2:
+            if chosen == 3:
                 self._edit_php_api(
                     label='DVisualizer / PHP API',
                     field_name='dvisualizer_php_api',
                     target_id='dvisualizer.php_api',
                 )
+                continue
+            if chosen == 5:
+                self.ftp_settings(self.stdscr)
                 continue
 
             targets = configured_report_targets(self.state.settings)

@@ -59,18 +59,18 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("downloader.cancel", ("c",), "Cancel download", "Model Downloader", scope="downloader", order=150),
 
     ShortcutDefinition("settings.output", ("o",), "Output folder", "Settings", scope="settings", order=100),
-    ShortcutDefinition("settings.server", ("i",), "Server setup", "Settings", scope="settings", order=110),
-    ShortcutDefinition("settings.mysql", ("m",), "MySQL", "Settings", scope="settings", order=120),
-    ShortcutDefinition("settings.dvs", ("d",), "DVS", "Settings", scope="settings", order=130),
-    ShortcutDefinition("settings.ftp", ("f",), "FTP", "Settings", scope="settings", order=140),
-    ShortcutDefinition("settings.report", ("r",), "Report API", "Settings", scope="settings", order=150),
-    ShortcutDefinition("settings.targets", ("t",), "Runtime targets", "Settings", scope="settings", order=160),
-    ShortcutDefinition("settings.shortcuts", ("k",), "Shortcut editor", "Settings", scope="settings", order=170),
+    ShortcutDefinition("settings.report_output", ("r",), "Report output", "Settings", scope="settings", order=110),
+    ShortcutDefinition("settings.dvs", ("d",), "DVS", "Settings", scope="settings", order=120),
+    ShortcutDefinition("settings.targets", ("t",), "Runtime targets", "Settings", scope="settings", order=130),
+    ShortcutDefinition("settings.shortcuts", ("k",), "Shortcut editor", "Settings", scope="settings", order=140),
 )
 
 
+LEGACY_SHORTCUT_ACTIONS = frozenset({'settings.server', 'settings.mysql', 'settings.ftp', 'settings.report'})
+
+
 def build_shortcut_registry(overrides: dict[str, tuple[str, ...]] | None = None) -> ShortcutRegistry:
-    overrides = {} if overrides is None else overrides
+    overrides = {} if overrides is None else {key: value for key, value in overrides.items() if key not in LEGACY_SHORTCUT_ACTIONS}
     known_actions = {definition.action for definition in DEFAULT_SHORTCUTS}
     unknown = sorted(set(overrides) - known_actions)
     if unknown:

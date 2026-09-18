@@ -107,11 +107,8 @@ class TUIApplication:
             'cw.results': results.browse_cw_results,
             'cw.cancel': benchmark.cancel,
             'settings.output': settings.edit_output_folder,
-            'settings.server': settings.server_setup,
-            'settings.mysql': settings.edit_mysql,
+            'settings.report_output': settings.report_output_settings,
             'settings.dvs': settings.edit_dvs,
-            'settings.ftp': settings.ftp_settings,
-            'settings.report': settings.report_settings,
             'settings.targets': settings.runtime_target_settings,
             'settings.shortcuts': settings.shortcut_editor,
         }

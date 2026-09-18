@@ -23,7 +23,7 @@ from .studio_preview import (
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = (PACKAGE_DIR / 'static').resolve()
-HOST = os.environ.get('LMTS_DVS_HOST', '127.0.0.1')
+HOST = os.environ.get('LMTS_DVS_HOST', '0.0.0.0')
 PORT = int(os.environ.get('LMTS_DVS_PORT', '8775'))
 INSTANCE_ID = os.environ.get('LMTS_DVS_INSTANCE_ID', '').strip()
 S3D_ROOT_VALUE = os.environ.get('LMTS_S3D_ROOT', '').strip()

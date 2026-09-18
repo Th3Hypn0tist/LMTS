@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import {
   compatiblePresets,
   databaseReportLabel,
+  dvsErrors,
+  errorReportText,
+  reportDvsError,
   definitionDocument,
   encodeDefinitionId,
   newDefinition,
@@ -162,4 +165,33 @@ test('DVS database report labels preserve selected database identity', () => {
     }),
     '[Archive DB] 2026-09-18T08:00:00.000000 r-42 · model-a',
   );
+});
+
+
+test('DVS error report includes API diagnostics and deduplicates one Error', () => {
+  dvsErrors.splice(0, dvsErrors.length);
+  const error = new Error('database query failed');
+  const first = reportDvsError(error, {
+    type: 'api_error',
+    method: 'POST',
+    path: '/api/database-reports',
+    status: 400,
+    response_body: '{"error":"mysql failed"}',
+  });
+  const second = reportDvsError(error, { type: 'database_ui_error' });
+
+  assert.equal(first, second);
+  assert.equal(dvsErrors.length, 1);
+
+  const report = errorReportText(dvsErrors, {
+    url: 'http://127.0.0.1:8775/',
+    userAgent: 'test-agent',
+  });
+  assert.match(report, /LMTS DVS ERROR REPORT/);
+  assert.match(report, /api_error/);
+  assert.match(report, /request: POST \/api\/database-reports/);
+  assert.match(report, /http_status: 400/);
+  assert.match(report, /response_body: \{"error":"mysql failed"\}/);
+  assert.match(report, /database query failed/);
+  dvsErrors.splice(0, dvsErrors.length);
 });

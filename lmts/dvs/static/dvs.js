@@ -380,7 +380,7 @@ async function main() {
 
   async function refreshDatabaseSources() {
     const previouslySelected = new Set(selectedDatabaseSourceIds());
-    const payload = await getJson('/api/database-sources');
+    const payload = await getJson('/api/database-source-statuses');
     state.databaseSources = payload.database_sources || [];
     databaseSources.replaceChildren();
     for (const source of state.databaseSources) {
@@ -389,16 +389,23 @@ async function main() {
       checkbox.type = 'checkbox';
       checkbox.value = source.id;
       checkbox.checked = previouslySelected.has(source.id)
-        || (previouslySelected.size === 0 && source.id === 'lmts-core');
-      label.append(checkbox, ` ${source.label} · ${source.username}@${source.host}:${source.port}/${source.database}`);
+        || (previouslySelected.size === 0 && Number(source.report_count || 0) > 0);
+      const statusText = source.ok
+        ? `${source.report_count} report(s)${source.latest_report_id ? ` · latest ${source.latest_report_id}` : ''}`
+        : `ERROR: ${source.error || 'unknown database error'}`;
+      label.append(
+        checkbox,
+        ` ${source.label} · ${source.username}@${source.host}:${source.port}/${source.database} · ${statusText}`,
+      );
       databaseSources.append(label);
     }
     databaseReport.replaceChildren();
     state.databaseReports = [];
     const selectedCount = selectedDatabaseSourceIds().length;
     databaseRefresh.disabled = selectedCount === 0;
+    const totalReports = state.databaseSources.reduce((sum, source) => sum + Number(source.report_count || 0), 0);
     databaseMessage.textContent = state.databaseSources.length
-      ? `${selectedCount} database source(s) selected.`
+      ? `${selectedCount} database source(s) selected · ${totalReports} report(s) visible across configured sources.`
       : 'No DVS database sources configured.';
   }
 
@@ -414,7 +421,12 @@ async function main() {
     for (let index = 0; index < state.databaseReports.length; index += 1) {
       option(databaseReport, String(index), databaseReportLabel(state.databaseReports[index]));
     }
-    databaseMessage.textContent = `${state.databaseReports.length} report(s) from ${sourceIds.length} database source(s).`;
+    if (state.databaseReports.length) {
+      databaseReport.value = '0';
+      databaseMessage.textContent = `${state.databaseReports.length} report(s) from ${sourceIds.length} database source(s).`;
+    } else {
+      databaseMessage.textContent = `0 reports from ${sourceIds.length} selected database source(s).`;
+    }
   }
 
   async function loadSelectedDatabaseReport() {

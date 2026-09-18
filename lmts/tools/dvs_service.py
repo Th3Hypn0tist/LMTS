@@ -104,6 +104,30 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _process_bind(pid: int) -> tuple[str, int] | None:
+    environ = Path(f'/proc/{pid}/environ')
+    try:
+        raw = environ.read_bytes()
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+    values: dict[str, str] = {}
+    for entry in raw.split(b'\0'):
+        if b'=' not in entry:
+            continue
+        key, value = entry.split(b'=', 1)
+        if key in {b'LMTS_DVS_HOST', b'LMTS_DVS_PORT'}:
+            values[key.decode('ascii')] = value.decode('utf-8', errors='replace')
+    host = values.get('LMTS_DVS_HOST')
+    port_text = values.get('LMTS_DVS_PORT')
+    if not host or not port_text:
+        return None
+    try:
+        port = int(port_text)
+    except ValueError:
+        return None
+    return host, port
+
+
 def _process_instance_id(pid: int) -> str | None:
     """Return the managed DVS instance id carried by a live Linux process.
 
@@ -152,7 +176,28 @@ def dvs_status(
     studio = health.get('studio') if isinstance(health, dict) and isinstance(health.get('studio'), dict) else {}
 
     if state is None:
-        if health is None:
+        process_bind = _process_bind(pid)
+    if process_bind is not None and process_bind != (settings.host, settings.port):
+        running_host, running_port = process_bind
+        return DVSServiceStatus(
+            'error',
+            settings.host,
+            settings.port,
+            pid=pid,
+            instance_id=instance_id,
+            health_ok=health is not None,
+            s3d_configured=bool(s3d.get('configured')),
+            s3d_ready=bool(s3d.get('ready')),
+            studio_root=str(studio.get('root') or ''),
+            log_path=str(log_path),
+            error=(
+                'configured bind differs from running process: '
+                f'configured {settings.host}:{settings.port}, '
+                f'running {running_host}:{running_port}; restart DVS'
+            ),
+        )
+
+    if health is None:
             return DVSServiceStatus('stopped', settings.host, settings.port, log_path=str(log_path))
         return DVSServiceStatus(
             'unmanaged',

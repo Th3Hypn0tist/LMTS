@@ -331,7 +331,7 @@ def test_studio_http_lists_database_sources_without_secrets(studio_server, monke
                 'username': 'lmts',
             }
 
-    monkeypatch.setattr(server_module, 'load_dvs_database_sources', lambda: (Source(),))
+    monkeypatch.setattr(server_module, 'load_all_dvs_database_sources', lambda: (Source(),))
     status, body = _request(base_url, 'GET', '/api/database-sources')
     assert status == 200
     assert body['database_sources'][0]['id'] == 'local'

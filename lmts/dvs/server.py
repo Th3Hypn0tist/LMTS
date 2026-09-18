@@ -22,6 +22,13 @@ from .studio_preview import (
 
 
 PACKAGE_DIR = Path(__file__).resolve().parent
+SOURCE_ROOT = Path(os.environ.get('LMTS_DVS_SOURCE_ROOT') or Path(__file__).resolve().parents[2]).resolve()
+API_FEATURES = [
+    'database_sources',
+    'database_source_statuses',
+    'database_reports',
+    'database_report',
+]
 STATIC_DIR = (PACKAGE_DIR / 'static').resolve()
 HOST = os.environ.get('LMTS_DVS_HOST', '0.0.0.0')
 PORT = int(os.environ.get('LMTS_DVS_PORT', '8775'))
@@ -126,6 +133,11 @@ class Handler(BaseHTTPRequestHandler):
                     'host_role': 'studio+viewer',
                     'version': '1.0',
                     'instance_id': INSTANCE_ID,
+                    'runtime': {
+                        'source_root': str(SOURCE_ROOT),
+                        'server_file': str(Path(__file__).resolve()),
+                    },
+                    'api_features': API_FEATURES,
                     's3d': s3d_status(),
                     'studio': {
                         'root': str(STUDIO_ROOT),

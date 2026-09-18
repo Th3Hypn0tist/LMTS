@@ -52,13 +52,15 @@ def _run(mysql: MySQLSettings, query: str) -> str:
         '--skip-column-names',
         '--default-character-set=utf8mb4',
         mysql.database,
-        '--execute',
-        query,
     ]
     env = dict(os.environ)
     env['MYSQL_PWD'] = mysql.password
+    sql = query.rstrip()
+    if not sql.endswith(';'):
+        sql += ';'
     completed = subprocess.run(
         command,
+        input=(sql + '\n').encode('utf-8'),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,

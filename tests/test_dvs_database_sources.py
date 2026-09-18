@@ -4,9 +4,12 @@ import json
 from pathlib import Path
 
 import lmts.dvs.database_sources as db
+from lmts.core.settings import LMTSSettings, MySQLSettings, save_settings
 from lmts.dvs.database_sources import (
+    CORE_DATABASE_SOURCE_ID,
     DVSDatabaseSource,
     list_database_reports,
+    load_all_dvs_database_sources,
     load_database_report,
     load_dvs_database_sources,
     save_dvs_database_sources,
@@ -83,3 +86,38 @@ def test_database_report_load_uses_exact_source_and_decodes_json(tmp_path: Path,
     assert seen[0][0] == 'b'
     assert '0x' in seen[0][1]
     assert "r'1" not in seen[0][1]
+
+
+def test_all_sources_include_lmts_core_and_extra_sources(tmp_path: Path) -> None:
+    settings_path = tmp_path / 'settings.json'
+    sources_path = tmp_path / 'dvs-databases.json'
+    save_settings(
+        LMTSSettings(
+            mysql=MySQLSettings(
+                host='db.internal',
+                database='results',
+                username='reader',
+                password='secret',
+                publish_key='publish',
+            ),
+        ),
+        settings_path,
+    )
+    save_dvs_database_sources((_source('archive'),), sources_path)
+
+    sources = load_all_dvs_database_sources(sources_path, settings_path)
+    assert [item.id for item in sources] == [CORE_DATABASE_SOURCE_ID, 'archive']
+    assert sources[0].label == 'LMTS core'
+    assert sources[0].host == 'db.internal'
+    assert sources[0].database == 'results'
+    assert sources[0].username == 'reader'
+
+
+def test_reserved_lmts_core_source_id_cannot_be_persisted(tmp_path: Path) -> None:
+    source = _source(CORE_DATABASE_SOURCE_ID)
+    try:
+        save_dvs_database_sources((source,), tmp_path / 'dvs-databases.json')
+    except ValueError as exc:
+        assert 'reserved' in str(exc)
+    else:
+        raise AssertionError('reserved LMTS core source id must be rejected')

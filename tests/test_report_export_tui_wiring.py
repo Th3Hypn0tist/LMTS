@@ -37,9 +37,10 @@ def test_report_profile_store_migrates_v1(tmp_path: Path) -> None:
         encoding='utf-8',
     )
     profiles = load_report_profiles(path)
-    assert profiles.schema_version == 2
+    assert profiles.schema_version == 3
     assert profiles.auto_publish_profile is None
     assert profiles.by_name('server') is not None
+    assert profiles.by_name('server').kind == 'php_api'
 
 
 def test_report_profile_store_persists_auto_publish(tmp_path: Path) -> None:
@@ -53,3 +54,13 @@ def test_report_profile_store_persists_auto_publish(tmp_path: Path) -> None:
     loaded = load_report_profiles(path)
     assert loaded.auto_publish_profile == 'server'
     assert loaded.auto_publish() == profile
+
+
+def test_report_profile_store_persists_mysql_target(tmp_path: Path) -> None:
+    path = tmp_path / 'report-profiles.json'
+    profile = ReportProfile(name='direct-db', kind='mysql', endpoint='', publish_key='')
+    save_report_profiles(ReportProfiles(profiles=(profile,), auto_publish_profile='direct-db'), path)
+    loaded = load_report_profiles(path)
+    assert loaded.auto_publish_profile == 'direct-db'
+    assert loaded.auto_publish() == profile
+    assert loaded.auto_publish().kind == 'mysql'

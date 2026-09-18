@@ -6,8 +6,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+from lmts.core.settings import MySQLSettings, load_settings
 from lmts.reporting import REPORT_FORMAT, REPORT_VERSION
 
+from .mysql_reports import write_report
 from .report_profiles import ReportProfile
 
 
@@ -60,8 +62,17 @@ def publish_report(
     *,
     timeout: float = 20.0,
     verify: bool = True,
+    mysql: MySQLSettings | None = None,
 ) -> str:
     report_id = _validate_report_document(report)
+
+    if profile.kind == 'mysql':
+        returned_id = write_report(mysql or load_settings().mysql, report, verify=verify)
+        if returned_id != report_id:
+            raise RuntimeError(f'MySQL report target returned unexpected id: {returned_id!r}')
+        return returned_id
+    if profile.kind != 'php_api':
+        raise ValueError(f'unsupported report target kind: {profile.kind}')
 
     body = json.dumps(report, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
     request = Request(

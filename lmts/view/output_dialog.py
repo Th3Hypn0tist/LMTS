@@ -124,19 +124,26 @@ def create_report_profile(
     *,
     store_path: Path = DEFAULT_REPORT_PROFILES_PATH,
 ) -> ReportProfile | None:
-    name = _single_line(host, stdscr, 'Report profile name')
+    kind_choice = host.choose(stdscr, 'Report target type', ['PHP API', 'MySQL'])
+    if kind_choice is None:
+        return None
+    kind = ('php_api', 'mysql')[kind_choice]
+    name = _single_line(host, stdscr, 'Report target name')
     if name is None:
         return None
-    endpoint = _single_line(host, stdscr, 'Exact Report API endpoint', initial='http://127.0.0.1/api/report.php')
-    if endpoint is None:
-        return None
-    publish_key = _single_line(host, stdscr, 'Report publish key', initial='lmts')
-    if publish_key is None:
-        return None
-    profile = ReportProfile(name=name, endpoint=endpoint, publish_key=publish_key)
+    if kind == 'mysql':
+        profile = ReportProfile(name=name, kind='mysql', endpoint='', publish_key='')
+    else:
+        endpoint = _single_line(host, stdscr, 'Exact Report API endpoint', initial='http://127.0.0.1/api/report.php')
+        if endpoint is None:
+            return None
+        publish_key = _single_line(host, stdscr, 'Report publish key', initial='lmts')
+        if publish_key is None:
+            return None
+        profile = ReportProfile(name=name, kind='php_api', endpoint=endpoint, publish_key=publish_key)
     profiles = load_report_profiles(store_path).upsert(profile)
     save_report_profiles(profiles, store_path)
-    host.message = f'report profile saved: {profile.name}'
+    host.message = f'report target saved: {profile.name}'
     return profile
 
 
@@ -147,8 +154,11 @@ def choose_report_profile(
     store_path: Path = DEFAULT_REPORT_PROFILES_PATH,
 ) -> ReportProfile | None:
     profiles = load_report_profiles(store_path)
-    options = ['[New report profile]', *(profile.name for profile in profiles.profiles)]
-    chosen = host.choose(stdscr, 'Report API profile', options)
+    options = [
+        '[New report target]',
+        *(f"{'MySQL' if profile.kind == 'mysql' else 'PHP API'}  {profile.name}" for profile in profiles.profiles),
+    ]
+    chosen = host.choose(stdscr, 'Report target', options)
     if chosen is None:
         return None
     if chosen == 0:
@@ -166,30 +176,33 @@ def manage_report_profiles(
         profiles = load_report_profiles(store_path)
         auto_label = profiles.auto_publish_profile or 'none'
         options = [
-            'New report profile',
-            f'Auto-publish profile: {auto_label}',
-            *(f'Delete  {profile.name}' for profile in profiles.profiles),
+            'New report target',
+            f'Auto-publish target: {auto_label}',
+            *(f"Delete  {'MySQL' if profile.kind == 'mysql' else 'PHP API'}  {profile.name}" for profile in profiles.profiles),
         ]
-        chosen = host.choose(stdscr, 'Report API profiles', options)
+        chosen = host.choose(stdscr, 'Report targets', options)
         if chosen is None:
             return
         if chosen == 0:
             create_report_profile(host, stdscr, store_path=store_path)
             continue
         if chosen == 1:
-            auto_options = ['None', *(profile.name for profile in profiles.profiles)]
-            selected = host.choose(stdscr, 'Auto-publish report profile', auto_options)
+            auto_options = [
+                'None',
+                *(f"{'MySQL' if profile.kind == 'mysql' else 'PHP API'}  {profile.name}" for profile in profiles.profiles),
+            ]
+            selected = host.choose(stdscr, 'Auto-publish report target', auto_options)
             if selected is None:
                 continue
             name = None if selected == 0 else profiles.profiles[selected - 1].name
             save_report_profiles(profiles.with_auto_publish(name), store_path)
-            host.message = f'auto-publish profile: {name or "none"}'
+            host.message = f'auto-publish target: {name or "none"}'
             continue
         profile = profiles.profiles[chosen - 2]
         confirm = host.choose(stdscr, f'Delete report profile {profile.name}?', ['No', 'Yes'], 0)
         if confirm == 1:
             save_report_profiles(profiles.remove(profile.name), store_path)
-            host.message = f'report profile deleted: {profile.name}'
+            host.message = f'report target deleted: {profile.name}'
 
 
 def choose_output_target(

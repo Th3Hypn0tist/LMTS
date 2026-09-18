@@ -4,30 +4,42 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Literal
 
 from lmts.core.paths import REPORT_PROFILES_PATH
 
 
-REPORT_PROFILES_SCHEMA_VERSION = 2
+REPORT_PROFILES_SCHEMA_VERSION = 3
 DEFAULT_REPORT_PROFILES_PATH = REPORT_PROFILES_PATH
+ReportTargetKind = Literal['php_api', 'mysql']
 
 
 @dataclass(frozen=True, slots=True)
 class ReportProfile:
     name: str
-    endpoint: str
+    endpoint: str = ''
     publish_key: str = 'lmts'
+    kind: ReportTargetKind = 'php_api'
 
     def __post_init__(self) -> None:
         if not self.name.strip():
             raise ValueError('report profile name must not be empty')
+        if self.kind not in {'php_api', 'mysql'}:
+            raise ValueError(f'unsupported report target kind: {self.kind}')
         endpoint = self.endpoint.strip()
-        if not endpoint:
-            raise ValueError('report endpoint must not be empty')
-        if not endpoint.startswith(('http://', 'https://')):
-            raise ValueError('report endpoint must use http:// or https://')
-        if not self.publish_key.strip():
-            raise ValueError('report publish key must not be empty')
+        publish_key = self.publish_key.strip()
+        if self.kind == 'php_api':
+            if not endpoint:
+                raise ValueError('PHP API report endpoint must not be empty')
+            if not endpoint.startswith(('http://', 'https://')):
+                raise ValueError('PHP API report endpoint must use http:// or https://')
+            if not publish_key:
+                raise ValueError('PHP API report publish key must not be empty')
+            return
+        if endpoint:
+            raise ValueError('MySQL report target uses LMTS MySQL settings and must not define an HTTP endpoint')
+        if publish_key:
+            raise ValueError('MySQL report target uses LMTS MySQL settings and must not define a publish key')
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -77,7 +89,7 @@ def load_report_profiles(path: Path = DEFAULT_REPORT_PROFILES_PATH) -> ReportPro
     if not isinstance(payload, dict):
         raise ValueError('report profile store root must be an object')
     schema_version = payload.get('schema_version')
-    if schema_version not in {1, REPORT_PROFILES_SCHEMA_VERSION}:
+    if schema_version not in {1, 2, REPORT_PROFILES_SCHEMA_VERSION}:
         raise ValueError('unsupported report profile store schema')
     raw_profiles = payload.get('profiles')
     if not isinstance(raw_profiles, list):
@@ -88,10 +100,13 @@ def load_report_profiles(path: Path = DEFAULT_REPORT_PROFILES_PATH) -> ReportPro
     for raw in raw_profiles:
         if not isinstance(raw, dict):
             raise ValueError('report profile must be an object')
+        kind = 'php_api' if schema_version in {1, 2} else str(raw.get('kind') or 'php_api').strip()
+        raw_publish_key = raw.get('publish_key')
         profile = ReportProfile(
             name=str(raw.get('name') or '').strip(),
             endpoint=str(raw.get('endpoint') or '').strip(),
-            publish_key=str(raw.get('publish_key') or ''),
+            publish_key=str(raw_publish_key if raw_publish_key is not None else ('lmts' if kind == 'php_api' else '')),
+            kind=kind,
         )
         if profile.name in names:
             raise ValueError(f'duplicate report profile name: {profile.name}')
@@ -99,7 +114,7 @@ def load_report_profiles(path: Path = DEFAULT_REPORT_PROFILES_PATH) -> ReportPro
         profiles.append(profile)
     profiles.sort(key=lambda item: item.name.casefold())
     auto_publish_profile = None
-    if schema_version == REPORT_PROFILES_SCHEMA_VERSION:
+    if schema_version in {2, REPORT_PROFILES_SCHEMA_VERSION}:
         raw_auto = payload.get('auto_publish_profile')
         if raw_auto is not None:
             auto_publish_profile = str(raw_auto).strip() or None

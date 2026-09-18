@@ -101,7 +101,7 @@ class SettingsActions(TUIActions):
             self.stdscr,
             store_path=self.settings_service.path('report_profiles'),
         )
-        self.set_message('report profiles updated')
+        self.set_message('report targets updated')
 
     def runtime_target_settings(self, _stdscr) -> None:
         manage_runtime_targets(self.host, self.stdscr)

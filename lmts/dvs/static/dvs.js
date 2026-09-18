@@ -139,7 +139,7 @@ async function requestJson(method, path, body = undefined) {
     const backendMismatch = (
       response.status === 404
       && payload?.error === 'not_found'
-      && ['/api/database-sources', '/api/database-reports', '/api/database-report'].includes(path)
+      && path.startsWith('/api/database-')
     );
     const message = backendMismatch
       ? `DVS backend does not expose ${path}. Restart DVS after updating LMTS.`

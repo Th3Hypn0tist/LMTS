@@ -50,3 +50,5 @@ pre { overflow: auto; max-height: 420px; white-space: pre-wrap; overflow-wrap: a
 }
 
 .error-report-button{position:fixed;right:12px;bottom:12px;z-index:25;padding:6px 9px;border:1px solid #2b3546;border-radius:5px;background:#0d1420e8;color:#697789;font-size:11px;font-weight:900;letter-spacing:.10em;box-shadow:0 2px 10px #0006;width:auto}.error-report-button:hover{background:#151e2d;color:#a8b4c4}.error-report-button.has-errors{border-color:#a63d36;background:#3a1718;color:#ff776c;box-shadow:0 0 0 1px #7a2925,0 0 14px #ff4b3d33}.error-report-button.has-errors:hover{background:#4a1d1e;color:#ff9b92}
+
+.error-report-dialog{width:min(900px,calc(100vw - 40px));max-height:80vh;border:1px solid #46515d;border-radius:8px;background:#11161c;color:#eef2f6;padding:16px;box-shadow:0 20px 60px #000a}.error-report-dialog::backdrop{background:#0009}.error-report-dialog h2{margin:0 0 12px}.error-report-text{width:100%;min-height:50vh;margin:0 0 12px;white-space:pre;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px}

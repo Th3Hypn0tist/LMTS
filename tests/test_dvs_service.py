@@ -155,3 +155,14 @@ def test_status_detects_running_bind_drift(monkeypatch, tmp_path: Path) -> None:
     assert 'configured 0.0.0.0:8775' in status.error
     assert 'running 127.0.0.1:8775' in status.error
     assert 'restart DVS' in status.error
+
+
+def test_health_contract_rejects_backend_without_report_source_api(monkeypatch) -> None:
+    monkeypatch.setattr(dvs_service, 'DVS_SOURCE_ROOT', Path('/srv/lmts'))
+    health = {
+        'runtime': {'source_root': '/srv/lmts'},
+        'api_features': ['database_source_statuses'],
+    }
+    message = dvs_service._health_runtime_mismatch(health)
+    assert 'report_source_statuses' in message
+    assert 'report_source_reports' in message

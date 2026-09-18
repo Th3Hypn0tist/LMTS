@@ -19,7 +19,12 @@ DEFAULT_STATE_PATH = Path('.lmts/dvs-service.json')
 DEFAULT_LOG_PATH = Path('.lmts/dvs-service.log')
 STARTUP_GRACE_SECONDS = 5.0
 DVS_SOURCE_ROOT = Path(__file__).resolve().parents[2]
-REQUIRED_DVS_API_FEATURES = {'database_source_statuses'}
+REQUIRED_DVS_API_FEATURES = {
+    'report_sources',
+    'report_source_statuses',
+    'report_source_reports',
+    'report_source_report',
+}
 
 
 @dataclass(frozen=True, slots=True)

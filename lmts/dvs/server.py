@@ -8,6 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from lmts.core.settings import DEFAULT_SETTINGS_PATH
+
 from .database_sources import database_source_statuses, load_all_dvs_database_sources, load_database_report, list_database_reports
 from .report_sources import load_all_dvs_report_sources, load_report_source_report, list_report_source_reports, report_source_statuses
 from .registry import DVSRegistry
@@ -141,6 +143,7 @@ class Handler(BaseHTTPRequestHandler):
                     'runtime': {
                         'source_root': str(SOURCE_ROOT),
                         'server_file': str(Path(__file__).resolve()),
+                        'settings_path': str(DEFAULT_SETTINGS_PATH),
                     },
                     'api_features': API_FEATURES,
                     's3d': s3d_status(),

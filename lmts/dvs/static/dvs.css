@@ -16,6 +16,9 @@ header p, .hint { color: #8f9aa6; }
 .workspace { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 12px; }
 .panel { border: 1px solid #2e3741; background: #11161c; border-radius: 10px; padding: 16px; margin: 12px 0; }
 .controls { margin: 0; }
+.database-sources { display: grid; gap: 6px; margin: 8px 0 12px; }
+.database-sources label { display: flex; align-items: center; gap: 6px; margin: 0; }
+.database-sources input[type="checkbox"] { width: auto; }
 .controls label, .studio-controls label, .studio-editor-label { display: grid; gap: 6px; margin-bottom: 14px; font-size: 13px; color: #aeb8c2; }
 select, textarea, input, button { font: inherit; }
 select, textarea, input[type="file"] { width: 100%; border: 1px solid #39434e; background: #0b0f14; color: #eef2f6; border-radius: 6px; padding: 8px; }

@@ -35,7 +35,7 @@ class MySQLSettings:
 
 @dataclass(frozen=True, slots=True)
 class DVSSettings:
-    host: str = '127.0.0.1'
+    host: str = '0.0.0.0'
     port: int = 8775
     s3d_root: str = '../S3D'
     studio_root: str = '.lmts/dvs'
@@ -92,7 +92,7 @@ def _dvs_from_payload(value: object) -> DVSSettings:
     except (TypeError, ValueError) as exc:
         raise ValueError('DVS port must be an integer') from exc
     return DVSSettings(
-        host=str(value.get('host') or '127.0.0.1').strip(),
+        host=str(value.get('host') or '0.0.0.0').strip(),
         port=parsed_port,
         s3d_root=str(value.get('s3d_root') if value.get('s3d_root') is not None else '../S3D').strip(),
         studio_root=str(value.get('studio_root') or '.lmts/dvs').strip(),

@@ -8,9 +8,14 @@ from pathlib import Path
 from .paths import SETTINGS_PATH
 
 
-SETTINGS_SCHEMA_VERSION = 4
+SETTINGS_SCHEMA_VERSION = 5
 DEFAULT_SETTINGS_PATH = SETTINGS_PATH
 DEFAULT_OUTPUT_FOLDER = 'exports'
+REPORT_TARGET_IDS = frozenset({
+    'dvstudio.mysql',
+    'dvstudio.php_api',
+    'dvisualizer.php_api',
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +39,35 @@ class MySQLSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class PHPAPISettings:
+    base_url: str = ''
+    publish_key: str = ''
+
+    def __post_init__(self) -> None:
+        base_url = self.base_url.strip()
+        if base_url and not base_url.startswith(('http://', 'https://')):
+            raise ValueError('PHP API base_url must use http:// or https://')
+        if base_url and not self.publish_key.strip():
+            raise ValueError('PHP API publish_key must not be empty when base_url is configured')
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.base_url.strip() and self.publish_key.strip())
+
+    @property
+    def report_endpoint(self) -> str:
+        if not self.configured:
+            raise ValueError('PHP API is not configured')
+        return f"{self.base_url.rstrip('/')}/api/report.php"
+
+    @property
+    def reports_endpoint(self) -> str:
+        if not self.configured:
+            raise ValueError('PHP API is not configured')
+        return f"{self.base_url.rstrip('/')}/api/reports.php"
+
+
+@dataclass(frozen=True, slots=True)
 class DVSSettings:
     host: str = '0.0.0.0'
     port: int = 8775
@@ -54,7 +88,21 @@ class LMTSSettings:
     schema_version: int = SETTINGS_SCHEMA_VERSION
     output_folder: str = DEFAULT_OUTPUT_FOLDER
     mysql: MySQLSettings = field(default_factory=MySQLSettings)
+    dvstudio_php_api: PHPAPISettings = field(default_factory=PHPAPISettings)
+    dvisualizer_php_api: PHPAPISettings = field(default_factory=PHPAPISettings)
+    auto_publish_target: str | None = None
     dvs: DVSSettings = field(default_factory=DVSSettings)
+
+    def __post_init__(self) -> None:
+        target = self.auto_publish_target
+        if target is None:
+            return
+        if target not in REPORT_TARGET_IDS:
+            raise ValueError(f'unknown auto-publish target: {target}')
+        if target == 'dvstudio.php_api' and not self.dvstudio_php_api.configured:
+            raise ValueError('auto-publish target dvstudio.php_api is not configured')
+        if target == 'dvisualizer.php_api' and not self.dvisualizer_php_api.configured:
+            raise ValueError('auto-publish target dvisualizer.php_api is not configured')
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -76,6 +124,17 @@ def _mysql_from_payload(value: object) -> MySQLSettings:
         username=str(value.get('username') or 'lmts').strip(),
         password=str(value.get('password') if value.get('password') is not None else 'lmts'),
         publish_key=str(value.get('publish_key') or 'lmts').strip(),
+    )
+
+
+def _php_api_from_payload(value: object, *, field_name: str) -> PHPAPISettings:
+    if value is None:
+        return PHPAPISettings()
+    if not isinstance(value, dict):
+        raise ValueError(f'{field_name} must be an object')
+    return PHPAPISettings(
+        base_url=str(value.get('base_url') or '').strip(),
+        publish_key=str(value.get('publish_key') or '').strip(),
     )
 
 
@@ -139,12 +198,31 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
             mysql=_mysql_from_payload(payload.get('mysql')),
             dvs=_dvs_from_v3_payload(payload.get('dvs')),
         )
+    if schema_version == 4:
+        mysql = _mysql_from_payload(payload.get('mysql'))
+        return LMTSSettings(
+            output_folder=_normalise_output_folder(payload.get('output_folder')),
+            mysql=mysql,
+            dvstudio_php_api=PHPAPISettings(publish_key=mysql.publish_key),
+            dvs=_dvs_from_payload(payload.get('dvs')),
+        )
     if schema_version != SETTINGS_SCHEMA_VERSION:
         raise ValueError(f'unsupported LMTS settings schema: {schema_version!r}')
 
+    raw_auto = payload.get('auto_publish_target')
+    auto_publish_target = None if raw_auto is None else str(raw_auto).strip() or None
     return LMTSSettings(
         output_folder=_normalise_output_folder(payload.get('output_folder')),
         mysql=_mysql_from_payload(payload.get('mysql')),
+        dvstudio_php_api=_php_api_from_payload(
+            payload.get('dvstudio_php_api'),
+            field_name='settings.dvstudio_php_api',
+        ),
+        dvisualizer_php_api=_php_api_from_payload(
+            payload.get('dvisualizer_php_api'),
+            field_name='settings.dvisualizer_php_api',
+        ),
+        auto_publish_target=auto_publish_target,
         dvs=_dvs_from_payload(payload.get('dvs')),
     )
 

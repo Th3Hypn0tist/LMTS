@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lmts.core.paths import (
+    DVS_DATABASE_SOURCES_PATH,
     FTP_PROFILES_PATH,
     REPORT_PROFILES_PATH,
     RUNTIME_TARGETS_PATH,
@@ -11,6 +12,7 @@ from lmts.core.paths import (
     SHORTCUT_SETTINGS_PATH,
     lmts_home,
 )
+from lmts.dvs.database_sources import DVSDatabaseSource, load_dvs_database_sources, save_dvs_database_sources
 from lmts.core.runtime_targets import RuntimeTargetDefinition, load_runtime_targets, save_runtime_targets
 from lmts.core.settings import LMTSSettings, load_settings, save_settings
 from lmts.core.shortcut_settings import load_shortcut_overrides, save_shortcut_overrides
@@ -32,6 +34,7 @@ class SettingsSnapshot:
     runtime_targets: tuple[RuntimeTargetDefinition, ...]
     ftp_profiles: FTPProfiles
     report_profiles: ReportProfiles
+    dvs_database_sources: tuple[DVSDatabaseSource, ...]
 
 
 class SettingsService:
@@ -48,6 +51,7 @@ class SettingsService:
             SettingsStoreDescriptor('core', self.root / SETTINGS_PATH.name, contains_secret_values=True),
             SettingsStoreDescriptor('shortcuts', self.root / SHORTCUT_SETTINGS_PATH.name),
             SettingsStoreDescriptor('runtime_targets', self.root / RUNTIME_TARGETS_PATH.name),
+            SettingsStoreDescriptor('dvs_database_sources', self.root / DVS_DATABASE_SOURCES_PATH.name, contains_secret_values=True),
             SettingsStoreDescriptor('ftp_profiles', self.root / FTP_PROFILES_PATH.name),
             SettingsStoreDescriptor('report_profiles', self.root / REPORT_PROFILES_PATH.name, contains_secret_values=True),
         )
@@ -75,6 +79,9 @@ class SettingsService:
     def load_runtime_targets(self) -> tuple[RuntimeTargetDefinition, ...]:
         return load_runtime_targets(self.path('runtime_targets'))
 
+    def load_dvs_database_sources(self) -> tuple[DVSDatabaseSource, ...]:
+        return load_dvs_database_sources(self.path('dvs_database_sources'))
+
     def load_ftp_profiles(self) -> FTPProfiles:
         return load_ftp_profiles(self.path('ftp_profiles'))
 
@@ -86,6 +93,7 @@ class SettingsService:
             core=self.load_core(),
             shortcuts=self.load_shortcuts(),
             runtime_targets=self.load_runtime_targets(),
+            dvs_database_sources=self.load_dvs_database_sources(),
             ftp_profiles=self.load_ftp_profiles(),
             report_profiles=self.load_report_profiles(),
         )
@@ -98,6 +106,9 @@ class SettingsService:
 
     def save_runtime_targets(self, definitions: tuple[RuntimeTargetDefinition, ...]) -> Path:
         return save_runtime_targets(definitions, self.path('runtime_targets'))
+
+    def save_dvs_database_sources(self, sources: tuple[DVSDatabaseSource, ...]) -> Path:
+        return save_dvs_database_sources(sources, self.path('dvs_database_sources'))
 
     def save_ftp_profiles(self, profiles: FTPProfiles) -> Path:
         return save_ftp_profiles(profiles, self.path('ftp_profiles'))

@@ -240,3 +240,78 @@ def load_database_report(
     if not isinstance(payload, dict):
         raise ValueError('stored LMTS report root must be an object')
     return payload
+
+
+def database_source_statuses(
+    *,
+    sources_path: Path = DEFAULT_DVS_DATABASE_SOURCES_PATH,
+    settings_path: Path = DEFAULT_SETTINGS_PATH,
+) -> list[dict[str, Any]]:
+    statuses: list[dict[str, Any]] = []
+    for source in load_all_dvs_database_sources(sources_path, settings_path):
+        item: dict[str, Any] = {
+            **source.public_dict(),
+            'ok': False,
+            'reports_table': False,
+            'report_count': 0,
+            'latest_report_id': None,
+            'latest_created_at': None,
+            'schema_version': None,
+            'error': None,
+        }
+        try:
+            table_rows = _query(
+                source,
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reports'",
+            )
+            has_reports = bool(table_rows and int(table_rows[0]) == 1)
+            item['reports_table'] = has_reports
+            if not has_reports:
+                item['error'] = 'reports table not found'
+                statuses.append(item)
+                continue
+
+            rows = _query(
+                source,
+                "SELECT JSON_OBJECT("
+                "'report_count', COUNT(*),"
+                "'latest_report_id', COALESCE(("
+                "SELECT report_id FROM reports ORDER BY created_at DESC, imported_at DESC LIMIT 1"
+                "), ''),"
+                "'latest_created_at', COALESCE(("
+                "SELECT DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.%f') "
+                "FROM reports ORDER BY created_at DESC, imported_at DESC LIMIT 1"
+                "), '')"
+                ") FROM reports",
+            )
+            if not rows:
+                raise RuntimeError('report count query returned no rows')
+            summary = json.loads(rows[0])
+            if not isinstance(summary, dict):
+                raise RuntimeError('report count query returned invalid JSON')
+            item['report_count'] = int(summary.get('report_count') or 0)
+            latest_id = str(summary.get('latest_report_id') or '').strip()
+            latest_at = str(summary.get('latest_created_at') or '').strip()
+            item['latest_report_id'] = latest_id or None
+            item['latest_created_at'] = latest_at or None
+
+            version_table = _query(
+                source,
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'lmts_schema_version'",
+            )
+            if version_table and int(version_table[0]) == 1:
+                version_rows = _query(
+                    source,
+                    "SELECT COALESCE(MAX(schema_version),0) FROM lmts_schema_version "
+                    "WHERE component='result_server'",
+                )
+                if version_rows:
+                    item['schema_version'] = int(version_rows[0])
+
+            item['ok'] = True
+        except (RuntimeError, ValueError, json.JSONDecodeError) as exc:
+            item['error'] = str(exc)
+        statuses.append(item)
+    return statuses

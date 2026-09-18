@@ -8,7 +8,7 @@ from pathlib import Path
 from lmts.core.paths import REPORT_PROFILES_PATH
 
 
-REPORT_PROFILES_SCHEMA_VERSION = 1
+REPORT_PROFILES_SCHEMA_VERSION = 2
 DEFAULT_REPORT_PROFILES_PATH = REPORT_PROFILES_PATH
 
 
@@ -37,6 +37,11 @@ class ReportProfile:
 class ReportProfiles:
     schema_version: int = REPORT_PROFILES_SCHEMA_VERSION
     profiles: tuple[ReportProfile, ...] = ()
+    auto_publish_profile: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.auto_publish_profile is not None and self.by_name(self.auto_publish_profile) is None:
+            raise ValueError(f'auto-publish report profile does not exist: {self.auto_publish_profile}')
 
     def by_name(self, name: str) -> ReportProfile | None:
         for profile in self.profiles:
@@ -48,10 +53,20 @@ class ReportProfiles:
         items = [item for item in self.profiles if item.name != profile.name]
         items.append(profile)
         items.sort(key=lambda item: item.name.casefold())
-        return ReportProfiles(profiles=tuple(items))
+        return ReportProfiles(profiles=tuple(items), auto_publish_profile=self.auto_publish_profile)
 
     def remove(self, name: str) -> 'ReportProfiles':
-        return ReportProfiles(profiles=tuple(item for item in self.profiles if item.name != name))
+        remaining = tuple(item for item in self.profiles if item.name != name)
+        auto = None if self.auto_publish_profile == name else self.auto_publish_profile
+        return ReportProfiles(profiles=remaining, auto_publish_profile=auto)
+
+    def with_auto_publish(self, name: str | None) -> 'ReportProfiles':
+        if name is not None and self.by_name(name) is None:
+            raise KeyError(f'unknown report profile: {name}')
+        return ReportProfiles(profiles=self.profiles, auto_publish_profile=name)
+
+    def auto_publish(self) -> ReportProfile | None:
+        return None if self.auto_publish_profile is None else self.by_name(self.auto_publish_profile)
 
 
 def load_report_profiles(path: Path = DEFAULT_REPORT_PROFILES_PATH) -> ReportProfiles:
@@ -59,7 +74,10 @@ def load_report_profiles(path: Path = DEFAULT_REPORT_PROFILES_PATH) -> ReportPro
     if not path.is_file():
         return ReportProfiles()
     payload = json.loads(path.read_text(encoding='utf-8'))
-    if not isinstance(payload, dict) or payload.get('schema_version') != REPORT_PROFILES_SCHEMA_VERSION:
+    if not isinstance(payload, dict):
+        raise ValueError('report profile store root must be an object')
+    schema_version = payload.get('schema_version')
+    if schema_version not in {1, REPORT_PROFILES_SCHEMA_VERSION}:
         raise ValueError('unsupported report profile store schema')
     raw_profiles = payload.get('profiles')
     if not isinstance(raw_profiles, list):
@@ -80,7 +98,15 @@ def load_report_profiles(path: Path = DEFAULT_REPORT_PROFILES_PATH) -> ReportPro
         names.add(profile.name)
         profiles.append(profile)
     profiles.sort(key=lambda item: item.name.casefold())
-    return ReportProfiles(profiles=tuple(profiles))
+    auto_publish_profile = None
+    if schema_version == REPORT_PROFILES_SCHEMA_VERSION:
+        raw_auto = payload.get('auto_publish_profile')
+        if raw_auto is not None:
+            auto_publish_profile = str(raw_auto).strip() or None
+    return ReportProfiles(
+        profiles=tuple(profiles),
+        auto_publish_profile=auto_publish_profile,
+    )
 
 
 def save_report_profiles(profiles: ReportProfiles, path: Path = DEFAULT_REPORT_PROFILES_PATH) -> Path:
@@ -89,6 +115,7 @@ def save_report_profiles(profiles: ReportProfiles, path: Path = DEFAULT_REPORT_P
     payload = {
         'schema_version': REPORT_PROFILES_SCHEMA_VERSION,
         'profiles': [profile.to_dict() for profile in profiles.profiles],
+        'auto_publish_profile': profiles.auto_publish_profile,
     }
     text = json.dumps(payload, indent=2, ensure_ascii=False) + '\n'
     temp = path.with_suffix(path.suffix + f'.tmp-{os.getpid()}')

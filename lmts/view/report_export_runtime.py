@@ -191,8 +191,8 @@ class ReportExportBenchmarkActions(BenchmarkActions):
             return True
 
         target = _select_report_target(self.host, self.stdscr)
-        if profile is None:
-            self.set_message('run cancelled: no report server selected')
+        if target is None:
+            self.set_message('run cancelled: no report target selected')
             return False
         controller.configure_next_publish(target)
         return True

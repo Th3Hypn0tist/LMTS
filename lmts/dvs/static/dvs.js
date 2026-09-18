@@ -363,6 +363,7 @@ async function main() {
   const databaseSources = document.querySelector('#database-sources');
   const databaseReport = document.querySelector('#database-report');
   const databaseMessage = document.querySelector('#database-message');
+  const databaseRefresh = document.querySelector('#database-refresh');
   const studioKind = document.querySelector('#studio-kind');
   const studioDefinition = document.querySelector('#studio-definition');
   const studioEditor = document.querySelector('#studio-editor');
@@ -378,6 +379,7 @@ async function main() {
   }
 
   async function refreshDatabaseSources() {
+    const previouslySelected = new Set(selectedDatabaseSourceIds());
     const payload = await getJson('/api/database-sources');
     state.databaseSources = payload.database_sources || [];
     databaseSources.replaceChildren();
@@ -386,13 +388,17 @@ async function main() {
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.value = source.id;
+      checkbox.checked = previouslySelected.has(source.id)
+        || (previouslySelected.size === 0 && source.id === 'lmts-core');
       label.append(checkbox, ` ${source.label} · ${source.username}@${source.host}:${source.port}/${source.database}`);
       databaseSources.append(label);
     }
     databaseReport.replaceChildren();
     state.databaseReports = [];
+    const selectedCount = selectedDatabaseSourceIds().length;
+    databaseRefresh.disabled = selectedCount === 0;
     databaseMessage.textContent = state.databaseSources.length
-      ? 'Select one or more configured database sources.'
+      ? `${selectedCount} database source(s) selected.`
       : 'No DVS database sources configured.';
   }
 
@@ -707,7 +713,13 @@ async function main() {
     }
   });
 
-  document.querySelector('#database-refresh').addEventListener('click', async () => {
+  databaseSources.addEventListener('change', () => {
+    const selectedCount = selectedDatabaseSourceIds().length;
+    databaseRefresh.disabled = selectedCount === 0;
+    databaseMessage.textContent = `${selectedCount} database source(s) selected.`;
+  });
+
+  databaseRefresh.addEventListener('click', async () => {
     try {
       await refreshDatabaseReports();
     } catch (error) {

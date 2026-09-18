@@ -18,6 +18,8 @@ from lmts.core.settings import DVSSettings
 DEFAULT_STATE_PATH = Path('.lmts/dvs-service.json')
 DEFAULT_LOG_PATH = Path('.lmts/dvs-service.log')
 STARTUP_GRACE_SECONDS = 5.0
+DVS_SOURCE_ROOT = Path(__file__).resolve().parents[2]
+REQUIRED_DVS_API_FEATURES = {'database_source_statuses'}
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +157,26 @@ def _health(settings: DVSSettings, *, timeout: float = 0.5) -> dict[str, object]
     return payload if isinstance(payload, dict) else None
 
 
+def _health_runtime_mismatch(health: dict[str, object]) -> str:
+    runtime = health.get('runtime')
+    if not isinstance(runtime, dict):
+        return 'DVS health has no runtime identity; restart from the current LMTS source'
+
+    actual_root = str(runtime.get('source_root') or '').strip()
+    expected_root = str(DVS_SOURCE_ROOT)
+    if actual_root != expected_root:
+        return f'DVS source mismatch: expected {expected_root}, running {actual_root or "<unknown>"}'
+
+    features = health.get('api_features')
+    if not isinstance(features, list):
+        return 'DVS health has no API capability list; backend is stale'
+    available = {str(value) for value in features}
+    missing = sorted(REQUIRED_DVS_API_FEATURES - available)
+    if missing:
+        return f'DVS backend is missing required API capabilities: {", ".join(missing)}'
+    return ''
+
+
 def _tail(path: Path, *, lines: int = 12) -> str:
     try:
         content = path.read_text(encoding='utf-8', errors='replace').splitlines()
@@ -278,6 +300,22 @@ def dvs_status(
             error='process is alive but health endpoint is not ready',
         )
 
+    runtime_mismatch = _health_runtime_mismatch(health)
+    if runtime_mismatch:
+        return DVSServiceStatus(
+            'error',
+            settings.host,
+            settings.port,
+            pid=pid,
+            instance_id=instance_id,
+            health_ok=True,
+            s3d_configured=bool(s3d.get('configured')),
+            s3d_ready=bool(s3d.get('ready')),
+            studio_root=str(studio.get('root') or ''),
+            log_path=str(log_path),
+            error=runtime_mismatch,
+        )
+
     if health_instance != instance_id:
         return DVSServiceStatus(
             'error',
@@ -352,6 +390,13 @@ def start_dvs(
     env['LMTS_DVS_PORT'] = str(settings.port)
     env['LMTS_DVS_STUDIO_ROOT'] = str(studio_root)
     env['LMTS_DVS_INSTANCE_ID'] = instance_id
+    env['LMTS_DVS_SOURCE_ROOT'] = str(DVS_SOURCE_ROOT)
+    existing_pythonpath = env.get('PYTHONPATH', '').strip()
+    env['PYTHONPATH'] = (
+        str(DVS_SOURCE_ROOT)
+        if not existing_pythonpath
+        else str(DVS_SOURCE_ROOT) + os.pathsep + existing_pythonpath
+    )
     if resolved_s3d is None:
         env.pop('LMTS_S3D_ROOT', None)
     else:
@@ -360,6 +405,7 @@ def start_dvs(
     with log_path.open('ab', buffering=0) as log:
         process = subprocess.Popen(
             [sys.executable, '-m', 'lmts.dvs.server'],
+            cwd=str(DVS_SOURCE_ROOT),
             stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,

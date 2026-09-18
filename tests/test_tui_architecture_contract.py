@@ -33,7 +33,8 @@ def test_tui_application_uses_extracted_action_domains() -> None:
 def test_tui_application_owns_one_event_bus_and_interactive_host_boundary() -> None:
     text = APP.read_text(encoding='utf-8')
     assert 'UIEventBus()' in text
-    assert 'LMTSInteractiveHost(' in text
+    assert 'host_class = LMTSInteractiveHost' in text
+    assert 'self.host_class(' in text
     assert 'RegistrySplitCursesViewHost(' not in text
     assert 'events=self.state.events' in text
 

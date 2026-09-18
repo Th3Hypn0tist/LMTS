@@ -4,7 +4,6 @@ from lmts.core.runtime_targets import load_runtime_targets
 from lmts.lib.view import LayoutPane
 from lmts.tools.ftp_profiles import load_ftp_profiles
 from lmts.tools.profile import load_system_profile
-from lmts.tools.report_profiles import load_report_profiles
 
 from .tui_state import TUIState
 
@@ -146,24 +145,21 @@ class TUIRenderer:
     def settings_lines(self) -> tuple[str, ...]:
         settings = self.state.settings
         ftp_count = len(load_ftp_profiles().profiles)
-        report_count = len(load_report_profiles().profiles)
         runtime_count = len(load_runtime_targets())
-        mysql = settings.mysql
         dvs = self.state.dvs_service_state
         dvs_s3d = 'ready' if dvs.s3d_ready else ('not ready' if dvs.s3d_configured else 'not configured')
         return (
             'Application, server and connection settings.', '',
-            f'Output folder  : {settings.output_folder}',
-            f'MySQL host     : {mysql.host}',
-            f'MySQL database : {mysql.database}',
-            f'MySQL user     : {mysql.username}',
-            f'DVS status     : {dvs.state.upper()}',
-            f'DVS endpoint   : {settings.dvs.host}:{settings.dvs.port}',
-            f'DVS S3D        : {dvs_s3d}',
-            f'FTP profiles   : {ftp_count}',
-            f'Report profiles: {report_count}',
-            f'Runtime targets: {runtime_count}',
-            f'Shortcuts      : {len(self.state.shortcut_overrides)} custom binding(s)',
+            f'Output folder    : {settings.output_folder}',
+            f'MySQL outputs    : {len(settings.mysql_connections)}',
+            f'PHP API outputs  : {len(settings.php_api_connections)}',
+            f'Auto-publish     : {len(settings.auto_publish_targets)} selected',
+            f'DVS status       : {dvs.state.upper()}',
+            f'DVS endpoint     : {settings.dvs.host}:{settings.dvs.port}',
+            f'DVS S3D          : {dvs_s3d}',
+            f'FTP profiles     : {ftp_count}',
+            f'Runtime targets  : {runtime_count}',
+            f'Shortcuts        : {len(self.state.shortcut_overrides)} custom binding(s)',
             '',
             'Server installer:',
             '  lmts/install/install_server.sh',

@@ -21,6 +21,7 @@ function refreshErrorButton() {
 }
 
 function reportDvsError(error, context = {}) {
+  if (error instanceof Error && error.__dvsReported) return error.__dvsReported;
   const entry = {
     timestamp: new Date().toISOString(),
     type: context.type || 'caught_error',
@@ -28,6 +29,7 @@ function reportDvsError(error, context = {}) {
     ...context,
   };
   dvsErrors.push(entry);
+  if (error instanceof Error) error.__dvsReported = entry;
   refreshErrorButton();
   return entry;
 }
@@ -52,7 +54,7 @@ function errorReportText(errors = dvsErrors, environment = {}) {
       error.stack ? `stack:\n${error.stack}` : '',
       '',
     ]),
-  ].filter(line => line !== '').join('\n');
+  ].join('\n');
 }
 
 async function requestJson(method, path, body = undefined) {

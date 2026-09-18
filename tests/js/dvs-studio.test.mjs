@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   compatiblePresets,
+  databaseReportLabel,
   definitionDocument,
   encodeDefinitionId,
   newDefinition,
@@ -147,4 +148,18 @@ test('Viewer preset compatibility still follows template id and source format', 
     { id: 'wrong-format', input_template_ref: 'table', source_format: 'example/2.0' },
   ];
   assert.deepEqual(compatiblePresets('table', templates, presets).map(item => item.id), ['ok']);
+});
+
+
+test('DVS database report labels preserve selected database identity', () => {
+  assert.equal(
+    databaseReportLabel({
+      database_source_id: 'archive',
+      database_source_label: 'Archive DB',
+      created_at: '2026-09-18T08:00:00.000000',
+      report_id: 'r-42',
+      source_id: 'model-a',
+    }),
+    '[Archive DB] 2026-09-18T08:00:00.000000 r-42 · model-a',
+  );
 });

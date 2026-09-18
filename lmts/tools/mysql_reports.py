@@ -68,8 +68,14 @@ def _run(mysql: MySQLSettings, query: str) -> str:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         non_warnings = [line for line in lines if not line.casefold().startswith('warning:')]
         detail = (non_warnings or lines or [f'exit code {completed.returncode}'])[-1]
-        raise RuntimeError(f'MySQL report query failed: {detail}')
+        raise RuntimeError(f'MySQL query failed: {detail}')
     return completed.stdout.decode('utf-8', errors='strict')
+
+
+def test_mysql_connection(mysql: MySQLSettings) -> None:
+    output = _run(mysql, 'SELECT 1').strip()
+    if output != '1':
+        raise RuntimeError(f'MySQL connection test returned unexpected result: {output!r}')
 
 
 def _hex_text(value: str) -> str:

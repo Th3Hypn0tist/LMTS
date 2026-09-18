@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from lmts.core.settings import MySQLSettings
 from lmts.core.shortcut_settings import normalise_sequence_text
+from lmts.tools.mysql_reports import test_mysql_connection
 from lmts.tools.mysql_schema import install_mysql_schema
 
 from ..dialogs.server_setup import manage_server_setup
@@ -33,10 +34,25 @@ class SettingsActions(TUIActions):
         self.set_message(f'output folder saved: {self.state.settings.output_folder}')
 
     def edit_mysql(self, _stdscr) -> None:
-        action = self.host.choose(self.stdscr, 'MySQL', ['Edit connection', 'Install LMTS schema'])
+        action = self.host.choose(
+            self.stdscr,
+            'MySQL',
+            ['Edit connection', 'Test connection', 'Install LMTS schema'],
+        )
         if action is None:
             return
         if action == 1:
+            mysql = self.state.settings.mysql
+            try:
+                test_mysql_connection(mysql)
+                self.set_message(
+                    f'MySQL connection OK: {mysql.username}@{mysql.host}/{mysql.database}'
+                )
+            except RuntimeError as exc:
+                self.set_message(f'MySQL connection failed: {exc}')
+            return
+
+        if action == 2:
             mysql = self.state.settings.mysql
             confirm = self.host.choose(
                 self.stdscr,

@@ -6,10 +6,12 @@ from pathlib import Path
 SETTINGS_ACTIONS = Path('lmts/view/actions/settings.py')
 
 
-def test_mysql_settings_menu_exposes_schema_install_action() -> None:
+def test_mysql_settings_menu_exposes_connection_test_and_schema_install_actions() -> None:
     text = SETTINGS_ACTIONS.read_text(encoding='utf-8')
+    assert 'from lmts.tools.mysql_reports import test_mysql_connection' in text
     assert 'from lmts.tools.mysql_schema import install_mysql_schema' in text
-    assert "['Edit connection', 'Install LMTS schema']" in text
+    assert "['Edit connection', 'Test connection', 'Install LMTS schema']" in text.replace('\n', '').replace('            ', '')
+    assert 'test_mysql_connection(mysql)' in text
     assert 'install_mysql_schema(mysql)' in text
     assert "Install into {mysql.username}@{mysql.host}/{mysql.database}" in text
 

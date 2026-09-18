@@ -44,6 +44,7 @@ def _run(mysql: MySQLSettings, query: str) -> str:
     command = [
         _client(mysql),
         f'--host={mysql.host}',
+        f'--port={mysql.port}',
         f'--user={mysql.username}',
         '--protocol=tcp',
         '--batch',

@@ -33,6 +33,7 @@ def install_mysql_schema(mysql: MySQLSettings, *, schema_path: Path = SCHEMA_PAT
     command = [
         client,
         f'--host={mysql.host}',
+        f'--port={mysql.port}',
         f'--user={mysql.username}',
         '--protocol=tcp',
         '--default-character-set=utf8mb4',

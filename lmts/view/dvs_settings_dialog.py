@@ -8,8 +8,6 @@ from lmts.lib.view import choose_with_preview
 from lmts.tools.dvs_service import DVSServiceStatus, dvs_status, restart_dvs, start_dvs, stop_dvs
 from lmts.tools.s3d_repo import sync_s3d_repository
 
-from .dvs_database_sources_dialog import manage_dvs_database_sources
-
 
 def _single_line(host, stdscr, title: str, *, initial: str = '', allow_empty: bool = False) -> str | None:
     while True:
@@ -33,6 +31,8 @@ def status_lines(settings: DVSSettings, status: DVSServiceStatus) -> tuple[str, 
         f'S3D root    : {settings.s3d_root or "-"}',
         f'Studio root : {status.studio_root or settings.studio_root}',
         f'Log         : {status.log_path or ".lmts/dvs-service.log"}',
+        '',
+        'Report sources: inherited from LMTS Settings',
     ]
     if status.error:
         lines.extend(['', f'Error: {status.error}'])
@@ -42,7 +42,7 @@ def status_lines(settings: DVSSettings, status: DVSServiceStatus) -> tuple[str, 
 def manage_dvs(host, stdscr, current: DVSSettings) -> tuple[DVSSettings, DVSServiceStatus, str]:
     settings = current
     status = dvs_status(settings)
-    options = ['Refresh status', 'Start', 'Stop', 'Restart', 'Fetch / Update S3D', 'Database sources', 'Edit configuration']
+    options = ['Refresh status', 'Start', 'Stop', 'Restart', 'Fetch / Update S3D', 'Edit configuration']
 
     def preview(_index: int) -> tuple[str, ...]:
         return status_lines(settings, status)
@@ -54,31 +54,24 @@ def manage_dvs(host, stdscr, current: DVSSettings) -> tuple[DVSSettings, DVSServ
     if chosen == 0:
         status = dvs_status(settings)
         return settings, status, f'DVS status: {status.state}'
-
     if chosen == 1:
         try:
             status = start_dvs(settings)
             return settings, status, f'DVS started: http://{settings.host}:{settings.port}'
         except RuntimeError as exc:
-            status = dvs_status(settings)
-            return settings, status, f'DVS start failed: {exc}'
-
+            return settings, dvs_status(settings), f'DVS start failed: {exc}'
     if chosen == 2:
         try:
             status = stop_dvs(settings)
             return settings, status, 'DVS stopped'
         except RuntimeError as exc:
-            status = dvs_status(settings)
-            return settings, status, f'DVS stop failed: {exc}'
-
+            return settings, dvs_status(settings), f'DVS stop failed: {exc}'
     if chosen == 3:
         try:
             status = restart_dvs(settings)
             return settings, status, f'DVS restarted: http://{settings.host}:{settings.port}'
         except RuntimeError as exc:
-            status = dvs_status(settings)
-            return settings, status, f'DVS restart failed: {exc}'
-
+            return settings, dvs_status(settings), f'DVS restart failed: {exc}'
     if chosen == 4:
         if not settings.s3d_root.strip():
             return settings, status, 'S3D root is not configured'
@@ -89,17 +82,10 @@ def manage_dvs(host, stdscr, current: DVSSettings) -> tuple[DVSSettings, DVSServ
             result = sync_s3d_repository(target)
         except RuntimeError as exc:
             return settings, status, f'S3D fetch failed: {exc}'
-        status = dvs_status(settings)
-        return settings, status, f'S3D {result}: {target}'
-
-    if chosen == 5:
-        manage_dvs_database_sources(host, stdscr)
-        status = dvs_status(settings)
-        return settings, status, host.message or 'DVS database sources updated'
+        return settings, dvs_status(settings), f'S3D {result}: {target}'
 
     if status.state in {'running', 'starting'}:
         return settings, status, 'stop DVS before changing its configuration'
-
     host_value = _single_line(host, stdscr, 'DVS host', initial=settings.host)
     if host_value is None:
         return settings, status, 'DVS configuration unchanged'
@@ -112,13 +98,5 @@ def manage_dvs(host, stdscr, current: DVSSettings) -> tuple[DVSSettings, DVSServ
     studio_root = _single_line(host, stdscr, 'DVS Studio root', initial=settings.studio_root)
     if studio_root is None:
         return settings, status, 'DVS configuration unchanged'
-
-    settings = replace(
-        settings,
-        host=host_value,
-        port=port_value,
-        s3d_root=s3d_root,
-        studio_root=studio_root,
-    )
-    status = dvs_status(settings)
-    return settings, status, 'DVS configuration updated'
+    settings = replace(settings, host=host_value, port=port_value, s3d_root=s3d_root, studio_root=studio_root)
+    return settings, dvs_status(settings), 'DVS configuration updated'

@@ -18,7 +18,7 @@ def render_db_php(mysql: MySQLSettings) -> str:
     return (
         "<?php\n\n"
         "return [\n"
-        f"    'dsn' => 'mysql:host={host};dbname={database};charset=utf8mb4',\n"
+        f"    'dsn' => 'mysql:host={host};port={mysql.port};dbname={database};charset=utf8mb4',\n"
         f"    'user' => '{username}',\n"
         f"    'password' => '{password}',\n"
         f"    'publish_key' => '{publish_key}',\n"

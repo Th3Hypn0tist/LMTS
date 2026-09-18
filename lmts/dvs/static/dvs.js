@@ -1,14 +1,101 @@
 import { S3DVisualPlanRenderer } from './visualizer.js';
 
+const dvsErrors = [];
+
+function normalizeError(value) {
+  if (value instanceof Error) return { message: value.message, stack: value.stack || '' };
+  if (typeof value === 'string') return { message: value, stack: '' };
+  try {
+    return { message: JSON.stringify(value), stack: '' };
+  } catch {
+    return { message: String(value), stack: '' };
+  }
+}
+
+function refreshErrorButton() {
+  if (typeof document === 'undefined') return;
+  const button = document.querySelector('#errorReportButton');
+  if (!button) return;
+  button.textContent = `ERRORS ${dvsErrors.length}`;
+  button.classList.toggle('has-errors', dvsErrors.length > 0);
+}
+
+function reportDvsError(error, context = {}) {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    type: context.type || 'caught_error',
+    ...normalizeError(error),
+    ...context,
+  };
+  dvsErrors.push(entry);
+  refreshErrorButton();
+  return entry;
+}
+
+function errorReportText(errors = dvsErrors, environment = {}) {
+  const url = environment.url ?? (typeof location !== 'undefined' ? location.href : '');
+  const userAgent = environment.userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  return [
+    'LMTS DVS ERROR REPORT',
+    `generated: ${new Date().toISOString()}`,
+    `url: ${url}`,
+    `user_agent: ${userAgent}`,
+    `error_count: ${errors.length}`,
+    '',
+    ...errors.flatMap((error, index) => [
+      `[${index + 1}] ${error.timestamp} ${error.type}`,
+      `message: ${error.message}`,
+      error.method ? `request: ${error.method} ${error.path || ''}` : '',
+      error.status != null ? `http_status: ${error.status}` : '',
+      error.response_body ? `response_body: ${error.response_body}` : '',
+      error.source ? `source: ${error.source}:${error.line ?? 0}:${error.column ?? 0}` : '',
+      error.stack ? `stack:\n${error.stack}` : '',
+      '',
+    ]),
+  ].filter(line => line !== '').join('\n');
+}
+
 async function requestJson(method, path, body = undefined) {
-  const response = await fetch(path, {
-    method,
-    cache: 'no-store',
-    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || `${response.status}`);
+  let response;
+  try {
+    response = await fetch(path, {
+      method,
+      cache: 'no-store',
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (error) {
+    reportDvsError(error, { type: 'api_network_error', method, path });
+    throw error;
+  }
+
+  const raw = await response.text();
+  let payload;
+  try {
+    payload = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    reportDvsError(error, {
+      type: 'api_decode_error',
+      method,
+      path,
+      status: response.status,
+      response_body: raw.slice(0, 4000),
+    });
+    throw new Error(`${method} ${path} returned invalid JSON (HTTP ${response.status})`);
+  }
+
+  if (!response.ok) {
+    const message = payload?.error || `${response.status}`;
+    const error = new Error(message);
+    reportDvsError(error, {
+      type: 'api_error',
+      method,
+      path,
+      status: response.status,
+      response_body: raw.slice(0, 4000),
+    });
+    throw error;
+  }
   return payload;
 }
 
@@ -397,6 +484,7 @@ async function main() {
     try {
       loadStudioSelection();
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
     }
   });
@@ -408,6 +496,7 @@ async function main() {
       refreshScaleFields();
       setStudioMessage('New definition skeleton loaded. Change the id before Create.', 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
     }
   });
@@ -416,6 +505,7 @@ async function main() {
     try {
       await findScaleBound('low');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
       setStatus(error.message, 'error');
     }
@@ -425,6 +515,7 @@ async function main() {
     try {
       await findScaleBound('high');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
       setStatus(error.message, 'error');
     }
@@ -440,6 +531,7 @@ async function main() {
       const column = scaleColumn.value;
       setStudioMessage(`Applied scale.${column} to draft ${updated.id}.`, 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
     }
   });
@@ -450,6 +542,7 @@ async function main() {
       const updated = writeScaleToEditor(null);
       setStudioMessage(`Removed scale.${column} from draft ${updated.id}.`, 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
     }
   });
@@ -462,6 +555,7 @@ async function main() {
       setStudioMessage(`Draft ${definition.id ?? '(unnamed)'} is valid. Nothing was persisted.`, 'ready');
       setStatus('Studio draft validated', 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
       setStatus(error.message, 'error');
     }
@@ -490,6 +584,7 @@ async function main() {
       setStudioMessage(`Previewed ${definition.id ?? '(unnamed)'} without persistence.`, 'ready');
       setStatus('Studio draft preview complete', 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
       setStatus(error.message, 'error');
       setViewerMessage(error.message);
@@ -511,6 +606,7 @@ async function main() {
       setStudioMessage(`Created ${documentValue.id}.`, 'ready');
       setStatus(`Studio created ${documentValue.id}`, 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
       setStatus(error.message, 'error');
     }
@@ -537,6 +633,7 @@ async function main() {
       setStudioMessage(`Updated ${selectedId}.`, 'ready');
       setStatus(`Studio updated ${selectedId}`, 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
       setStatus(error.message, 'error');
     }
@@ -547,6 +644,7 @@ async function main() {
       await refreshRegistry();
       setStudioMessage('Registry reloaded from server.', 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'ui_action_error' });
       setStudioMessage(error.message, 'error');
     }
   });
@@ -555,6 +653,7 @@ async function main() {
     try {
       await refreshDatabaseReports();
     } catch (error) {
+      reportDvsError(error, { type: 'database_ui_error' });
       databaseMessage.textContent = error.message;
       setStatus(error.message, 'error');
     }
@@ -564,6 +663,7 @@ async function main() {
     try {
       await loadSelectedDatabaseReport();
     } catch (error) {
+      reportDvsError(error, { type: 'database_ui_error' });
       databaseMessage.textContent = error.message;
       setStatus(error.message, 'error');
     }
@@ -590,6 +690,7 @@ async function main() {
       document.querySelector('#output').textContent = JSON.stringify(payload, null, 2);
       setStatus(`Extracted ${payload.rows.length} row(s)`, 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'viewer_action_error' });
       setStatus(error.message, 'error');
       console.error(error);
     }
@@ -612,6 +713,7 @@ async function main() {
       );
       setStatus('Visual plan rendered through S3D', 'ready');
     } catch (error) {
+      reportDvsError(error, { type: 'viewer_action_error' });
       setStatus(error.message, 'error');
       setViewerMessage(error.message);
       console.error(error);
@@ -619,8 +721,41 @@ async function main() {
   });
 }
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', event => {
+    if (event instanceof ErrorEvent) {
+      reportDvsError(event.error || event.message, {
+        type: 'runtime_error',
+        source: event.filename,
+        line: event.lineno,
+        column: event.colno,
+      });
+    } else if (event.target?.src || event.target?.href) {
+      reportDvsError(`Failed to load resource: ${event.target.src || event.target.href}`, {
+        type: 'resource_error',
+        source: event.target.src || event.target.href,
+      });
+    }
+  }, true);
+  window.addEventListener('unhandledrejection', event => {
+    reportDvsError(event.reason, { type: 'unhandled_rejection' });
+  });
+}
+
 if (typeof document !== 'undefined') {
+  const errorButton = document.querySelector('#errorReportButton');
+  if (errorButton) {
+    errorButton.addEventListener('click', async () => {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(errorReportText());
+      errorButton.textContent = `COPIED ${dvsErrors.length}`;
+      setTimeout(refreshErrorButton, 900);
+    });
+  }
+  refreshErrorButton();
+
   main().catch(error => {
+    reportDvsError(error, { type: 'startup_error' });
     document.body.dataset.error = 'true';
     setStatus(error.message, 'error');
     setViewerMessage(error.message);
@@ -630,6 +765,9 @@ if (typeof document !== 'undefined') {
 
 export {
   compatiblePresets,
+  dvsErrors,
+  errorReportText,
+  reportDvsError,
   databaseReportLabel,
   definitionDocument,
   encodeDefinitionId,

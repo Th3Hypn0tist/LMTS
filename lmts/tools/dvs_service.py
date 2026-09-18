@@ -17,6 +17,7 @@ from lmts.core.settings import DVSSettings
 
 DEFAULT_STATE_PATH = Path('.lmts/dvs-service.json')
 DEFAULT_LOG_PATH = Path('.lmts/dvs-service.log')
+STARTUP_GRACE_SECONDS = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +80,21 @@ def _remove_state(path: Path) -> None:
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+
+    stat_path = Path(f'/proc/{pid}/stat')
+    try:
+        stat = stat_path.read_text(encoding='utf-8', errors='replace')
+    except (FileNotFoundError, PermissionError, OSError):
+        stat = ''
+    if stat:
+        # /proc/<pid>/stat field 3 is the process state. Zombies still answer
+        # kill(pid, 0), but they cannot serve DVS and must not count as alive.
+        close = stat.rfind(')')
+        if close >= 0:
+            fields = stat[close + 1:].strip().split()
+            if fields and fields[0] == 'Z':
+                return False
+
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -182,6 +198,24 @@ def dvs_status(
         )
 
     if health is None:
+        started_at = state.get('started_at')
+        age = None
+        if isinstance(started_at, (int, float)) and not isinstance(started_at, bool):
+            age = max(0.0, time.time() - float(started_at))
+        if age is not None and age > STARTUP_GRACE_SECONDS:
+            detail = _tail(log_path)
+            message = f'process is alive but health endpoint did not become ready within {STARTUP_GRACE_SECONDS:.1f}s'
+            if detail:
+                message += f'\nLast DVS log lines:\n{detail}'
+            return DVSServiceStatus(
+                'error',
+                settings.host,
+                settings.port,
+                pid=pid,
+                instance_id=instance_id,
+                log_path=str(log_path),
+                error=message,
+            )
         return DVSServiceStatus(
             'starting',
             settings.host,
@@ -229,8 +263,19 @@ def start_dvs(
     timeout: float = 5.0,
 ) -> DVSServiceStatus:
     current = dvs_status(settings, state_path=state_path, log_path=log_path)
-    if current.state in {'running', 'starting'}:
+    if current.state == 'running':
         return current
+    if current.state == 'starting':
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            time.sleep(0.1)
+            current = dvs_status(settings, state_path=state_path, log_path=log_path)
+            if current.state == 'running':
+                return current
+            if current.state != 'starting':
+                break
+        detail = current.error or _tail(log_path) or current.state
+        raise RuntimeError(f'DVS did not become healthy: {detail}')
     if current.state == 'unmanaged':
         raise RuntimeError(current.error)
     if current.state == 'error' and current.pid is not None and _pid_alive(current.pid):
@@ -298,7 +343,19 @@ def start_dvs(
     status = dvs_status(settings, state_path=state_path, log_path=log_path)
     if status.state == 'running':
         return status
-    raise RuntimeError(f'DVS did not become healthy within {timeout:.1f}s: {status.error or status.state}')
+
+    # This process was created by this start call and never became healthy.
+    # Do not leave a broken "starting" process and state file behind.
+    if process.poll() is None:
+        try:
+            process.terminate()
+            process.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=1.0)
+    _remove_state(state_path)
+    detail = status.error or _tail(log_path) or status.state
+    raise RuntimeError(f'DVS did not become healthy within {timeout:.1f}s: {detail}')
 
 
 def stop_dvs(

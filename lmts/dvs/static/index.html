@@ -7,7 +7,16 @@
   <link rel="stylesheet" href="/static/dvs.css">
 </head>
 <body>
-  <button id="errorReportButton" class="error-report-button" type="button" title="Copy captured errors to clipboard" aria-live="polite">ERRORS 0</button>\n  <main>
+  <button id="errorReportButton" class="error-report-button" type="button" title="Copy captured errors to clipboard" aria-live="polite">ERRORS 0</button>
+  <dialog id="errorReportDialog" class="error-report-dialog">
+    <h2>DVS Error Report</h2>
+    <textarea id="errorReportText" class="error-report-text" readonly spellcheck="false"></textarea>
+    <div class="actions">
+      <button id="errorReportSelect" type="button">Select all</button>
+      <button id="errorReportClose" type="button">Close</button>
+    </div>
+  </dialog>
+  <main>
     <header>
       <div>
         <h1>S3D Data Visualizer Studio</h1>

@@ -67,6 +67,14 @@ function setStudioMessage(text, mode = '') {
   node.className = `hint ${mode}`.trim();
 }
 
+function databaseReportLabel(report) {
+  const source = String(report.database_source_label || report.database_source_id || '').trim();
+  const created = String(report.created_at || '').trim();
+  const reportId = String(report.report_id || '').trim();
+  const entity = String(report.source_id || '').trim();
+  return [source && `[${source}]`, created, reportId, entity && `· ${entity}`].filter(Boolean).join(' ');
+}
+
 function compatiblePresets(templateId, templates, presets) {
   const template = templates.find(item => item.id === templateId);
   if (!template) return [];
@@ -202,9 +210,14 @@ async function main() {
   const state = {
     templates: [],
     presets: [],
+    databaseSources: [],
+    databaseReports: [],
   };
 
   const templateSelect = document.querySelector('#template');
+  const databaseSources = document.querySelector('#database-sources');
+  const databaseReport = document.querySelector('#database-report');
+  const databaseMessage = document.querySelector('#database-message');
   const studioKind = document.querySelector('#studio-kind');
   const studioDefinition = document.querySelector('#studio-definition');
   const studioEditor = document.querySelector('#studio-editor');
@@ -214,6 +227,57 @@ async function main() {
   const scaleHigh = document.querySelector('#studio-scale-high');
   const scalePower = document.querySelector('#studio-scale-power');
   let renderer = null;
+
+  function selectedDatabaseSourceIds() {
+    return [...databaseSources.querySelectorAll('input[type="checkbox"]:checked')].map(item => item.value);
+  }
+
+  async function refreshDatabaseSources() {
+    const payload = await getJson('/api/database-sources');
+    state.databaseSources = payload.database_sources || [];
+    databaseSources.replaceChildren();
+    for (const source of state.databaseSources) {
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = source.id;
+      label.append(checkbox, ` ${source.label} · ${source.username}@${source.host}:${source.port}/${source.database}`);
+      databaseSources.append(label);
+    }
+    databaseReport.replaceChildren();
+    state.databaseReports = [];
+    databaseMessage.textContent = state.databaseSources.length
+      ? 'Select one or more configured database sources.'
+      : 'No DVS database sources configured.';
+  }
+
+  async function refreshDatabaseReports() {
+    const sourceIds = selectedDatabaseSourceIds();
+    if (!sourceIds.length) throw new Error('Select at least one database source');
+    const payload = await postJson('/api/database-reports', {
+      source_ids: sourceIds,
+      limit_per_source: 100,
+    });
+    state.databaseReports = payload.reports || [];
+    databaseReport.replaceChildren();
+    for (let index = 0; index < state.databaseReports.length; index += 1) {
+      option(databaseReport, String(index), databaseReportLabel(state.databaseReports[index]));
+    }
+    databaseMessage.textContent = `${state.databaseReports.length} report(s) from ${sourceIds.length} database source(s).`;
+  }
+
+  async function loadSelectedDatabaseReport() {
+    const index = Number(databaseReport.value);
+    const selected = state.databaseReports[index];
+    if (!selected) throw new Error('Select a database report');
+    const payload = await postJson('/api/database-report', {
+      source_id: selected.database_source_id,
+      report_id: selected.report_id,
+    });
+    document.querySelector('#source').value = JSON.stringify(payload.source, null, 2);
+    databaseMessage.textContent = `Loaded ${selected.report_id} from ${selected.database_source_label || selected.database_source_id}.`;
+    setStatus('Database report loaded into Source JSON', 'ready');
+  }
 
   function refreshScaleFields() {
     scaleTools.hidden = studioKind.value !== 'input-template';
@@ -314,6 +378,7 @@ async function main() {
   }
 
   await refreshRegistry();
+  await refreshDatabaseSources();
   document.querySelector('#studio-root').textContent = `Studio root: ${health.studio?.root ?? 'unavailable'}`;
 
   templateSelect.addEventListener('change', () => populatePresets(templateSelect.value, state.templates, state.presets));
@@ -486,6 +551,24 @@ async function main() {
     }
   });
 
+  document.querySelector('#database-refresh').addEventListener('click', async () => {
+    try {
+      await refreshDatabaseReports();
+    } catch (error) {
+      databaseMessage.textContent = error.message;
+      setStatus(error.message, 'error');
+    }
+  });
+
+  document.querySelector('#database-load').addEventListener('click', async () => {
+    try {
+      await loadSelectedDatabaseReport();
+    } catch (error) {
+      databaseMessage.textContent = error.message;
+      setStatus(error.message, 'error');
+    }
+  });
+
   renderer = await buildRenderer(health);
   setStatus(
     renderer ? `DVS ready · S3D ${health.s3d.entrypoint}` : 'DVS ready · S3D not configured',
@@ -547,6 +630,7 @@ if (typeof document !== 'undefined') {
 
 export {
   compatiblePresets,
+  databaseReportLabel,
   definitionDocument,
   encodeDefinitionId,
   newDefinition,

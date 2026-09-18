@@ -125,3 +125,33 @@ def test_dvs_defaults_bind_all_interfaces_but_health_checks_loopback() -> None:
     settings = DVSSettings()
     assert settings.host == '0.0.0.0'
     assert dvs_service._health_url(settings) == 'http://127.0.0.1:8775/api/health'
+
+
+def test_status_detects_running_bind_drift(monkeypatch, tmp_path: Path) -> None:
+    state_path = tmp_path / 'state.json'
+    state_path.write_text(
+        json.dumps({'pid': 123, 'instance_id': 'owned', 'started_at': 0.0}),
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(dvs_service, '_pid_alive', lambda pid: True)
+    monkeypatch.setattr(dvs_service, '_process_instance_id', lambda pid: 'owned')
+    monkeypatch.setattr(dvs_service, '_process_bind', lambda pid: ('127.0.0.1', 8775))
+    monkeypatch.setattr(
+        dvs_service,
+        '_health',
+        lambda settings: {
+            'instance_id': 'owned',
+            's3d': {'configured': True, 'ready': True},
+            'studio': {'root': '/tmp/studio'},
+        },
+    )
+
+    status = dvs_service.dvs_status(
+        DVSSettings(host='0.0.0.0', port=8775),
+        state_path=state_path,
+        log_path=tmp_path / 'dvs.log',
+    )
+    assert status.state == 'error'
+    assert 'configured 0.0.0.0:8775' in status.error
+    assert 'running 127.0.0.1:8775' in status.error
+    assert 'restart DVS' in status.error

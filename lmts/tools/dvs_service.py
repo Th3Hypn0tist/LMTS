@@ -176,28 +176,7 @@ def dvs_status(
     studio = health.get('studio') if isinstance(health, dict) and isinstance(health.get('studio'), dict) else {}
 
     if state is None:
-        process_bind = _process_bind(pid)
-    if process_bind is not None and process_bind != (settings.host, settings.port):
-        running_host, running_port = process_bind
-        return DVSServiceStatus(
-            'error',
-            settings.host,
-            settings.port,
-            pid=pid,
-            instance_id=instance_id,
-            health_ok=health is not None,
-            s3d_configured=bool(s3d.get('configured')),
-            s3d_ready=bool(s3d.get('ready')),
-            studio_root=str(studio.get('root') or ''),
-            log_path=str(log_path),
-            error=(
-                'configured bind differs from running process: '
-                f'configured {settings.host}:{settings.port}, '
-                f'running {running_host}:{running_port}; restart DVS'
-            ),
-        )
-
-    if health is None:
+        if health is None:
             return DVSServiceStatus('stopped', settings.host, settings.port, log_path=str(log_path))
         return DVSServiceStatus(
             'unmanaged',
@@ -217,7 +196,11 @@ def dvs_status(
         instance_id = str(state['instance_id'])
     except (KeyError, TypeError, ValueError):
         return DVSServiceStatus(
-            'error', settings.host, settings.port, log_path=str(log_path), error='invalid DVS service state file'
+            'error',
+            settings.host,
+            settings.port,
+            log_path=str(log_path),
+            error='invalid DVS service state file',
         )
 
     if not _pid_alive(pid):
@@ -242,6 +225,27 @@ def dvs_status(
             error='stale DVS state removed; endpoint belongs to another process',
         )
 
+    process_bind = _process_bind(pid)
+    if process_bind is not None and process_bind != (settings.host, settings.port):
+        running_host, running_port = process_bind
+        return DVSServiceStatus(
+            'error',
+            settings.host,
+            settings.port,
+            pid=pid,
+            instance_id=instance_id,
+            health_ok=health is not None,
+            s3d_configured=bool(s3d.get('configured')),
+            s3d_ready=bool(s3d.get('ready')),
+            studio_root=str(studio.get('root') or ''),
+            log_path=str(log_path),
+            error=(
+                'configured bind differs from running process: '
+                f'configured {settings.host}:{settings.port}, '
+                f'running {running_host}:{running_port}; restart DVS'
+            ),
+        )
+
     if health is None:
         started_at = state.get('started_at')
         age = None
@@ -249,7 +253,10 @@ def dvs_status(
             age = max(0.0, time.time() - float(started_at))
         if age is not None and age > STARTUP_GRACE_SECONDS:
             detail = _tail(log_path)
-            message = f'process is alive but health endpoint did not become ready within {STARTUP_GRACE_SECONDS:.1f}s'
+            message = (
+                'process is alive but health endpoint did not become ready '
+                f'within {STARTUP_GRACE_SECONDS:.1f}s'
+            )
             if detail:
                 message += f'\nLast DVS log lines:\n{detail}'
             return DVSServiceStatus(
@@ -298,7 +305,6 @@ def dvs_status(
         studio_root=str(studio.get('root') or ''),
         log_path=str(log_path),
     )
-
 
 def start_dvs(
     settings: DVSSettings,

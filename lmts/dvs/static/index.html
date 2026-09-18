@@ -27,6 +27,19 @@
           Visualization Preset
           <select id="preset"></select>
         </label>
+        <fieldset id="database-source-tools">
+          <legend>Database reports</legend>
+          <div id="database-sources" class="database-sources"></div>
+          <label>
+            Report
+            <select id="database-report"></select>
+          </label>
+          <div class="actions wrap">
+            <button id="database-refresh" type="button">Refresh reports</button>
+            <button id="database-load" type="button">Load report</button>
+          </div>
+          <p id="database-message" class="hint">Select one or more configured database sources.</p>
+        </fieldset>
         <label>
           JSON file
           <input id="source-file" type="file" accept="application/json,.json">

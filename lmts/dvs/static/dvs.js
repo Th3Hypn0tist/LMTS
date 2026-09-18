@@ -136,10 +136,17 @@ async function requestJson(method, path, body = undefined) {
   }
 
   if (!response.ok) {
-    const message = payload?.error || `${response.status}`;
+    const backendMismatch = (
+      response.status === 404
+      && payload?.error === 'not_found'
+      && ['/api/database-sources', '/api/database-reports', '/api/database-report'].includes(path)
+    );
+    const message = backendMismatch
+      ? `DVS backend does not expose ${path}. Restart DVS after updating LMTS.`
+      : (payload?.error || `${response.status}`);
     const error = new Error(message);
     reportDvsError(error, {
-      type: 'api_error',
+      type: backendMismatch ? 'backend_api_mismatch' : 'api_error',
       method,
       path,
       status: response.status,

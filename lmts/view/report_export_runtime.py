@@ -29,6 +29,10 @@ def _select_report_profile(host: LMTSInteractiveHost, stdscr: curses.window) -> 
     return choose_report_profile(host, stdscr)
 
 
+def _auto_publish_profile() -> ReportProfile | None:
+    return load_report_profiles().auto_publish()
+
+
 class ReportExportController(LMTSViewController):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -110,6 +114,8 @@ class ReportExportHost(LMTSInteractiveHost):
         target_ids = [str(value) for value in (matrix_data.get('target_ids') or [])]
         if len(target_ids) != 1 or str(matrix_data.get('status') or '') == 'cancelled':
             return
+        if _auto_publish_profile() is not None:
+            return
 
         try:
             report = self._completed_report(controller, matrix_path)
@@ -159,6 +165,13 @@ class ReportExportBenchmarkActions(BenchmarkActions):
             raise TypeError('report-aware benchmark actions require ReportExportController')
 
         controller.configure_next_publish(None)
+
+        auto_profile = _auto_publish_profile()
+        if auto_profile is not None:
+            controller.configure_next_publish(auto_profile)
+            self.set_message(f'auto-publish enabled: {auto_profile.name}')
+            return True
+
         if self._run_target_count(choice) <= 1:
             return True
 

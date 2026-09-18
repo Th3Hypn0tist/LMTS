@@ -8,7 +8,7 @@ from pathlib import Path
 from .paths import SETTINGS_PATH
 
 
-SETTINGS_SCHEMA_VERSION = 3
+SETTINGS_SCHEMA_VERSION = 4
 DEFAULT_SETTINGS_PATH = SETTINGS_PATH
 DEFAULT_OUTPUT_FOLDER = 'exports'
 
@@ -99,6 +99,18 @@ def _dvs_from_payload(value: object) -> DVSSettings:
     )
 
 
+def _dvs_from_v3_payload(value: object) -> DVSSettings:
+    settings = _dvs_from_payload(value)
+    if settings == DVSSettings(
+        host='127.0.0.1',
+        port=8775,
+        s3d_root='../S3D',
+        studio_root='.lmts/dvs',
+    ):
+        return DVSSettings()
+    return settings
+
+
 def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
     path = path.expanduser()
     if not path.is_file():
@@ -120,6 +132,12 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
             output_folder=_normalise_output_folder(payload.get('output_folder')),
             mysql=_mysql_from_payload(payload.get('mysql')),
             dvs=DVSSettings(),
+        )
+    if schema_version == 3:
+        return LMTSSettings(
+            output_folder=_normalise_output_folder(payload.get('output_folder')),
+            mysql=_mysql_from_payload(payload.get('mysql')),
+            dvs=_dvs_from_v3_payload(payload.get('dvs')),
         )
     if schema_version != SETTINGS_SCHEMA_VERSION:
         raise ValueError(f'unsupported LMTS settings schema: {schema_version!r}')

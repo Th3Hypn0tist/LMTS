@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .database_sources import load_all_dvs_database_sources, load_database_report, list_database_reports
+from .database_sources import database_source_statuses, load_all_dvs_database_sources, load_database_report, list_database_reports
 from .registry import DVSRegistry
 from .runtime import project_visualization
 from .studio import DVSStudioStore
@@ -135,6 +135,8 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if path == '/api/database-sources':
                 return self._json({'database_sources': [item.public_dict() for item in load_all_dvs_database_sources()]})
+            if path == '/api/database-source-statuses':
+                return self._json({'database_sources': database_source_statuses()})
             if path == '/api/input-templates':
                 return self._json({'input_templates': [item.to_dict() for item in REGISTRY.templates.list()]})
             if path.startswith('/api/input-templates/'):

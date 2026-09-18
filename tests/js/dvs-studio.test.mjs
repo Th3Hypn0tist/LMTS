@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   compatiblePresets,
   databaseReportLabel,
+  copyTextToClipboard,
   dvsErrors,
   errorReportText,
   reportDvsError,
@@ -194,4 +195,31 @@ test('DVS error report includes API diagnostics and deduplicates one Error', () 
   assert.match(report, /response_body: \{"error":"mysql failed"\}/);
   assert.match(report, /database query failed/);
   dvsErrors.splice(0, dvsErrors.length);
+});
+
+
+test('DVS clipboard copy helper fails explicitly when no copy path exists', async () => {
+  const originalNavigator = globalThis.navigator;
+  const originalDocument = globalThis.document;
+  try {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: {},
+    });
+    Object.defineProperty(globalThis, 'document', {
+      configurable: true,
+      value: {
+        execCommand: undefined,
+      },
+    });
+    await assert.rejects(
+      () => copyTextToClipboard('test report'),
+      /Clipboard copy unavailable/,
+    );
+  } finally {
+    if (originalNavigator === undefined) delete globalThis.navigator;
+    else Object.defineProperty(globalThis, 'navigator', { configurable: true, value: originalNavigator });
+    if (originalDocument === undefined) delete globalThis.document;
+    else Object.defineProperty(globalThis, 'document', { configurable: true, value: originalDocument });
+  }
 });

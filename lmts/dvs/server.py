@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .database_sources import database_source_statuses, load_all_dvs_database_sources, load_database_report, list_database_reports
+from .report_sources import load_all_dvs_report_sources, load_report_source_report, list_report_source_reports, report_source_statuses
 from .registry import DVSRegistry
 from .runtime import project_visualization
 from .studio import DVSStudioStore
@@ -28,6 +29,10 @@ API_FEATURES = [
     'database_source_statuses',
     'database_reports',
     'database_report',
+    'report_sources',
+    'report_source_statuses',
+    'report_source_reports',
+    'report_source_report',
 ]
 STATIC_DIR = (PACKAGE_DIR / 'static').resolve()
 HOST = os.environ.get('LMTS_DVS_HOST', '0.0.0.0')
@@ -149,6 +154,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({'database_sources': [item.public_dict() for item in load_all_dvs_database_sources()]})
             if path == '/api/database-source-statuses':
                 return self._json({'database_sources': database_source_statuses()})
+            if path == '/api/report-sources':
+                return self._json({'report_sources': [item.public_dict() for item in load_all_dvs_report_sources()]})
+            if path == '/api/report-source-statuses':
+                return self._json({'report_sources': report_source_statuses()})
             if path == '/api/input-templates':
                 return self._json({'input_templates': [item.to_dict() for item in REGISTRY.templates.list()]})
             if path.startswith('/api/input-templates/'):
@@ -186,6 +195,30 @@ class Handler(BaseHTTPRequestHandler):
                     'source_id': str(payload['source_id']),
                     'report_id': str(payload['report_id']),
                     'source': load_database_report(str(payload['source_id']), str(payload['report_id'])),
+                })
+            if path == '/api/report-source-reports':
+                payload = self._body()
+                if set(payload) != {'source_ids', 'limit_per_source'}:
+                    raise ValueError('/api/report-source-reports requires exactly source_ids and limit_per_source')
+                source_ids = payload['source_ids']
+                if not isinstance(source_ids, list) or not all(isinstance(item, str) for item in source_ids):
+                    raise ValueError('source_ids must be a list of strings')
+                limit = payload['limit_per_source']
+                if isinstance(limit, bool) or not isinstance(limit, int):
+                    raise ValueError('limit_per_source must be an integer')
+                return self._json({
+                    'ok': True,
+                    'reports': list_report_source_reports(source_ids, limit_per_source=limit),
+                })
+            if path == '/api/report-source-report':
+                payload = self._body()
+                if set(payload) != {'source_id', 'report_id'}:
+                    raise ValueError('/api/report-source-report requires exactly source_id and report_id')
+                return self._json({
+                    'ok': True,
+                    'source_id': str(payload['source_id']),
+                    'report_id': str(payload['report_id']),
+                    'source': load_report_source_report(str(payload['source_id']), str(payload['report_id'])),
                 })
             if path == '/api/studio/validate/input-template':
                 return self._json({'ok': True, 'input_template': validate_input_template(self._body())})

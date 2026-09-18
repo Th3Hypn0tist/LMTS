@@ -139,7 +139,7 @@ async function requestJson(method, path, body = undefined) {
     const backendMismatch = (
       response.status === 404
       && payload?.error === 'not_found'
-      && path.startsWith('/api/database-')
+      && (path.startsWith('/api/database-') || path.startsWith('/api/report-source'))
     );
     const message = backendMismatch
       ? `DVS backend does not expose ${path}. Restart DVS after updating LMTS.`
@@ -213,7 +213,7 @@ function setStudioMessage(text, mode = '') {
 }
 
 function databaseReportLabel(report) {
-  const source = String(report.database_source_label || report.database_source_id || '').trim();
+  const source = String(report.report_source_label || report.report_source_id || report.database_source_label || report.database_source_id || '').trim();
   const created = String(report.created_at || '').trim();
   const reportId = String(report.report_id || '').trim();
   const entity = String(report.source_id || '').trim();
@@ -380,8 +380,8 @@ async function main() {
 
   async function refreshDatabaseSources() {
     const previouslySelected = new Set(selectedDatabaseSourceIds());
-    const payload = await getJson('/api/database-source-statuses');
-    state.databaseSources = payload.database_sources || [];
+    const payload = await getJson('/api/report-source-statuses');
+    state.databaseSources = payload.report_sources || [];
     databaseSources.replaceChildren();
     for (const source of state.databaseSources) {
       const label = document.createElement('label');
@@ -392,10 +392,10 @@ async function main() {
         || (previouslySelected.size === 0 && Number(source.report_count || 0) > 0);
       const statusText = source.ok
         ? `${source.report_count} report(s)${source.latest_report_id ? ` · latest ${source.latest_report_id}` : ''}`
-        : `ERROR: ${source.error || 'unknown database error'}`;
+        : `ERROR: ${source.error || 'unknown source error'}`;
       label.append(
         checkbox,
-        ` ${source.label} · ${source.username}@${source.host}:${source.port}/${source.database} · ${statusText}`,
+        ` ${source.label} · ${source.address || ''} · ${statusText}`,
       );
       databaseSources.append(label);
     }
@@ -405,14 +405,14 @@ async function main() {
     databaseRefresh.disabled = selectedCount === 0;
     const totalReports = state.databaseSources.reduce((sum, source) => sum + Number(source.report_count || 0), 0);
     databaseMessage.textContent = state.databaseSources.length
-      ? `${selectedCount} database source(s) selected · ${totalReports} report(s) visible across configured sources.`
-      : 'No DVS database sources configured.';
+      ? `${selectedCount} report source(s) selected · ${totalReports} report(s) visible across configured sources.`
+      : 'No DVS report sources configured.';
   }
 
   async function refreshDatabaseReports() {
     const sourceIds = selectedDatabaseSourceIds();
-    if (!sourceIds.length) throw new Error('Select at least one database source');
-    const payload = await postJson('/api/database-reports', {
+    if (!sourceIds.length) throw new Error('Select at least one report source');
+    const payload = await postJson('/api/report-source-reports', {
       source_ids: sourceIds,
       limit_per_source: 100,
     });
@@ -423,7 +423,7 @@ async function main() {
     }
     if (state.databaseReports.length) {
       databaseReport.value = '0';
-      databaseMessage.textContent = `${state.databaseReports.length} report(s) from ${sourceIds.length} database source(s).`;
+      databaseMessage.textContent = `${state.databaseReports.length} report(s) from ${sourceIds.length} report source(s).`;
     } else {
       databaseMessage.textContent = `0 reports from ${sourceIds.length} selected database source(s).`;
     }
@@ -432,14 +432,14 @@ async function main() {
   async function loadSelectedDatabaseReport() {
     const index = Number(databaseReport.value);
     const selected = state.databaseReports[index];
-    if (!selected) throw new Error('Select a database report');
-    const payload = await postJson('/api/database-report', {
-      source_id: selected.database_source_id,
+    if (!selected) throw new Error('Select a report');
+    const payload = await postJson('/api/report-source-report', {
+      source_id: selected.report_source_id,
       report_id: selected.report_id,
     });
     document.querySelector('#source').value = JSON.stringify(payload.source, null, 2);
-    databaseMessage.textContent = `Loaded ${selected.report_id} from ${selected.database_source_label || selected.database_source_id}.`;
-    setStatus('Database report loaded into Source JSON', 'ready');
+    databaseMessage.textContent = `Loaded ${selected.report_id} from ${selected.report_source_label || selected.report_source_id}.`;
+    setStatus('Report loaded into Source JSON', 'ready');
   }
 
   function refreshScaleFields() {

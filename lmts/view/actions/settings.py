@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from lmts.core.settings import MySQLSettings
+from lmts.core.settings import MySQLSettings, PHPAPISettings
 from lmts.core.shortcut_settings import normalise_sequence_text
 from lmts.tools.mysql_reports import test_mysql_connection
 from lmts.tools.mysql_schema import install_mysql_schema
 
 from ..dialogs.server_setup import manage_server_setup
 from ..dvs_settings_dialog import manage_dvs
-from ..output_dialog import manage_ftp_profiles, manage_report_profiles
+from lmts.tools.report_targets import configured_report_targets
+
+from ..output_dialog import manage_ftp_profiles
 from ..registries import build_shortcut_registry
 from ..runtime_target_dialog import manage_runtime_targets
 from ..tui_common import single_line
@@ -111,13 +113,77 @@ class SettingsActions(TUIActions):
         )
         self.set_message('FTP profiles updated')
 
-    def report_settings(self, _stdscr) -> None:
-        manage_report_profiles(
-            self.host,
-            self.stdscr,
-            store_path=self.settings_service.path('report_profiles'),
+    def _edit_php_api(self, *, label: str, field_name: str, target_id: str) -> None:
+        current = getattr(self.state.settings, field_name)
+        action = self.host.choose(self.stdscr, label, ['Edit connection', 'Disable'], 0)
+        if action is None:
+            return
+        if action == 1:
+            auto = None if self.state.settings.auto_publish_target == target_id else self.state.settings.auto_publish_target
+            self.state.settings = replace(
+                self.state.settings,
+                **{field_name: PHPAPISettings(), 'auto_publish_target': auto},
+            )
+            self.settings_service.save_core(self.state.settings)
+            self.set_message(f'{label} disabled')
+            return
+
+        base_url = single_line(self.host, self.stdscr, f'{label} base URL', initial=current.base_url)
+        if base_url is None:
+            return
+        publish_key = single_line(self.host, self.stdscr, f'{label} publish key', initial=current.publish_key)
+        if publish_key is None:
+            return
+        self.state.settings = replace(
+            self.state.settings,
+            **{field_name: PHPAPISettings(base_url=base_url, publish_key=publish_key)},
         )
-        self.set_message('report targets updated')
+        self.settings_service.save_core(self.state.settings)
+        self.set_message(f'{label} settings saved')
+
+    def report_settings(self, _stdscr) -> None:
+        while True:
+            s = self.state.settings
+            mysql = s.mysql
+            options = [
+                f'DVStudio / MySQL  {mysql.username}@{mysql.host}/{mysql.database}',
+                f'DVStudio / PHP API  {s.dvstudio_php_api.base_url or "not configured"}',
+                f'DVisualizer / PHP API  {s.dvisualizer_php_api.base_url or "not configured"}',
+                f'Auto-publish target  {s.auto_publish_target or "none"}',
+            ]
+            chosen = self.host.choose(self.stdscr, 'Destinations', options)
+            if chosen is None:
+                return
+            if chosen == 0:
+                self.edit_mysql(self.stdscr)
+                continue
+            if chosen == 1:
+                self._edit_php_api(
+                    label='DVStudio / PHP API',
+                    field_name='dvstudio_php_api',
+                    target_id='dvstudio.php_api',
+                )
+                continue
+            if chosen == 2:
+                self._edit_php_api(
+                    label='DVisualizer / PHP API',
+                    field_name='dvisualizer_php_api',
+                    target_id='dvisualizer.php_api',
+                )
+                continue
+
+            targets = configured_report_targets(self.state.settings)
+            selected = self.host.choose(
+                self.stdscr,
+                'Auto-publish target',
+                ['None', *(target.label for target in targets)],
+            )
+            if selected is None:
+                continue
+            target_id = None if selected == 0 else targets[selected - 1].id
+            self.state.settings = replace(self.state.settings, auto_publish_target=target_id)
+            self.settings_service.save_core(self.state.settings)
+            self.set_message(f'auto-publish target: {target_id or "none"}')
 
     def runtime_target_settings(self, _stdscr) -> None:
         manage_runtime_targets(self.host, self.stdscr)

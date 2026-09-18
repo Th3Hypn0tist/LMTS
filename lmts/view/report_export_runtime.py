@@ -9,48 +9,52 @@ from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
 from lmts.reporting import project_matrix_bundle
 from lmts.reporting.single import project_run_result
 from lmts.tools.report_export import export_report_json
-from lmts.tools.report_profiles import ReportProfile, load_report_profiles
+from lmts.tools.report_targets import ReportTarget, configured_report_targets, resolve_report_target
 from lmts.tools.report_publish import publish_report
 
 from .actions.benchmark import BenchmarkActions
 from .controller import LMTSViewController
 from .lmts_host import LMTSInteractiveHost
-from .output_dialog import choose_report_profile
 from .tui_app import TUIApplication
 
 
 _ACTIVE_CONTROLLER: 'ReportExportController | None' = None
 
 
-def _select_report_profile(host: LMTSInteractiveHost, stdscr: curses.window) -> ReportProfile | None:
-    profiles = load_report_profiles().profiles
-    if len(profiles) == 1:
-        return profiles[0]
-    return choose_report_profile(host, stdscr)
+def _select_report_target(host: LMTSInteractiveHost, stdscr: curses.window) -> ReportTarget | None:
+    settings = load_settings(DEFAULT_SETTINGS_PATH)
+    targets = configured_report_targets(settings)
+    if len(targets) == 1:
+        return targets[0]
+    chosen = host.choose(stdscr, 'Report target', [target.label for target in targets])
+    return None if chosen is None else targets[chosen]
 
 
-def _auto_publish_profile() -> ReportProfile | None:
-    return load_report_profiles().auto_publish()
+def _auto_publish_target() -> ReportTarget | None:
+    settings = load_settings(DEFAULT_SETTINGS_PATH)
+    if settings.auto_publish_target is None:
+        return None
+    return resolve_report_target(settings, settings.auto_publish_target)
 
 
 class ReportExportController(LMTSViewController):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._next_publish_profile: ReportProfile | None = None
+        self._next_publish_target: ReportTarget | None = None
         global _ACTIVE_CONTROLLER
         _ACTIVE_CONTROLLER = self
 
-    def configure_next_publish(self, profile: ReportProfile | None) -> None:
-        self._next_publish_profile = profile
+    def configure_next_publish(self, target: ReportTarget | None) -> None:
+        self._next_publish_target = target
 
     def _consume_publish_callback(self):
-        profile = self._next_publish_profile
-        self._next_publish_profile = None
-        if profile is None:
+        target = self._next_publish_target
+        self._next_publish_target = None
+        if target is None:
             return None
 
         def publish(run: dict[str, object]) -> None:
-            publish_report(project_run_result(run), profile)
+            publish_report(project_run_result(run), target.profile)
 
         return publish
 
@@ -114,7 +118,7 @@ class ReportExportHost(LMTSInteractiveHost):
         target_ids = [str(value) for value in (matrix_data.get('target_ids') or [])]
         if len(target_ids) != 1 or str(matrix_data.get('status') or '') == 'cancelled':
             return
-        if _auto_publish_profile() is not None:
+        if _auto_publish_target() is not None:
             return
 
         try:
@@ -135,11 +139,11 @@ class ReportExportHost(LMTSInteractiveHost):
 
         if action == 0:
             try:
-                profile = _select_report_profile(self, stdscr)
-                if profile is None:
+                target = _select_report_target(self, stdscr)
+                if target is None:
                     self.message = 'server export cancelled; canonical result kept local'
                     return
-                report_id = publish_report(report, profile)
+                report_id = publish_report(report, target.profile)
                 self.message = f'published report: {report_id}'
             except (OSError, ValueError, RuntimeError) as exc:
                 self.message = f'report publish failed: {exc}; canonical result kept local'
@@ -166,10 +170,10 @@ class ReportExportBenchmarkActions(BenchmarkActions):
 
         controller.configure_next_publish(None)
 
-        auto_profile = _auto_publish_profile()
-        if auto_profile is not None:
-            controller.configure_next_publish(auto_profile)
-            self.set_message(f'auto-publish enabled: {auto_profile.name}')
+        auto_target = _auto_publish_target()
+        if auto_target is not None:
+            controller.configure_next_publish(auto_target)
+            self.set_message(f'auto-publish enabled: {auto_target.label}')
             return True
 
         if self._run_target_count(choice) <= 1:
@@ -186,11 +190,11 @@ class ReportExportBenchmarkActions(BenchmarkActions):
         if publish_choice == 1:
             return True
 
-        profile = _select_report_profile(self.host, self.stdscr)
+        target = _select_report_target(self.host, self.stdscr)
         if profile is None:
             self.set_message('run cancelled: no report server selected')
             return False
-        controller.configure_next_publish(profile)
+        controller.configure_next_publish(target)
         return True
 
 

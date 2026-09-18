@@ -164,14 +164,28 @@ def manage_report_profiles(
 ) -> None:
     while True:
         profiles = load_report_profiles(store_path)
-        options = ['New report profile', *(f'Delete  {profile.name}' for profile in profiles.profiles)]
+        auto_label = profiles.auto_publish_profile or 'none'
+        options = [
+            'New report profile',
+            f'Auto-publish profile: {auto_label}',
+            *(f'Delete  {profile.name}' for profile in profiles.profiles),
+        ]
         chosen = host.choose(stdscr, 'Report API profiles', options)
         if chosen is None:
             return
         if chosen == 0:
             create_report_profile(host, stdscr, store_path=store_path)
             continue
-        profile = profiles.profiles[chosen - 1]
+        if chosen == 1:
+            auto_options = ['None', *(profile.name for profile in profiles.profiles)]
+            selected = host.choose(stdscr, 'Auto-publish report profile', auto_options)
+            if selected is None:
+                continue
+            name = None if selected == 0 else profiles.profiles[selected - 1].name
+            save_report_profiles(profiles.with_auto_publish(name), store_path)
+            host.message = f'auto-publish profile: {name or "none"}'
+            continue
+        profile = profiles.profiles[chosen - 2]
         confirm = host.choose(stdscr, f'Delete report profile {profile.name}?', ['No', 'Yes'], 0)
         if confirm == 1:
             save_report_profiles(profiles.remove(profile.name), store_path)

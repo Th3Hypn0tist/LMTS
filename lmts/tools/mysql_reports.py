@@ -130,6 +130,9 @@ def write_report(mysql: MySQLSettings, report: dict[str, Any], *, verify: bool =
         stored = read_report(mysql, report_id)
         if stored != report:
             raise RuntimeError(f'MySQL report verification mismatch: {report_id}')
+
+    from .report_projection import rebuild_report_projection
+    rebuild_report_projection(mysql, report)
     return report_id
 
 

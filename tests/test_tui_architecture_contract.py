@@ -81,3 +81,15 @@ def test_footer_hides_global_navigation_but_exposes_f1_help() -> None:
     assert 'ShortcutDefinition("app.help", ("f1",), "Help", "Help"' in registry
     assert "'app.help': show_help" in app
     assert "'settings.user': lambda _: navigation.open_tab('user')" in app
+
+
+def test_help_only_contains_hidden_global_controls() -> None:
+    app = APP.read_text(encoding='utf-8')
+    help_block = app.split('def show_help', 1)[1].split('bindings =', 1)[0]
+    assert "'Global controls'" in help_block
+    assert "'Esc      Back'" in help_block
+    assert "'Up/Down  Scroll'" in help_block
+    assert "'Ctrl+L   Layout controls'" in help_block
+    assert "'q q q    Quit'" in help_block
+    assert "'Tabs'" not in help_block
+    assert "'Page actions'" not in help_block

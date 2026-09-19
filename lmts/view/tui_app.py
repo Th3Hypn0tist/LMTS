@@ -84,32 +84,18 @@ class TUIApplication:
             self.state.events.publish('ui.message', controller.state.message, source='cw_bench')
 
         def show_help(_stdscr) -> None:
-            scopes = (self.state.active_tab,)
-            lines = [
-                'Global controls',
-                '  F1       Help',
-                '  Esc      Back',
-                '  Up/Down  Scroll',
-                '  Ctrl+L   Layout controls',
-                '  q q q    Quit',
-                '',
-                'Tabs',
-            ]
-            for definition in self.state.shortcuts.definitions(scopes):
-                if definition.topic == 'Tabs':
-                    lines.append(f'  {definition.sequence_label:<8} {definition.label}')
-            page_actions = [
-                definition
-                for definition in self.state.shortcuts.definitions(scopes)
-                if definition.topic not in {'Tabs', 'Navigation', 'System', 'Help'}
-            ]
-            if page_actions:
-                lines.extend(['', 'Page actions'])
-                lines.extend(
-                    f'  {definition.sequence_label:<8} {definition.label}'
-                    for definition in page_actions
-                )
-            host.text_viewer(stdscr, 'Help', lines)
+            host.text_viewer(
+                stdscr,
+                'Help',
+                (
+                    'Global controls',
+                    '  F1       Help',
+                    '  Esc      Back',
+                    '  Up/Down  Scroll',
+                    '  Ctrl+L   Layout controls',
+                    '  q q q    Quit',
+                ),
+            )
 
         bindings = {
             'app.help': show_help,

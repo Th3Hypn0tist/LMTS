@@ -15,9 +15,9 @@ TEST_STAT_EXPRESSIONS: tuple[tuple[str, str], ...] = (
     ('reports', '(SELECT COUNT(*) FROM reports)'),
     ('report_submissions', '(SELECT COUNT(*) FROM report_submissions)'),
     ('result_records', '(SELECT COUNT(*) FROM report_record_index)'),
-    ('passed_records', '(SELECT COUNT(*) FROM report_record_index WHERE passed = TRUE)'),
-    ('failed_records', '(SELECT COUNT(*) FROM report_record_index WHERE passed = FALSE)'),
-    ('unresolved_records', '(SELECT COUNT(*) FROM report_record_index WHERE passed IS NULL)'),
+    ('passed_records', "(SELECT COUNT(*) FROM report_record_index WHERE outcome = 'pass')"),
+    ('failed_records', "(SELECT COUNT(*) FROM report_record_index WHERE outcome = 'fail')"),
+    ('unresolved_records', "(SELECT COUNT(*) FROM report_record_index WHERE outcome IS NULL OR outcome NOT IN ('pass','fail'))"),
     ('telemetry_values', '(SELECT COUNT(*) FROM telemetry_values)'),
     ('hardware_references', '(SELECT COUNT(*) FROM report_record_hardware_index)'),
     ('executed_test_definitions', (

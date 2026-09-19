@@ -23,5 +23,5 @@ class TUIState:
     shortcut_overrides: dict[str, tuple[str, ...]]
     shortcuts: Any
     events: UIEventBus
-    active_tab: str = 'benchmark'
+    active_tab: str = 'profile'
     profile_console: list[str] = field(default_factory=list)

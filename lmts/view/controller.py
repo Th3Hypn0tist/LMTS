@@ -6,12 +6,14 @@ from lmts.core.control import RunControl
 from lmts.core.settings import MySQLSettings
 from lmts.core.executor import TestExecutor
 from lmts.core.registry import ProviderRegistry
+from lmts.repositories.stats import StatsRepository
 from lmts.repositories.user import UserRepository
 from lmts.services.auth import AuthService
 from lmts.services.evaluation import EvaluationService, RunCompletedCallback
 from lmts.services.profile import DEFAULT_PROFILE_PATH, SystemProfileService
 from lmts.services.results import ResultService
 from lmts.services.run_lifecycle import RunLifecycleService
+from lmts.services.stats import StatsService
 from lmts.services.targets import TargetDiscoveryService
 from lmts.services.user import UserService
 from lmts.tests.base import TestModule
@@ -51,6 +53,7 @@ class LMTSViewController:
         self.target_service = TargetDiscoveryService(providers)
         self.result_service = ResultService(results_root=results_root, logs_root=logs_root)
         self.auth_service = None if mysql is None else AuthService(UserRepository(mysql), connection_id=mysql.id)
+        self.stats_service = None if mysql is None else StatsService(StatsRepository(mysql))
         self.user_service = UserService(self.result_service, self.auth_service)
         self.lifecycle = RunLifecycleService()
         self.evaluation_service = EvaluationService(

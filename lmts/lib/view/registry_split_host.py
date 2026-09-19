@@ -223,6 +223,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             "benchmark": "Benchmark",
             "deep": "Benchmark",
             "cw_bench": "Benchmark",
+            "stats": "Stats",
             "downloader": "Model Downloader",
             "settings": "Settings",
             "user": "Settings",

@@ -144,6 +144,48 @@ class TUIRenderer:
             'back through CIC, and compares canonical CW against imported canonical CW.',
         )
 
+
+    def stats_lines(self) -> tuple[str, ...]:
+        service = self.state.controller.stats_service
+        if service is None:
+            return ('Stats', '', 'Database statistics are not configured.')
+        try:
+            counts = service.snapshot().counts
+        except (RuntimeError, ValueError) as exc:
+            return ('Stats', '', f'Database statistics unavailable: {exc}')
+
+        def value(name: str) -> int:
+            return counts.get(name, 0)
+
+        return (
+            'Canonical database test statistics.', '',
+            'Test catalog',
+            f"  Definitions        : {value('test_definitions')}",
+            f"  Versions           : {value('test_versions')}",
+            f"  Telemetry types    : {value('telemetry_types')}",
+            f"  Telemetry bindings : {value('telemetry_bindings')}",
+            '',
+            'Results / evidence',
+            f"  Reports            : {value('reports')}",
+            f"  Submissions        : {value('report_submissions')}",
+            f"  Result records     : {value('result_records')}",
+            f"    PASS             : {value('passed_records')}",
+            f"    FAIL             : {value('failed_records')}",
+            f"    unresolved       : {value('unresolved_records')}",
+            f"  Telemetry values   : {value('telemetry_values')}",
+            f"  Hardware refs      : {value('hardware_references')}",
+            '',
+            'Executed coverage',
+            f"  Test definitions   : {value('executed_test_definitions')}",
+            f"  Test versions      : {value('executed_test_versions')}",
+            f"  Testers            : {value('testers')}",
+            f"  Models             : {value('tested_models')}",
+            f"  Compositions       : {value('tested_compositions')}",
+            f"  Systems            : {value('tested_systems')}",
+            f"  Compute profiles   : {value('tested_compute_profiles')}",
+            f"  Hardware nodes     : {value('tested_hardware_nodes')}",
+        )
+
     def settings_lines(self) -> tuple[str, ...]:
         settings = self.state.settings
         ftp_count = len(load_ftp_profiles().profiles)
@@ -179,6 +221,8 @@ class TUIRenderer:
             return self.deep_lines()
         if tab == 'cw_bench':
             return self.state.cw_bench_page.lines()
+        if tab == 'stats':
+            return self.stats_lines()
         if tab == 'downloader':
             return ('Model Downloader', '', 'Use the Actions row to select a downloader module and model operation.')
         if tab == 'settings':

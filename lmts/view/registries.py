@@ -11,7 +11,8 @@ TAB_REGISTRY = TabRegistry(
         TabDefinition("benchmark", "Benchmark", parent="root", shortcut="1", order=10),
         TabDefinition("deep", "Deep", parent="benchmark", order=11),
         TabDefinition("cw_bench", "CW Bench", parent="deep", order=12),
-        TabDefinition("downloader", "Model Downloader", parent="root", shortcut="2", order=20),
+        TabDefinition("stats", "Stats", parent="root", shortcut="2", order=20),
+        TabDefinition("downloader", "Model Downloader", parent="root", shortcut="3", order=30),
         TabDefinition("profile", "Profiling", parent="root", shortcut="9", order=90),
         TabDefinition("settings", "Settings", parent="root", shortcut="0", order=100),
         TabDefinition("user", "User", parent="settings", order=91),
@@ -21,7 +22,8 @@ TAB_REGISTRY = TabRegistry(
 
 DEFAULT_SHORTCUTS = (
     ShortcutDefinition("tab.benchmark", ("1",), "Benchmark", "Tabs", order=10),
-    ShortcutDefinition("tab.downloader", ("2",), "Model Downloader", "Tabs", order=20),
+    ShortcutDefinition("tab.stats", ("2",), "Stats", "Tabs", order=20),
+    ShortcutDefinition("tab.downloader", ("3",), "Model Downloader", "Tabs", order=30),
     ShortcutDefinition("tab.profile", ("9",), "Profiling", "Tabs", order=90),
     ShortcutDefinition("tab.settings", ("0",), "Settings", "Tabs", order=100),
     ShortcutDefinition("app.help", ("f1",), "Help", "Help", order=890),
@@ -31,6 +33,8 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("app.quit", ("q", "q", "q"), "Quit", "System", order=930),
 
     ShortcutDefinition("profile.scan", ("p",), "Profile system", "Profiling", scope="profile", order=100),
+
+    ShortcutDefinition("stats.refresh", ("f",), "Refresh", "Stats", scope="stats", order=100),
 
     ShortcutDefinition("benchmark.tests", ("t",), "Tests", "Benchmark", scope="benchmark", order=100),
     ShortcutDefinition("benchmark.targets", ("m",), "Targets", "Benchmark", scope="benchmark", order=110),

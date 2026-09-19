@@ -100,11 +100,17 @@ class TUIApplication:
         bindings = {
             'app.help': show_help,
             'tab.benchmark': lambda _: navigation.open_tab('benchmark'),
+            'tab.stats': lambda _: navigation.open_tab('stats'),
             'tab.downloader': lambda _: navigation.open_tab('downloader'),
             'tab.profile': lambda _: navigation.open_tab('profile'),
             'tab.settings': lambda _: navigation.open_tab('settings'),
             'nav.back': navigation.back,
             'profile.scan': profile.profile_system,
+            'stats.refresh': lambda _: (
+                controller.stats_service.snapshot(refresh=True)
+                if controller.stats_service is not None
+                else None
+            ),
             'benchmark.tests': benchmark.tests_dialog,
             'benchmark.targets': benchmark.select_targets,
             'benchmark.run': benchmark.run_dialog,

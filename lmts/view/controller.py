@@ -26,7 +26,6 @@ from .matrix_state import MatrixViewState
 from .projector import LMTSViewState
 from .response_monitor import ResponseMonitor
 
-
 class LMTSViewController:
     def __init__(
         self,
@@ -75,19 +74,15 @@ class LMTSViewController:
         )
         self.matrix_view = MatrixViewState(self.state, test_types, matrix)
         self._sync_profile_state()
-
     @property
     def matrix(self) -> TestMatrix:
         return self.matrix_view.matrix
-
     def _sync_profile_state(self) -> None:
         status = self.profile_service.status()
         self.state.profile_required = status.required
         self.state.profiled_at = status.profiled_at
-
     def set_suite_level(self, level: TestLevel) -> bool:
         return self.matrix_view.set_suite_level(level)
-
     def refresh(self) -> None:
         if self.state.running:
             self.state.message = 'cannot refresh while test matrix is running'

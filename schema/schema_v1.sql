@@ -55,8 +55,6 @@ CREATE TABLE IF NOT EXISTS invites (
     token_hash           VARCHAR(255) NOT NULL,
     created_at           DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     expires_at           DATETIME(6) NULL,
-    max_uses             INT UNSIGNED NOT NULL DEFAULT 1,
-    uses                 INT UNSIGNED NOT NULL DEFAULT 0,
     status               VARCHAR(32) NOT NULL DEFAULT 'active',
     claimed_by_user_id   VARCHAR(128) NULL,
     claimed_at           DATETIME(6) NULL,
@@ -69,8 +67,7 @@ CREATE TABLE IF NOT EXISTS invites (
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_invites_claimed_by
         FOREIGN KEY (claimed_by_user_id) REFERENCES users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT chk_invites_uses CHECK (uses <= max_uses)
+        ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS tier_progression_requests (
@@ -563,17 +560,8 @@ CREATE TABLE IF NOT EXISTS report_record_index (
     CONSTRAINT fk_report_record_model
         FOREIGN KEY (model_node_id) REFERENCES model_nodes(model_node_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_report_record_composition
-        FOREIGN KEY (composition_id) REFERENCES compositions(composition_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_report_record_test
         FOREIGN KEY (test_version_id) REFERENCES test_versions(test_version_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_report_record_system
-        FOREIGN KEY (system_id) REFERENCES systems(system_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_report_record_compute_profile
-        FOREIGN KEY (compute_profile_id) REFERENCES compute_profiles(compute_profile_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_report_record_runtime_config CHECK (
         runtime_configuration_json IS NULL OR JSON_VALID(runtime_configuration_json)

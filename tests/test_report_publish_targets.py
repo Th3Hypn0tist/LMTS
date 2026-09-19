@@ -55,11 +55,11 @@ def test_mysql_report_target_dispatches_directly_without_php(monkeypatch) -> Non
 
 
 def test_mysql_report_writer_uses_insert_only(monkeypatch) -> None:
-    captured = {}
+    captured = {'queries': []}
 
     def fake_run(mysql, query):
         captured['mysql'] = mysql
-        captured['query'] = query
+        captured['queries'].append(query)
         return ''
 
     monkeypatch.setattr(mysql_reports, '_run', fake_run)
@@ -67,6 +67,7 @@ def test_mysql_report_writer_uses_insert_only(monkeypatch) -> None:
 
     assert report_id == 'report-1'
     assert captured['mysql'] == _mysql()
-    assert 'INSERT INTO reports' in captured['query']
-    assert 'UPDATE' not in captured['query'].upper()
-    assert 'DELETE' not in captured['query'].upper()
+    report_insert = captured['queries'][0]
+    assert 'INSERT INTO reports' in report_insert
+    assert 'UPDATE' not in report_insert.upper()
+    assert 'DELETE' not in report_insert.upper()

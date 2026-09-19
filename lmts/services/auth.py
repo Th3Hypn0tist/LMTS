@@ -30,6 +30,7 @@ class UserIdentity:
     username: str
     tier: int
     verified: bool
+    status: str = 'active'
 
 
 def is_origin(user_id: str) -> bool:
@@ -79,6 +80,7 @@ def _identity(user: UserRecord) -> UserIdentity:
         username=user.username,
         tier=user.tier,
         verified=user.verified,
+        status=user.status,
     )
 
 

@@ -146,7 +146,6 @@ class TestTypeDefinition:
             mandatory=self.mandatory,
             params=normalized,
             module=module,
-            title=self.title,
             description=self.description,
             telemetry_types=self.telemetry_types,
             category=self.category,
@@ -163,7 +162,6 @@ class ConfiguredTest:
     mandatory: bool
     params: dict[str, object]
     module: TestModule
-    title: str = ""
     description: str = ""
     telemetry_types: tuple[str, ...] = DEFAULT_EXECUTION_TELEMETRY_TYPES
     category: str = "uncategorized"

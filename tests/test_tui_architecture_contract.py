@@ -70,3 +70,14 @@ def test_remote_server_deploy_is_not_implemented_in_tui_entrypoint_or_settings_a
     assert 'deploy_mysql_config' not in entrypoint
     assert 'settings.mysql' not in settings.split('def server_setup', 1)[1].split('def shortcut_editor', 1)[0]
     assert 'manage_server_setup' in settings
+
+
+def test_footer_hides_global_navigation_but_exposes_f1_help() -> None:
+    host = Path('lmts/lib/view/registry_split_host.py').read_text(encoding='utf-8')
+    registry = Path('lmts/view/registries.py').read_text(encoding='utf-8')
+    app = APP.read_text(encoding='utf-8')
+    assert 'item.topic not in {"Tabs", "Navigation", "System"}' in host
+    assert 'curses.KEY_F1' in host
+    assert 'ShortcutDefinition("app.help", ("f1",), "Help", "Help"' in registry
+    assert "'app.help': show_help" in app
+    assert "'settings.user': lambda _: navigation.open_tab('user')" in app

@@ -24,6 +24,7 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("tab.downloader", ("2",), "Model Downloader", "Tabs", order=20),
     ShortcutDefinition("tab.profile", ("9",), "Profiling", "Tabs", order=90),
     ShortcutDefinition("tab.settings", ("0",), "Settings", "Tabs", order=100),
+    ShortcutDefinition("app.help", ("f1",), "Help", "Help", order=890),
     ShortcutDefinition("nav.back", ("esc",), "Back", "Navigation", order=900),
     ShortcutDefinition("scroll.up", ("up",), "Scroll up", "Navigation", order=910),
     ShortcutDefinition("scroll.down", ("down",), "Scroll down", "Navigation", order=920),
@@ -55,6 +56,7 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("downloader.refresh", ("r",), "Refresh", "Model Downloader", scope="downloader", order=140),
     ShortcutDefinition("downloader.cancel", ("c",), "Cancel download", "Model Downloader", scope="downloader", order=150),
 
+    ShortcutDefinition("settings.user", ("u",), "User", "Settings", scope="settings", order=90),
     ShortcutDefinition("settings.output", ("o",), "Output folder", "Settings", scope="settings", order=100),
     ShortcutDefinition("settings.report_output", ("r",), "Report output", "Settings", scope="settings", order=110),
     ShortcutDefinition("settings.dvs", ("d",), "DVS", "Settings", scope="settings", order=120),

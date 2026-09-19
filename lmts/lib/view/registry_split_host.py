@@ -54,6 +54,8 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
 
     @staticmethod
     def key_token(key: object) -> str | None:
+        if key == curses.KEY_F1:
+            return "f1"
         if key == curses.KEY_UP:
             return "up"
         if key == curses.KEY_DOWN:
@@ -87,6 +89,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
     @staticmethod
     def _sequence_label(sequence: tuple[str, ...]) -> str:
         labels = {
+            "f1": "F1",
             "esc": "Esc",
             "up": "Up",
             "down": "Down",
@@ -103,7 +106,7 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
         return tuple(
             item
             for item in self.shortcuts.definitions(self._scopes())
-            if item.topic != "Tabs"
+            if item.topic not in {"Tabs", "Navigation", "System"}
         )
 
     def _layout_definitions(self) -> tuple[LayoutPane, ...]:

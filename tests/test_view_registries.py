@@ -46,6 +46,10 @@ def test_shortcut_registry_matches_sequences() -> None:
     assert third.kind == 'exact'
     assert third.shortcut.action == 'app.quit'
 
+    help_match = SHORTCUT_REGISTRY.match((), 'f1', ('settings',))
+    assert help_match.kind == 'exact'
+    assert help_match.shortcut.action == 'app.help'
+
 
 def test_shortcuts_are_scoped_by_topic_area() -> None:
     benchmark_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('benchmark',))}
@@ -73,8 +77,8 @@ def test_shortcuts_are_scoped_by_topic_area() -> None:
         'downloader.refresh',
         'downloader.cancel',
     } <= downloader_actions
-    assert 'settings.mysql' in settings_actions
-    assert 'settings.mysql' not in benchmark_actions
+    assert 'settings.user' in settings_actions
+    assert 'settings.user' not in benchmark_actions
 
 
 def test_duplicate_shortcut_sequence_is_rejected_within_scope() -> None:

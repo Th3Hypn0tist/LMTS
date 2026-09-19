@@ -31,6 +31,7 @@ class ShortcutDefinition:
     @property
     def sequence_label(self) -> str:
         labels = {
+            'f1': 'F1',
             'esc': 'Esc',
             'up': 'Up',
             'down': 'Down',

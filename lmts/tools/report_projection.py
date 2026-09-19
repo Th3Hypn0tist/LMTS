@@ -93,7 +93,7 @@ def _duration_ms(started: object, completed: object) -> float | None:
     return max(0.0, (end - start).total_seconds() * 1000.0)
 
 
-def _test_projection(test_ref: str, entity: dict[str, Any]) -> TestProjection:
+def _test_projection(test_ref: str, entity: dict[str, Any]) -> TestProjection | None:
     identity = parse_test_ref(test_ref)
     props = entity.get('properties') if isinstance(entity.get('properties'), dict) else {}
     namespace = str(props.get('namespace') or identity.type_id).strip()
@@ -102,11 +102,13 @@ def _test_projection(test_ref: str, entity: dict[str, Any]) -> TestProjection:
     description_raw = props.get('description')
     description = None if description_raw is None else str(description_raw)
     raw_telemetry = props.get('telemetry_types')
+    if not isinstance(raw_telemetry, list):
+        return None
     telemetry_types = tuple(
         str(item).strip()
         for item in raw_telemetry
         if isinstance(item, str) and item.strip()
-    ) if isinstance(raw_telemetry, list) else ()
+    )
     definition = {
         'namespace': namespace,
         'version': version,
@@ -336,7 +338,9 @@ def rebuild_report_projection(mysql: MySQLSettings, report: dict[str, Any]) -> N
     tests: dict[str, TestProjection] = {}
     for test_ref, entity in test_entities.items():
         if isinstance(test_ref, str) and isinstance(entity, dict):
-            tests[test_ref] = _test_projection(test_ref, entity)
+            projected = _test_projection(test_ref, entity)
+            if projected is not None:
+                tests[test_ref] = projected
 
     statements = [
         'START TRANSACTION',

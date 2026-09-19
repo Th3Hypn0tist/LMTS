@@ -209,4 +209,10 @@ class TelemetrySampler:
         if self._thread is not None:
             self._thread.join(timeout=max(1.0, self.interval_seconds * 2.0))
         self._capture()
-        return {"samples": list(self.samples), "summary": summarize_telemetry(self.samples)}
+        return {
+            "format": "lmts.telemetry",
+            "version": 1,
+            "scope": "tester_system",
+            "samples": list(self.samples),
+            "summary": summarize_telemetry(self.samples),
+        }

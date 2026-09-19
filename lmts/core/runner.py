@@ -39,12 +39,14 @@ class TestRunner:
         system_context_loader: Callable[[], dict[str, object]] = _default_system_context,
         response_sink: Callable[[ResponseStreamChunk], None] | None = None,
         telemetry_factory: Callable[[], TelemetrySampler] = TelemetrySampler,
+        provenance: dict[str, object] | None = None,
     ) -> None:
         self.providers = providers
         self.store = store
         self.system_context_loader = system_context_loader
         self.response_sink = response_sink
         self.telemetry_factory = telemetry_factory
+        self.provenance = dict(provenance or {})
 
     def run(
         self,
@@ -109,6 +111,7 @@ class TestRunner:
             "evaluation_subject": evaluation_subject.to_dict(),
             "execution_metadata": execution_metadata,
             "system_context": system_context,
+            "provenance": dict(self.provenance),
         }
         if executor.kind == "model":
             common.update(

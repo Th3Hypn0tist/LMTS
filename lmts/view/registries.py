@@ -8,29 +8,31 @@ from lmts.lib.view import ShortcutDefinition, ShortcutRegistry, TabDefinition, T
 TAB_REGISTRY = TabRegistry(
     [
         TabDefinition("root", "AIGM LMTS", parent=None, order=0),
-        TabDefinition("user", "User", parent="root", shortcut="0", order=0),
-        TabDefinition("benchmark", "Benchmark", parent="root", shortcut="1", order=10),
-        TabDefinition("deep", "Deep", parent="benchmark", order=11),
-        TabDefinition("cw_bench", "CW Bench", parent="deep", order=12),
+        TabDefinition("profile", "Profile", parent="root", shortcut="1", order=10),
+        TabDefinition("benchmark", "Benchmark", parent="root", shortcut="2", order=20),
+        TabDefinition("deep", "Deep", parent="benchmark", order=21),
+        TabDefinition("cw_bench", "CW Bench", parent="deep", order=22),
         TabDefinition("downloader", "Model Downloader", parent="root", shortcut="3", order=30),
         TabDefinition("settings", "Settings", parent="root", shortcut="4", order=40),
-        TabDefinition("profile", "Profile", parent="root", shortcut="9", order=90),
     ]
 )
 
 
 DEFAULT_SHORTCUTS = (
-    ShortcutDefinition("tab.user", ("0",), "User", "Tabs", order=0),
-    ShortcutDefinition("tab.benchmark", ("1",), "Benchmark", "Tabs", order=10),
+    ShortcutDefinition("tab.profile", ("1",), "Profile", "Tabs", order=10),
+    ShortcutDefinition("tab.benchmark", ("2",), "Benchmark", "Tabs", order=20),
     ShortcutDefinition("tab.downloader", ("3",), "Model Downloader", "Tabs", order=30),
     ShortcutDefinition("tab.settings", ("4",), "Settings", "Tabs", order=40),
-    ShortcutDefinition("tab.profile", ("9",), "Profile", "Tabs", order=90),
     ShortcutDefinition("nav.back", ("esc",), "Back", "Navigation", order=900),
     ShortcutDefinition("scroll.up", ("up",), "Scroll up", "Navigation", order=910),
     ShortcutDefinition("scroll.down", ("down",), "Scroll down", "Navigation", order=920),
     ShortcutDefinition("app.quit", ("q", "q", "q"), "Quit", "System", order=930),
 
-    ShortcutDefinition("profile.scan", ("p",), "Profile system", "Profile", scope="profile", order=100),
+    ShortcutDefinition("profile.cpu", ("z",), "Test CPU", "Profile", scope="profile", order=100),
+    ShortcutDefinition("profile.memory", ("x",), "Test MEM", "Profile", scope="profile", order=110),
+    ShortcutDefinition("profile.gpu", ("c",), "Test GPU", "Profile", scope="profile", order=120),
+    ShortcutDefinition("profile.npu", ("v",), "Test NPU", "Profile", scope="profile", order=130),
+    ShortcutDefinition("profile.scan", ("p",), "Profile system", "Profile", scope="profile", order=140),
 
     ShortcutDefinition("benchmark.tests", ("t",), "Tests", "Benchmark", scope="benchmark", order=100),
     ShortcutDefinition("benchmark.targets", ("m",), "Targets", "Benchmark", scope="benchmark", order=110),

@@ -8,7 +8,7 @@ from pathlib import Path
 from lmts.core.settings import MySQLSettings
 
 
-SCHEMA_PATH = Path(__file__).resolve().parent.parent / 'install' / 'schema_v1.sql'
+SCHEMA_PATH = Path(__file__).resolve().parents[2] / 'schema' / 'schema_v1.sql'
 
 
 def _client_error(stderr: bytes, returncode: int) -> str:

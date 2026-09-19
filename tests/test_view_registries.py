@@ -21,13 +21,14 @@ def test_lmts_top_level_tab_order() -> None:
     assert [(item.shortcut, item.id) for item in TAB_REGISTRY.children('root')] == [
         ('1', 'benchmark'),
         ('2', 'downloader'),
+        ('9', 'profile'),
         ('0', 'settings'),
     ]
     assert [item.id for item in TAB_REGISTRY.path('cw_bench')] == [
         'root', 'benchmark', 'deep', 'cw_bench'
     ]
     assert [item.id for item in TAB_REGISTRY.path('profile')] == [
-        'root', 'benchmark', 'profile'
+        'root', 'profile'
     ]
     assert [item.id for item in TAB_REGISTRY.path('user')] == [
         'root', 'settings', 'user'

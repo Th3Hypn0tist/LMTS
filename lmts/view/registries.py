@@ -11,9 +11,9 @@ TAB_REGISTRY = TabRegistry(
         TabDefinition("benchmark", "Benchmark", parent="root", shortcut="1", order=10),
         TabDefinition("deep", "Deep", parent="benchmark", order=11),
         TabDefinition("cw_bench", "CW Bench", parent="deep", order=12),
-        TabDefinition("profile", "Profiling", parent="benchmark", order=19),
         TabDefinition("downloader", "Model Downloader", parent="root", shortcut="2", order=20),
-        TabDefinition("settings", "Settings", parent="root", shortcut="0", order=90),
+        TabDefinition("profile", "Profiling", parent="root", shortcut="9", order=90),
+        TabDefinition("settings", "Settings", parent="root", shortcut="0", order=100),
         TabDefinition("user", "User", parent="settings", order=91),
     ]
 )
@@ -22,7 +22,8 @@ TAB_REGISTRY = TabRegistry(
 DEFAULT_SHORTCUTS = (
     ShortcutDefinition("tab.benchmark", ("1",), "Benchmark", "Tabs", order=10),
     ShortcutDefinition("tab.downloader", ("2",), "Model Downloader", "Tabs", order=20),
-    ShortcutDefinition("tab.settings", ("0",), "Settings", "Tabs", order=90),
+    ShortcutDefinition("tab.profile", ("9",), "Profiling", "Tabs", order=90),
+    ShortcutDefinition("tab.settings", ("0",), "Settings", "Tabs", order=100),
     ShortcutDefinition("nav.back", ("esc",), "Back", "Navigation", order=900),
     ShortcutDefinition("scroll.up", ("up",), "Scroll up", "Navigation", order=910),
     ShortcutDefinition("scroll.down", ("down",), "Scroll down", "Navigation", order=920),

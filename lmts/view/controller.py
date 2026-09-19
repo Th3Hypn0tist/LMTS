@@ -10,6 +10,7 @@ from lmts.services.profile import DEFAULT_PROFILE_PATH, SystemProfileService
 from lmts.services.results import ResultService
 from lmts.services.run_lifecycle import RunLifecycleService
 from lmts.services.targets import TargetDiscoveryService
+from lmts.services.user import UserService
 from lmts.tests.base import TestModule
 from lmts.tests.types import ConfiguredTest, TestLevel, TestMatrix, TestTypeRegistry
 
@@ -45,6 +46,7 @@ class LMTSViewController:
         self.profile_service = SystemProfileService(profile_path)
         self.target_service = TargetDiscoveryService(providers)
         self.result_service = ResultService(results_root=results_root, logs_root=logs_root)
+        self.user_service = UserService(self.result_service)
         self.lifecycle = RunLifecycleService()
         self.evaluation_service = EvaluationService(
             providers,

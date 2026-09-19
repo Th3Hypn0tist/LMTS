@@ -19,10 +19,11 @@ def test_tab_registry_is_recursive() -> None:
 
 def test_lmts_top_level_tab_order() -> None:
     assert [(item.shortcut, item.id) for item in TAB_REGISTRY.children('root')] == [
-        ('1', 'profile'),
-        ('2', 'benchmark'),
+        ('0', 'user'),
+        ('1', 'benchmark'),
         ('3', 'downloader'),
         ('4', 'settings'),
+        ('9', 'profile'),
     ]
     assert [item.id for item in TAB_REGISTRY.path('cw_bench')] == [
         'root', 'benchmark', 'deep', 'cw_bench'
@@ -56,7 +57,8 @@ def test_shortcuts_are_scoped_by_topic_area() -> None:
         'benchmark.refresh',
     } <= benchmark_actions
     assert 'benchmark.tests' not in profile_actions
-    assert 'profile.cpu' in profile_actions
+    assert 'profile.scan' in profile_actions
+    assert 'profile.cpu' not in profile_actions
     assert {'deep.cw_bench', 'deep.run', 'deep.results'} <= deep_actions
     assert {
         'downloader.module',

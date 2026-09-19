@@ -6,6 +6,7 @@ from lmts.tools.ftp_profiles import load_ftp_profiles
 from lmts.tools.profile import load_system_profile
 
 from .tui_state import TUIState
+from .user_page import UserPage
 
 
 def _format_reference_metric(test: object) -> str:
@@ -59,6 +60,7 @@ def _reference_suite_lines(label: str, suite: object) -> list[str]:
 class TUIRenderer:
     def __init__(self, state: TUIState) -> None:
         self.state = state
+        self.user_page = UserPage(state.controller)
 
     def shortcut_label(self, action: str) -> str:
         definitions = [
@@ -167,6 +169,8 @@ class TUIRenderer:
 
     def render_lines(self) -> tuple[str, ...]:
         tab = self.state.active_tab
+        if tab == 'user':
+            return self.user_page.lines()
         if tab == 'profile':
             return self.profile_lines()
         if tab == 'benchmark':

@@ -206,7 +206,21 @@ def scan_system_profile() -> SystemProfile:
 def system_fingerprint(profile: SystemProfile) -> str:
     data = profile.to_dict()
     cpu = data.get("cpu") if isinstance(data.get("cpu"), dict) else {}
-    software = data.get("software") if isinstance(data.get("software"), dict) else {}
+    memory = data.get("memory") if isinstance(data.get("memory"), dict) else {}
+    gpu = data.get("gpu") if isinstance(data.get("gpu"), list) else []
+    npu = data.get("npu") if isinstance(data.get("npu"), list) else []
+    gpu_identity = sorted(
+        (str(item.get("vendor") or ""), str(item.get("model") or ""), item.get("vram_bytes"))
+        for item in gpu if isinstance(item, dict)
+    )
+    npu_identity = sorted(
+        (
+            str(item.get("class") or ""), str(item.get("vendor_id") or ""), str(item.get("device_id") or ""),
+            str(item.get("subsystem_vendor_id") or ""), str(item.get("subsystem_device_id") or ""),
+            str(item.get("modalias") or ""),
+        )
+        for item in npu if isinstance(item, dict)
+    )
     identity = {
         "cpu": {
             "architecture": cpu.get("architecture"), "model_name": cpu.get("model_name"), "model_names": cpu.get("model_names"),
@@ -214,7 +228,9 @@ def system_fingerprint(profile: SystemProfile) -> str:
             "stepping": cpu.get("stepping"), "logical_cores": cpu.get("logical_cores"),
             "physical_packages": cpu.get("physical_packages"), "physical_cores": cpu.get("physical_cores"),
         },
-        "memory": data.get("memory"), "gpu": data.get("gpu"), "npu": data.get("npu"), "os": software.get("os"),
+        "memory": {"total_bytes": memory.get("total_bytes")},
+        "gpu": gpu_identity,
+        "npu": npu_identity,
     }
     canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

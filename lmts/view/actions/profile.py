@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from lmts.tools.profile import benchmark_system_reference
+from lmts.tools.reference_benchmark import REFERENCE_BENCHMARK_DOMAINS
 
 from ..reference_progress import format_reference_progress
 from .base import TUIActions
@@ -13,10 +14,16 @@ class ProfileActions(TUIActions):
         self.host.draw(self.stdscr)
         self.controller.profile()
         self.state.profile_console.append('System profile scan completed')
+        self.host.draw(self.stdscr)
+        for domain in REFERENCE_BENCHMARK_DOMAINS:
+            self.profile_reference(domain, clear_console=False)
+        self.state.profile_console.append('System profiling completed')
+        self.host.draw(self.stdscr)
         self.set_message(self.controller.state.message)
 
-    def profile_reference(self, domain: str) -> None:
-        self.state.profile_console.clear()
+    def profile_reference(self, domain: str, *, clear_console: bool = True) -> None:
+        if clear_console:
+            self.state.profile_console.clear()
 
         def on_progress(event) -> None:
             self.state.profile_console.append(format_reference_progress(event))

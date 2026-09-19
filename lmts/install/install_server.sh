@@ -7,7 +7,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SCHEMA_FILE="${SCRIPT_DIR}/schema_v1.sql"
+SCHEMA_FILE="${SCRIPT_DIR}/../../schema/schema_v1.sql"
 SCHEMA_VERSION=1
 
 DB_NAME="lmts"
@@ -323,10 +323,10 @@ echo "[6/8] Checking LMTS schema version..."
 HAS_VERSION_TABLE="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='${DB_NAME}' AND TABLE_NAME='lmts_schema_version';")"
 CURRENT_SCHEMA_VERSION=0
 if [[ "${HAS_VERSION_TABLE}" == "1" ]]; then
-    CURRENT_SCHEMA_VERSION="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT COALESCE(MAX(schema_version),0) FROM lmts_schema_version WHERE component='result_server';")"
+    CURRENT_SCHEMA_VERSION="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT COALESCE(MAX(schema_version),0) FROM lmts_schema_version WHERE component='database_ssot';")"
 fi
 if (( CURRENT_SCHEMA_VERSION > SCHEMA_VERSION )); then
-    echo "ERROR: installed result_server schema v${CURRENT_SCHEMA_VERSION} is newer than this installer supports (v${SCHEMA_VERSION})."
+    echo "ERROR: installed database SSOT schema v${CURRENT_SCHEMA_VERSION} is newer than this installer supports (v${SCHEMA_VERSION})."
     exit 1
 fi
 if (( CURRENT_SCHEMA_VERSION < SCHEMA_VERSION )); then
@@ -404,9 +404,9 @@ else
     restarted "Apache started"
 fi
 
-VERIFIED_SCHEMA="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT schema_version FROM lmts_schema_version WHERE component='result_server';")"
+VERIFIED_SCHEMA="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT schema_version FROM lmts_schema_version WHERE component='database_ssot';")"
 if [[ "${VERIFIED_SCHEMA}" != "${SCHEMA_VERSION}" ]]; then
-    echo "ERROR: expected result_server schema v${SCHEMA_VERSION}, found v${VERIFIED_SCHEMA:-none}."
+    echo "ERROR: expected database SSOT schema v${SCHEMA_VERSION}, found v${VERIFIED_SCHEMA:-none}."
     exit 1
 fi
 if ! MYSQL_PWD="${DB_PASSWORD}" mariadb --protocol=tcp --host=127.0.0.1 --user="${DB_USER}" "${DB_NAME}" -Nse 'SELECT 1;' >/dev/null 2>&1; then

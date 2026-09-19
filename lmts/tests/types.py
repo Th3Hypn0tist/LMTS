@@ -11,6 +11,21 @@ ParameterKind = Literal["text", "integer", "boolean", "choice"]
 TestLevel = Literal["quick", "moderate", "deep"]
 TEST_LEVEL_ORDER: dict[TestLevel, int] = {"quick": 0, "moderate": 1, "deep": 2}
 
+DEFAULT_EXECUTION_TELEMETRY_TYPES: tuple[str, ...] = (
+    "input_tokens",
+    "output_tokens",
+    "ttft",
+    "total_time",
+    "score_percent",
+    "cpu_util_percent",
+    "memory_used_bytes",
+    "gpu_util_percent",
+    "gpu_memory_util_percent",
+    "gpu_memory_used_mib",
+    "gpu_temperature_c",
+    "gpu_power_w",
+)
+
 
 def includes_level(requested: TestLevel, minimum_level: TestLevel) -> bool:
     return TEST_LEVEL_ORDER[minimum_level] <= TEST_LEVEL_ORDER[requested]
@@ -75,6 +90,7 @@ class TestTypeDefinition:
     parameters: tuple[TestParameter, ...]
     factory: Factory
     mandatory: bool = False
+    telemetry_types: tuple[str, ...] = DEFAULT_EXECUTION_TELEMETRY_TYPES
     category: str = "uncategorized"
     subcategory: str = "general"
 
@@ -85,6 +101,10 @@ class TestTypeDefinition:
             object.__setattr__(self, "subcategory", taxonomy.subcategory)
         _taxonomy_token(self.category, field_name="test category")
         _taxonomy_token(self.subcategory, field_name="test subcategory")
+        if len(self.telemetry_types) != len(set(self.telemetry_types)):
+            raise ValueError("test telemetry types must be unique")
+        if any(not str(item).strip() for item in self.telemetry_types):
+            raise ValueError("test telemetry types must be non-empty canonical keys")
 
     @property
     def ref(self) -> str:
@@ -126,6 +146,9 @@ class TestTypeDefinition:
             mandatory=self.mandatory,
             params=normalized,
             module=module,
+            title=self.title,
+            description=self.description,
+            telemetry_types=self.telemetry_types,
             category=self.category,
             subcategory=self.subcategory,
         )
@@ -140,12 +163,19 @@ class ConfiguredTest:
     mandatory: bool
     params: dict[str, object]
     module: TestModule
+    title: str = ""
+    description: str = ""
+    telemetry_types: tuple[str, ...] = DEFAULT_EXECUTION_TELEMETRY_TYPES
     category: str = "uncategorized"
     subcategory: str = "general"
 
     def __post_init__(self) -> None:
         _taxonomy_token(self.category, field_name="test category")
         _taxonomy_token(self.subcategory, field_name="test subcategory")
+        if len(self.telemetry_types) != len(set(self.telemetry_types)):
+            raise ValueError("configured test telemetry types must be unique")
+        if any(not str(item).strip() for item in self.telemetry_types):
+            raise ValueError("configured test telemetry types must be non-empty canonical keys")
 
     @property
     def id(self) -> str:

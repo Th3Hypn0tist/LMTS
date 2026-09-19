@@ -20,6 +20,7 @@ from .projector import LMTSViewProjector
 from .registries import build_shortcut_registry
 from .tui_render import TUIRenderer
 from .tui_state import TUIState
+from .user_page import UserPage
 
 
 class TUIApplication:
@@ -48,7 +49,8 @@ class TUIApplication:
             shortcuts=shortcuts,
             events=events,
         )
-        self.renderer = TUIRenderer(self.state)
+        self.user_page = UserPage(controller)
+        self.renderer = TUIRenderer(self.state, self.user_page)
 
     def run(self) -> None:
         curses.wrapper(self._run_curses)
@@ -56,7 +58,7 @@ class TUIApplication:
     def _run_curses(self, stdscr: curses.window) -> None:
         controller = self.state.controller
         host = self.host_class(
-            'AIGM LMTS - Profile',
+            f"AIGM LMTS - {'Profile' if controller.state.profile_required else 'Benchmark'}",
             self.renderer.render_lines,
             self.renderer.tabs_line,
             controller.response_monitor.lines,
@@ -68,7 +70,10 @@ class TUIApplication:
             events=self.state.events,
         )
         if controller.state.profile_required:
-            controller.profile()
+            self.state.active_tab = 'profile'
+            ProfileActions(self.state, host, stdscr).profile_system(stdscr)
+        else:
+            self.state.active_tab = 'benchmark'
         self.state.events.publish('ui.message', controller.state.message, source='tui_app')
 
         navigation = NavigationActions(self.state, host, stdscr)
@@ -82,16 +87,13 @@ class TUIApplication:
             self.state.events.publish('ui.message', controller.state.message, source='cw_bench')
 
         bindings = {
-            'tab.profile': lambda _: navigation.open_tab('profile'),
+            'tab.user': lambda _: navigation.open_tab('user'),
             'tab.benchmark': lambda _: navigation.open_tab('benchmark'),
+            'tab.profile': lambda _: navigation.open_tab('profile'),
             'tab.downloader': lambda _: navigation.open_tab('downloader'),
             'tab.settings': lambda _: navigation.open_tab('settings'),
             'nav.back': navigation.back,
             'profile.scan': profile.profile_system,
-            'profile.cpu': lambda _: profile.profile_reference('cpu'),
-            'profile.memory': lambda _: profile.profile_reference('memory'),
-            'profile.gpu': lambda _: profile.profile_reference('gpu'),
-            'profile.npu': lambda _: profile.profile_reference('npu'),
             'benchmark.tests': benchmark.tests_dialog,
             'benchmark.targets': benchmark.select_targets,
             'benchmark.run': benchmark.run_dialog,

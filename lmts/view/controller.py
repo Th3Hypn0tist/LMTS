@@ -7,6 +7,7 @@ from lmts.core.settings import MySQLSettings
 from lmts.core.executor import TestExecutor
 from lmts.core.registry import ProviderRegistry
 from lmts.repositories.stats import StatsRepository
+from lmts.repositories.system import SystemRepository
 from lmts.repositories.user import UserRepository
 from lmts.services.auth import AuthService
 from lmts.services.evaluation import EvaluationService, RunCompletedCallback
@@ -14,6 +15,7 @@ from lmts.services.profile import DEFAULT_PROFILE_PATH, SystemProfileService
 from lmts.services.results import ResultService
 from lmts.services.run_lifecycle import RunLifecycleService
 from lmts.services.stats import StatsService
+from lmts.services.system import SystemService
 from lmts.services.targets import TargetDiscoveryService
 from lmts.services.user import UserService
 from lmts.tests.base import TestModule
@@ -53,7 +55,9 @@ class LMTSViewController:
         self.target_service = TargetDiscoveryService(providers)
         self.result_service = ResultService(results_root=results_root, logs_root=logs_root)
         self.user_repository = None if mysql is None else UserRepository(mysql)
+        self.system_repository = None if mysql is None else SystemRepository(mysql)
         self.auth_service = None if self.user_repository is None else AuthService(self.user_repository, connection_id=mysql.id)
+        self.system_service = None if self.system_repository is None else SystemService(self.system_repository, self.profile_service)
         self.stats_service = None if mysql is None else StatsService(StatsRepository(mysql))
         self.user_service = UserService(self.user_repository, self.auth_service)
         self.lifecycle = RunLifecycleService()
@@ -165,12 +169,21 @@ class LMTSViewController:
         if not targets or not tests:
             self.state.message = 'select at least one target and one configured test'
             return False
+        if self.auth_service is None or self.system_service is None:
+            self.state.message = 'registered user authentication is required before testing'
+            return False
+        try:
+            identity = self.auth_service.require_identity()
+            provenance = self.system_service.run_provenance(identity.user_id).to_dict()
+        except (RuntimeError, ValueError) as exc:
+            self.state.message = f'cannot start test: {exc}'
+            return False
 
         self.last_errors = []
         self.last_publish_errors = []
         self.evaluation_view.prepare(targets, tests)
         started = self.lifecycle.start(
-            lambda control: self._run_matrix(targets, tests, control, on_run_completed),
+            lambda control: self._run_matrix(targets, tests, control, on_run_completed, provenance),
         )
         if started:
             return True
@@ -184,6 +197,7 @@ class LMTSViewController:
         tests: list[TestModule],
         control: RunControl,
         on_run_completed: RunCompletedCallback | None,
+        provenance: dict[str, object],
     ) -> None:
         try:
             outcome = self.evaluation_service.execute(
@@ -192,6 +206,7 @@ class LMTSViewController:
                 control,
                 progress=self.evaluation_view.progress,
                 on_run_completed=on_run_completed,
+                provenance=provenance,
             )
             self.last_errors = list(outcome.run_errors)
             self.last_publish_errors = list(outcome.publish_errors)

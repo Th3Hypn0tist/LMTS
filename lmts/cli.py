@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 from pathlib import Path
 
@@ -12,6 +13,10 @@ from lmts.core.runner import TestRunner
 from lmts.core.runtime_targets import executor_from_definition, load_runtime_targets
 from lmts.core.store import RunStore
 from lmts.providers.ollama import OllamaProvider
+from lmts.repositories.user import UserRepository
+from lmts.services.auth import AuthService, AuthenticationError
+from lmts.services.invite import InviteError, InviteService
+from lmts.services.settings import SettingsService
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
 from lmts.tests.modules import TextGenerationTest, WorkspaceMultiFileTest
 from lmts.tests.registry import TestRegistry
@@ -205,6 +210,110 @@ def _benchmark(test_ref: str, target_ids: list[str], results: Path, workspaces: 
     return 0 if batch.failed == 0 and batch.errors == 0 else 1
 
 
+
+def _auth_services(connection_id: str | None = None) -> tuple[AuthService, InviteService]:
+    settings = SettingsService().load_core()
+    if connection_id is None:
+        mysql = settings.mysql
+    else:
+        mysql = next((item for item in settings.mysql_connections if item.id == connection_id), None)
+        if mysql is None:
+            raise ValueError(f'unknown MySQL connection: {connection_id}')
+    repository = UserRepository(mysql)
+    return AuthService(repository, connection_id=mysql.id), InviteService(repository)
+
+
+def _new_password() -> str:
+    first = getpass.getpass('Password: ')
+    second = getpass.getpass('Confirm password: ')
+    if first != second:
+        raise ValueError('passwords do not match')
+    return first
+
+
+def _print_identity(identity) -> None:
+    print(json.dumps({
+        'user_id': identity.user_id,
+        'username': identity.username,
+        'tier': identity.tier,
+        'verified': identity.verified,
+    }, indent=2, ensure_ascii=False))
+
+
+def _user_bootstrap_origin(connection_id: str | None, email: str | None) -> int:
+    try:
+        auth, _ = _auth_services(connection_id)
+        _print_identity(auth.bootstrap_origin(_new_password(), email=email))
+        return 0
+    except (AuthenticationError, RuntimeError, ValueError) as exc:
+        print(f'origin bootstrap failed: {exc}')
+        return 2
+
+
+def _user_login(connection_id: str | None, username: str) -> int:
+    try:
+        auth, _ = _auth_services(connection_id)
+        _print_identity(auth.login(username, getpass.getpass('Password: ')))
+        return 0
+    except (AuthenticationError, RuntimeError, ValueError) as exc:
+        print(f'login failed: {exc}')
+        return 2
+
+
+def _user_register(connection_id: str | None, token: str, username: str, email: str | None) -> int:
+    try:
+        auth, _ = _auth_services(connection_id)
+        _print_identity(auth.register(token, username, _new_password(), email=email))
+        return 0
+    except (AuthenticationError, RuntimeError, ValueError) as exc:
+        print(f'registration failed: {exc}')
+        return 2
+
+
+def _user_invite(connection_id: str | None, expires_hours: int | None) -> int:
+    from datetime import timedelta
+
+    try:
+        auth, invites = _auth_services(connection_id)
+        owner = auth.require_identity()
+        expires_in = None if expires_hours is None else timedelta(hours=expires_hours)
+        invite = invites.create_invite(owner, expires_in=expires_in)
+        print(json.dumps({
+            'invite_id': invite.invite_id,
+            'token': invite.raw_token,
+            'owner_user_id': invite.owner_user_id,
+            'expires_at': invite.expires_at,
+        }, indent=2, ensure_ascii=False))
+        return 0
+    except (AuthenticationError, InviteError, RuntimeError, ValueError) as exc:
+        print(f'invite creation failed: {exc}')
+        return 2
+
+
+def _user_whoami(connection_id: str | None) -> int:
+    try:
+        auth, _ = _auth_services(connection_id)
+        identity = auth.current_identity()
+        if identity is None:
+            print('not authenticated')
+            return 1
+        _print_identity(identity)
+        return 0
+    except (AuthenticationError, RuntimeError, ValueError) as exc:
+        print(f'whoami failed: {exc}')
+        return 2
+
+
+def _user_logout(connection_id: str | None) -> int:
+    try:
+        auth, _ = _auth_services(connection_id)
+        auth.logout()
+        print('logged out')
+        return 0
+    except (RuntimeError, ValueError) as exc:
+        print(f'logout failed: {exc}')
+        return 2
+
 def _tui() -> int:
     from lmts.view.report_export_runtime import run_tui
 
@@ -220,6 +329,33 @@ def main() -> int:
     sub.add_parser("targets", help="Discover evaluation targets: models, bots and compositions")
     sub.add_parser("tests", help="List registered test types")
     sub.add_parser("matrix", help="List default configured test matrix")
+
+    user = sub.add_parser("user", help="User authentication and invite tools")
+    user_sub = user.add_subparsers(dest="user_command", required=True)
+
+    bootstrap_origin = user_sub.add_parser("bootstrap-origin", help="Attach credentials to the existing Origin user_id=0")
+    bootstrap_origin.add_argument("--email")
+    bootstrap_origin.add_argument("--connection")
+
+    user_login = user_sub.add_parser("login", help="Authenticate and persist a local signed LMTS session")
+    user_login.add_argument("username")
+    user_login.add_argument("--connection")
+
+    user_register = user_sub.add_parser("register", help="Register a Tier-3 user from an invite token")
+    user_register.add_argument("token")
+    user_register.add_argument("username")
+    user_register.add_argument("--email")
+    user_register.add_argument("--connection")
+
+    user_invite = user_sub.add_parser("invite", help="Create an invite as the authenticated user")
+    user_invite.add_argument("--expires-hours", type=int)
+    user_invite.add_argument("--connection")
+
+    user_whoami = user_sub.add_parser("whoami", help="Show the authenticated LMTS identity")
+    user_whoami.add_argument("--connection")
+
+    user_logout = user_sub.add_parser("logout", help="Clear the local LMTS auth session")
+    user_logout.add_argument("--connection")
 
     profile = sub.add_parser("profile", help="System profile tools")
     profile_sub = profile.add_subparsers(dest="profile_command", required=True)
@@ -251,6 +387,19 @@ def main() -> int:
     if args.command == "profile" and args.profile_command == "scan":
         print(profile_json())
         return 0
+
+    if args.command == "user" and args.user_command == "bootstrap-origin":
+        return _user_bootstrap_origin(args.connection, args.email)
+    if args.command == "user" and args.user_command == "login":
+        return _user_login(args.connection, args.username)
+    if args.command == "user" and args.user_command == "register":
+        return _user_register(args.connection, args.token, args.username, args.email)
+    if args.command == "user" and args.user_command == "invite":
+        return _user_invite(args.connection, args.expires_hours)
+    if args.command == "user" and args.user_command == "whoami":
+        return _user_whoami(args.connection)
+    if args.command == "user" and args.user_command == "logout":
+        return _user_logout(args.connection)
     if args.command == "run":
         return _run(args.test_ref, args.model_id, args.results, args.workspaces)
     if args.command == "benchmark":

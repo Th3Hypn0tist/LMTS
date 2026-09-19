@@ -28,12 +28,12 @@ class TUIApplication:
     benchmark_actions_class = BenchmarkActions
 
     def __init__(self) -> None:
-        test_types = default_test_type_registry()
-        matrix = default_test_matrix(test_types)
-        controller = self.controller_class(default_provider_registry(), test_types, matrix)
-        controller.refresh()
         settings_service = SettingsService()
         settings = settings_service.load_core()
+        test_types = default_test_type_registry()
+        matrix = default_test_matrix(test_types)
+        controller = self.controller_class(default_provider_registry(), test_types, matrix, mysql=settings.mysql)
+        controller.refresh()
         shortcut_overrides = settings_service.load_shortcuts()
         shortcuts = build_shortcut_registry(shortcut_overrides)
         events = UIEventBus()

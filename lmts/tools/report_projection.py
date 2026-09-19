@@ -114,6 +114,7 @@ def _test_projection(test_ref: str, entity: dict[str, Any]) -> TestProjection:
         'description': description,
         'minimum_level': props.get('minimum_level'),
         'mandatory': props.get('mandatory'),
+        'taxonomy': props.get('taxonomy'),
         'telemetry_types': list(telemetry_types),
     }
     definition_json = _canonical_json(definition)
@@ -347,12 +348,13 @@ def rebuild_report_projection(mysql: MySQLSettings, report: dict[str, Any]) -> N
     for test in tests.values():
         statements.append(f"""
 INSERT INTO test_definitions (
-  test_definition_id, namespace, name, description
+  test_definition_id, namespace, name, description, category
 ) VALUES (
   {_hex_text(test.test_definition_id)},
   {_hex_text(test.namespace)},
   {_hex_text(test.title)},
-  {_nullable_text(test.description)}
+  {_nullable_text(test.description)},
+  NULL
 )
 ON DUPLICATE KEY UPDATE test_definition_id = test_definition_id
 """.strip())
@@ -404,7 +406,9 @@ ON DUPLICATE KEY UPDATE ordinal = VALUES(ordinal)
         target_entity = targets.get(target_id) if isinstance(targets.get(target_id), dict) else {}
         target_props = target_entity.get('properties') if isinstance(target_entity.get('properties'), dict) else {}
         target_kind = str(target_props.get('kind') or '').strip() or 'unknown'
-        runtime_configuration = target_props.get('runtime_configuration')
+        evidence = record.get('evidence') if isinstance(record.get('evidence'), dict) else {}
+        execution_metadata = evidence.get('execution_metadata') if isinstance(evidence.get('execution_metadata'), dict) else {}
+        runtime_configuration = execution_metadata.get('runtime_configuration')
         runtime_json = None if runtime_configuration is None else _canonical_json(runtime_configuration)
         duration = _duration_ms(timing.get('started_at'), timing.get('completed_at'))
         statements.append(f"""

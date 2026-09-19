@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from lmts.core.paths import SYSTEM_PROFILE_PATH
+
 from .reference_benchmark import (
     REFERENCE_BENCHMARK_DOMAINS,
     ReferenceBenchmarkProgressCallback,
@@ -18,7 +20,7 @@ from .reference_benchmark import (
     validate_reference_benchmarks,
 )
 
-DEFAULT_PROFILE_PATH = Path(".lmts/system-profile.json")
+DEFAULT_PROFILE_PATH = SYSTEM_PROFILE_PATH
 PROFILE_SCHEMA_VERSION = 6
 
 

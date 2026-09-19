@@ -325,10 +325,12 @@ def rebuild_report_projection(mysql: MySQLSettings, report: dict[str, Any]) -> N
     report_meta = report.get('report') if isinstance(report.get('report'), dict) else {}
     report_id = str(report_meta.get('id') or '').strip()
     records = report.get('records')
+    if records is None:
+        records = []
     entities = report.get('entities') if isinstance(report.get('entities'), dict) else {}
     test_entities = entities.get('test') if isinstance(entities.get('test'), dict) else {}
     if not report_id or not isinstance(records, list):
-        raise ValueError('report projection requires report.id and records')
+        raise ValueError('report projection requires report.id and records array')
 
     tests: dict[str, TestProjection] = {}
     for test_ref, entity in test_entities.items():
@@ -433,3 +435,14 @@ INSERT INTO report_record_index (
 
     statements.append('COMMIT')
     _run(mysql, ';\n'.join(statements))
+
+
+def rebuild_all_report_projections(mysql: MySQLSettings) -> int:
+    """Rebuild all derived report indexes from immutable report_json documents."""
+    from .mysql_reports import read_report
+
+    raw = _run(mysql, 'SELECT report_id FROM reports ORDER BY created_at, report_id')
+    report_ids = [line.strip() for line in raw.splitlines() if line.strip()]
+    for report_id in report_ids:
+        rebuild_report_projection(mysql, read_report(mysql, report_id))
+    return len(report_ids)

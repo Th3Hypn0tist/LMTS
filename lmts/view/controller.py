@@ -52,9 +52,10 @@ class LMTSViewController:
         self.profile_service = SystemProfileService(profile_path)
         self.target_service = TargetDiscoveryService(providers)
         self.result_service = ResultService(results_root=results_root, logs_root=logs_root)
-        self.auth_service = None if mysql is None else AuthService(UserRepository(mysql), connection_id=mysql.id)
+        self.user_repository = None if mysql is None else UserRepository(mysql)
+        self.auth_service = None if self.user_repository is None else AuthService(self.user_repository, connection_id=mysql.id)
         self.stats_service = None if mysql is None else StatsService(StatsRepository(mysql))
-        self.user_service = UserService(self.result_service, self.auth_service)
+        self.user_service = UserService(self.user_repository, self.auth_service)
         self.lifecycle = RunLifecycleService()
         self.evaluation_service = EvaluationService(
             providers,

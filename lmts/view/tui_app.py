@@ -111,6 +111,7 @@ class TUIApplication:
                 if controller.stats_service is not None
                 else None
             ),
+            'user.refresh': lambda _: controller.user_service.dashboard_snapshot(refresh=True),
             'benchmark.tests': benchmark.tests_dialog,
             'benchmark.targets': benchmark.select_targets,
             'benchmark.run': benchmark.run_dialog,

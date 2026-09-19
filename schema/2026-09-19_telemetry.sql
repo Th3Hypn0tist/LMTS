@@ -80,8 +80,9 @@ CREATE TABLE IF NOT EXISTS telemetry_values (
     KEY idx_telemetry_test_version (test_version_id),
     KEY idx_telemetry_type (telemetry_type_id),
     KEY idx_telemetry_resource (system_resource_id),
-    CONSTRAINT fk_telemetry_report
-        FOREIGN KEY (report_id) REFERENCES reports(report_id)
+    CONSTRAINT fk_telemetry_record
+        FOREIGN KEY (report_id, record_id)
+        REFERENCES report_record_index(report_id, record_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_user
         FOREIGN KEY (user_id) REFERENCES users(user_id)

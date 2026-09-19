@@ -58,12 +58,13 @@ def _runtime_response(prompt, sink):
     )
 
 
-def _runner(providers, root):
+def _runner(providers, root, *, provenance=None):
     return TestRunner(
         providers,
         RunStore(root),
         system_context_loader=_system_context,
         telemetry_factory=FakeTelemetry,
+        provenance=provenance,
     )
 
 
@@ -129,3 +130,25 @@ def test_runner_executes_composition_subject(tmp_path):
     assert run.executor_kind == "composition"
     assert len(run.evaluation_subject["members"]) == 2
     assert "composition" in path.parts
+
+
+def test_runner_persists_user_and_system_provenance(tmp_path):
+    providers = ProviderRegistry([FakeProvider()])
+    model = providers.discover_models()[0]
+    runner = _runner(
+        providers,
+        tmp_path / "results",
+        provenance={
+            "tester_user_id": "usr_test",
+            "system_id": "sys_test",
+            "compute_profile_id": None,
+        },
+    )
+
+    run, _ = runner.run(TextGenerationTest(), model, tmp_path / "workspaces")
+
+    assert run.provenance == {
+        "tester_user_id": "usr_test",
+        "system_id": "sys_test",
+        "compute_profile_id": None,
+    }

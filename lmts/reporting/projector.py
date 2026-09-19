@@ -215,6 +215,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
         record: dict[str, Any] = {
             'id': run_id,
             'coordinates': {'target': target_id, 'test': resolved_test_ref},
+            'provenance': dict(run.get('provenance') or {}),
             'timing': {
                 'started_at': run.get('started_at'),
                 'completed_at': run.get('completed_at'),

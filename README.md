@@ -363,18 +363,10 @@ No final universal reference profile is locked yet.
 From the repository root:
 
 ```bash
-python -m pip install -e .
-lmts-tui
+python3 -m lmts
 ```
 
-Alternative entry points:
-
-```text
-lmts
-lmts-tui
-lmts-view
-lmts-dvs
-```
+LMTS is executed directly from source and does not require package installation or third-party Python runtime dependencies.
 
 Top-level TUI tabs:
 

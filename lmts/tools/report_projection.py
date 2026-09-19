@@ -397,7 +397,7 @@ ON DUPLICATE KEY UPDATE ordinal = VALUES(ordinal)
         coordinates = record.get('coordinates') if isinstance(record.get('coordinates'), dict) else {}
         test_ref = str(coordinates.get('test') or '').strip()
         test = tests.get(test_ref)
-        if not record_id or test is None:
+        if not record_id:
             continue
         provenance = record.get('provenance') if isinstance(record.get('provenance'), dict) else {}
         tester = str(provenance.get('tester_user_id') or '').strip() or None
@@ -426,7 +426,7 @@ INSERT INTO report_record_index (
   {_hex_text(record_id)},
   {_nullable_text(tester)},
   {_hex_text(target_kind)},
-  {_hex_text(test.test_version_id)},
+  {_nullable_text(None if test is None else test.test_version_id)},
   {_nullable_text(system_id)},
   {_nullable_text(compute_profile_id)},
   {_sql_datetime(timing.get('started_at'))},
@@ -439,7 +439,8 @@ INSERT INTO report_record_index (
   {_nullable_text(runtime_json)}
 )
 """.strip())
-        statements.extend(_record_telemetry(report_id, record, test))
+        if test is not None:
+            statements.extend(_record_telemetry(report_id, record, test))
 
     statements.append('COMMIT')
     _run(mysql, ';\n'.join(statements))

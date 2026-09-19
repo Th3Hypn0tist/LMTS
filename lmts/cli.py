@@ -211,14 +211,18 @@ def _benchmark(test_ref: str, target_ids: list[str], results: Path, workspaces: 
 
 
 
-def _auth_services(connection_id: str | None = None) -> tuple[AuthService, InviteService]:
+def _mysql_connection(connection_id: str | None = None):
     settings = SettingsService().load_core()
     if connection_id is None:
-        mysql = settings.mysql
-    else:
-        mysql = next((item for item in settings.mysql_connections if item.id == connection_id), None)
-        if mysql is None:
-            raise ValueError(f'unknown MySQL connection: {connection_id}')
+        return settings.mysql
+    mysql = next((item for item in settings.mysql_connections if item.id == connection_id), None)
+    if mysql is None:
+        raise ValueError(f'unknown MySQL connection: {connection_id}')
+    return mysql
+
+
+def _auth_services(connection_id: str | None = None) -> tuple[AuthService, InviteService]:
+    mysql = _mysql_connection(connection_id)
     repository = UserRepository(mysql)
     return AuthService(repository, connection_id=mysql.id), InviteService(repository)
 
@@ -314,6 +318,18 @@ def _user_logout(connection_id: str | None) -> int:
         print(f'logout failed: {exc}')
         return 2
 
+def _reports_rebuild_projections(connection_id: str | None) -> int:
+    from lmts.tools.report_projection import rebuild_all_report_projections
+
+    try:
+        count = rebuild_all_report_projections(_mysql_connection(connection_id))
+    except (RuntimeError, ValueError) as exc:
+        print(f'report projection rebuild failed: {exc}')
+        return 2
+    print(f'rebuilt projections for {count} report(s)')
+    return 0
+
+
 def _tui() -> int:
     from lmts.view.report_export_runtime import run_tui
 
@@ -357,6 +373,11 @@ def main() -> int:
     user_logout = user_sub.add_parser("logout", help="Clear the local LMTS auth session")
     user_logout.add_argument("--connection")
 
+    reports = sub.add_parser("reports", help="Report storage and projection tools")
+    reports_sub = reports.add_subparsers(dest="reports_command", required=True)
+    reports_rebuild = reports_sub.add_parser("rebuild-projections", help="Rebuild derived SQL indexes from immutable report_json")
+    reports_rebuild.add_argument("--connection")
+
     profile = sub.add_parser("profile", help="System profile tools")
     profile_sub = profile.add_subparsers(dest="profile_command", required=True)
     profile_sub.add_parser("scan", help="Scan current system")
@@ -387,6 +408,8 @@ def main() -> int:
     if args.command == "profile" and args.profile_command == "scan":
         print(profile_json())
         return 0
+    if args.command == "reports" and args.reports_command == "rebuild-projections":
+        return _reports_rebuild_projections(args.connection)
 
     if args.command == "user" and args.user_command == "bootstrap-origin":
         return _user_bootstrap_origin(args.connection, args.email)

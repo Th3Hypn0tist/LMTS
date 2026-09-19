@@ -4,11 +4,11 @@ This directory is the **single source of truth (SSOT)** for LMTS database struct
 
 ## Canonical file
 
-- `LMTS_Database_Schema_v1.sql` — canonical MariaDB/MySQL schema for LMTS shared data, user-owned data, immutable report storage, and rebuildable report indexes.
+- `schema_v1.sql` — canonical MariaDB/MySQL schema for LMTS shared data, user-owned data, immutable report storage, and rebuildable report indexes.
 
 Do not introduce new database semantics first in installers, service-local SQL, DVS code, or report-server code. Those are consumers/projections of this schema.
 
-The existing `lmts/install/schema_v1.sql` is the currently deployed minimal result-server bootstrap. Until installer/migration wiring is moved to this directory, it is a compatibility/deployment artifact and **not** the semantic source of truth for new database design.
+There is no compatibility or legacy database schema. Installers and services must consume this directory's canonical schema directly.
 
 ## Ownership model
 

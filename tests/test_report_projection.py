@@ -115,7 +115,7 @@ def test_projection_writes_test_record_and_telemetry(monkeypatch) -> None:
     assert 'gpu_memory_used_mib' in query
     assert 'usr_test' not in query
     assert '7573725f74657374' in query
-    assert query.strip().endswith('COMMIT;')
+    assert query.strip().endswith('COMMIT')
 
 
 def test_projection_without_provenance_indexes_result_but_not_telemetry(monkeypatch) -> None:

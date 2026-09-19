@@ -81,6 +81,15 @@ def test_ref(test: Any) -> str:
 def test_snapshot(test: Any) -> dict[str, Any]:
     identity = identity_for_test(test)
     snapshot: dict[str, Any] = {'identity': identity.to_dict()}
+    title = getattr(test, 'title', None)
+    description = getattr(test, 'description', None)
+    telemetry_types = getattr(test, 'telemetry_types', None)
+    if isinstance(title, str) and title.strip():
+        snapshot['title'] = title.strip()
+    if isinstance(description, str) and description.strip():
+        snapshot['description'] = description.strip()
+    if isinstance(telemetry_types, tuple):
+        snapshot['telemetry_types'] = list(telemetry_types)
     params = getattr(test, 'params', None)
     if isinstance(params, dict):
         snapshot['configuration'] = dict(params)

@@ -77,12 +77,14 @@ class EvaluationService:
         *,
         progress: ProgressCallback | None = None,
         on_run_completed: RunCompletedCallback | None = None,
+        provenance: dict[str, object] | None = None,
     ) -> EvaluationOutcome:
         runner = TestRunner(
             self.providers,
             RunStore(self.results_root),
             response_sink=self.response_sink,
             system_context_loader=self.system_context_loader,
+            provenance=provenance,
         )
         benchmark_runner = BenchmarkRunner(runner)
         benchmark_store = BenchmarkStore(self.results_root)

@@ -39,12 +39,15 @@ def _test_entity(test_ref: str, run: dict[str, Any]) -> dict[str, Any]:
         'namespace': identity.type_id,
         'version': identity.version,
         'instance': identity.instance_id,
+        'title': snapshot.get('title'),
+        'description': snapshot.get('description'),
         'minimum_level': snapshot.get('minimum_level'),
         'mandatory': snapshot.get('mandatory'),
+        'telemetry_types': snapshot.get('telemetry_types') or [],
         'configuration': configuration,
     }
     return {
-        'label': _human_label(label_source),
+        'label': str(snapshot.get('title') or _human_label(label_source)),
         'properties': {key: value for key, value in properties.items() if value is not None},
     }
 

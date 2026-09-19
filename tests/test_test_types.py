@@ -78,3 +78,13 @@ def test_matrix_rejects_duplicate_instance_ids() -> None:
         assert "same-id" in str(exc)
     else:
         raise AssertionError("duplicate configured test instance was accepted")
+
+def test_test_definition_carries_canonical_telemetry_declarations() -> None:
+    registry = default_test_type_registry()
+    definition = registry.get("core.text_generation@1.0.0")
+    configured = definition.configure("text-generation")
+
+    assert "input_tokens" in definition.telemetry_types
+    assert "gpu_power_w" in definition.telemetry_types
+    assert configured.telemetry_types == definition.telemetry_types
+    assert configured.description == definition.description

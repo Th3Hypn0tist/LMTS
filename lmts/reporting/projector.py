@@ -44,6 +44,7 @@ def _test_entity(test_ref: str, run: dict[str, Any]) -> dict[str, Any]:
         'minimum_level': snapshot.get('minimum_level'),
         'mandatory': snapshot.get('mandatory'),
         'telemetry_types': snapshot.get('telemetry_types') or [],
+        'taxonomy': snapshot.get('taxonomy'),
         'configuration': configuration,
     }
     return {

@@ -216,12 +216,13 @@ class RegistrySplitCursesViewHost(SplitCursesViewHost):
             raise ValueError("tab scope is required")
         current = scopes[0]
         mapping = {
-            "profile": "Profile",
+            "profile": "Benchmark",
             "benchmark": "Benchmark",
             "deep": "Benchmark",
             "cw_bench": "Benchmark",
             "downloader": "Model Downloader",
             "settings": "Settings",
+            "user": "Settings",
         }
         try:
             return mapping[current]

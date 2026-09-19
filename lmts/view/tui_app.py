@@ -84,9 +84,7 @@ class TUIApplication:
             self.state.events.publish('ui.message', controller.state.message, source='cw_bench')
 
         bindings = {
-            'tab.user': lambda _: navigation.open_tab('user'),
             'tab.benchmark': lambda _: navigation.open_tab('benchmark'),
-            'tab.profile': lambda _: navigation.open_tab('profile'),
             'tab.downloader': lambda _: navigation.open_tab('downloader'),
             'tab.settings': lambda _: navigation.open_tab('settings'),
             'nav.back': navigation.back,

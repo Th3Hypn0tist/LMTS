@@ -8,23 +8,21 @@ from lmts.lib.view import ShortcutDefinition, ShortcutRegistry, TabDefinition, T
 TAB_REGISTRY = TabRegistry(
     [
         TabDefinition("root", "AIGM LMTS", parent=None, order=0),
-        TabDefinition("user", "User", parent="root", shortcut="0", order=0),
         TabDefinition("benchmark", "Benchmark", parent="root", shortcut="1", order=10),
         TabDefinition("deep", "Deep", parent="benchmark", order=11),
         TabDefinition("cw_bench", "CW Bench", parent="deep", order=12),
-        TabDefinition("downloader", "Model Downloader", parent="root", shortcut="3", order=30),
-        TabDefinition("settings", "Settings", parent="root", shortcut="4", order=40),
-        TabDefinition("profile", "Profiling", parent="root", shortcut="9", order=90),
+        TabDefinition("profile", "Profiling", parent="benchmark", order=19),
+        TabDefinition("downloader", "Model Downloader", parent="root", shortcut="2", order=20),
+        TabDefinition("settings", "Settings", parent="root", shortcut="0", order=90),
+        TabDefinition("user", "User", parent="settings", order=91),
     ]
 )
 
 
 DEFAULT_SHORTCUTS = (
-    ShortcutDefinition("tab.user", ("0",), "User", "Tabs", order=0),
     ShortcutDefinition("tab.benchmark", ("1",), "Benchmark", "Tabs", order=10),
-    ShortcutDefinition("tab.downloader", ("3",), "Model Downloader", "Tabs", order=30),
-    ShortcutDefinition("tab.settings", ("4",), "Settings", "Tabs", order=40),
-    ShortcutDefinition("tab.profile", ("9",), "Profiling", "Tabs", order=90),
+    ShortcutDefinition("tab.downloader", ("2",), "Model Downloader", "Tabs", order=20),
+    ShortcutDefinition("tab.settings", ("0",), "Settings", "Tabs", order=90),
     ShortcutDefinition("nav.back", ("esc",), "Back", "Navigation", order=900),
     ShortcutDefinition("scroll.up", ("up",), "Scroll up", "Navigation", order=910),
     ShortcutDefinition("scroll.down", ("down",), "Scroll down", "Navigation", order=920),

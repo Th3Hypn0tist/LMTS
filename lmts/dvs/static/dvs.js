@@ -422,24 +422,48 @@ async function main() {
       option(databaseReport, String(index), databaseReportLabel(state.databaseReports[index]));
     }
     if (state.databaseReports.length) {
-      databaseReport.value = '0';
-      databaseMessage.textContent = `${state.databaseReports.length} report(s) from ${sourceIds.length} report source(s).`;
+      for (const item of [...databaseReport.options].slice(0, Math.min(10, databaseReport.options.length))) {
+        item.selected = true;
+      }
+      databaseMessage.textContent = `${state.databaseReports.length} report(s) from ${sourceIds.length} report source(s). First ${Math.min(10, state.databaseReports.length)} selected.`;
     } else {
       databaseMessage.textContent = `0 reports from ${sourceIds.length} selected database source(s).`;
     }
   }
 
+  function selectedDatabaseReports() {
+    return [...databaseReport.selectedOptions].map(item => {
+      const selected = state.databaseReports[Number(item.value)];
+      if (!selected) throw new Error('Report selection is out of sync with the report list');
+      return selected;
+    });
+  }
+
   async function loadSelectedDatabaseReport() {
-    const index = Number(databaseReport.value);
-    const selected = state.databaseReports[index];
-    if (!selected) throw new Error('Select a report');
-    const payload = await postJson('/api/report-source-report', {
-      source_id: selected.report_source_id,
-      report_id: selected.report_id,
+    const selected = selectedDatabaseReports();
+    if (!selected.length) throw new Error('Select at least one report');
+    const payload = await postJson('/api/report-source-dataset', {
+      reports: selected.map(item => ({
+        source_id: item.report_source_id,
+        report_id: item.report_id,
+      })),
     });
     document.querySelector('#source').value = JSON.stringify(payload.source, null, 2);
-    databaseMessage.textContent = `Loaded ${selected.report_id} from ${selected.report_source_label || selected.report_source_id}.`;
-    setStatus('Report loaded into Source JSON', 'ready');
+
+    const telemetryTemplate = 'lmts.report-telemetry-percent.v1.0';
+    if (state.templates.some(item => item.id === telemetryTemplate)) {
+      templateSelect.value = telemetryTemplate;
+      populatePresets(templateSelect.value, state.templates, state.presets);
+      const telemetryPreset = 'lmts.report-telemetry-percent.landscape.v1';
+      const presetSelect = document.querySelector('#preset');
+      if ([...presetSelect.options].some(item => item.value === telemetryPreset)) {
+        presetSelect.value = telemetryPreset;
+      }
+    }
+
+    databaseMessage.textContent =
+      `Loaded ${payload.source.report_count} report(s), ${payload.source.record_count} result record(s), ${payload.source.row_count} percent telemetry row(s).`;
+    setStatus('Multi-report telemetry dataset loaded into Source JSON', 'ready');
   }
 
   function refreshScaleFields() {

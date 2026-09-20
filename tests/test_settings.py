@@ -1,5 +1,5 @@
 from pathlib import Path
-from lmts.core.settings import DEFAULT_OUTPUT_FOLDER, DVSSettings, LMTSSettings, MySQLSettings, PHPAPISettings, load_settings, save_settings
+from lmts.core.settings import DEFAULT_OUTPUT_FOLDER, LMTSSettings, MySQLSettings, PHPAPISettings, load_settings, save_settings
 
 def test_missing_settings_use_defaults(tmp_path: Path) -> None:
     settings = load_settings(tmp_path / 'missing.json')
@@ -25,13 +25,12 @@ def test_settings_round_trip_multiple_connections_and_auto_publish(tmp_path: Pat
     save_settings(saved, path)
     assert load_settings(path) == saved
 
-def test_schema_v3_legacy_dvs_default_migrates_to_all_interfaces(tmp_path: Path) -> None:
+def test_schema_v6_migrates_without_dvs_runtime_configuration(tmp_path: Path) -> None:
     path = tmp_path / 'settings.json'
-    path.write_text('{"schema_version":3,"output_folder":"exports","mysql":{},"dvs":{"host":"127.0.0.1","port":8775,"s3d_root":"../S3D","studio_root":".lmts/dvs"}}', encoding='utf-8')
+    path.write_text('{"schema_version":6,"output_folder":"exports","mysql_connections":[{"id":"local","label":"Local","host":"db","database":"lmts","username":"u","password":"p","publish_key":"k"}],"php_api_connections":[],"auto_publish_targets":[],"dvs":{"host":"127.0.0.1","port":8775}}', encoding='utf-8')
     settings = load_settings(path)
-    assert settings.schema_version == 6
-    assert settings.dvs == DVSSettings()
-    assert settings.dvs.host == '0.0.0.0'
+    assert settings.schema_version == 7
+    assert not hasattr(settings, 'dvs')
 
 def test_schema_v5_migrates_destination_owned_outputs(tmp_path: Path) -> None:
     path = tmp_path / 'settings.json'

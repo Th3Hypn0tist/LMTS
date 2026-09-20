@@ -19,7 +19,6 @@ class TUIState:
     cw_bench_page: CWBenchPage
     settings: LMTSSettings
     settings_service: SettingsService
-    dvs_service_state: Any
     shortcut_overrides: dict[str, tuple[str, ...]]
     shortcuts: Any
     events: UIEventBus

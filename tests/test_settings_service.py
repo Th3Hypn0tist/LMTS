@@ -15,7 +15,6 @@ def test_settings_service_owns_unique_stores_under_one_root(tmp_path: Path) -> N
         'core',
         'shortcuts',
         'runtime_targets',
-        'dvs_database_sources',
         'ftp_profiles',
         'report_profiles',
     ]

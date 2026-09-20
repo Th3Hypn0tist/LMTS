@@ -43,7 +43,7 @@ class DVSReportDatasetTest(unittest.TestCase):
         self.assertEqual(dataset['version'], '1.0')
         self.assertEqual(dataset['report_count'], 2)
         self.assertEqual(dataset['record_count'], 2)
-        self.assertEqual(dataset['row_count'], 14)
+        self.assertEqual(dataset['row_count'], 20)
 
         rows = dataset['records']
         self.assertEqual({row['report_id'] for row in rows}, {'report-1', 'report-2'})

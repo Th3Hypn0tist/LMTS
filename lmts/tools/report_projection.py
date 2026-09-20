@@ -182,7 +182,8 @@ INSERT INTO telemetry_values (
   sample_ordinal, observed_at,
   value_number, value_text, value_boolean, value_json,
   unit_snapshot, context_json
-) VALUES (
+)
+SELECT
   {_hex_text(report_id)},
   {_hex_text(record_id)},
   {_hex_text(user_id)},
@@ -199,6 +200,14 @@ INSERT INTO telemetry_values (
   {value_json},
   {_nullable_text(unit)},
   {_hex_text(context)}
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM telemetry_values
+  WHERE report_id = {_hex_text(report_id)}
+    AND record_id = {_hex_text(record_id)}
+    AND telemetry_type_id = {_hex_text(telemetry_type_id)}
+    AND sample_ordinal = {int(sample_ordinal)}
+    AND context_json = {_hex_text(context)}
 )
 """.strip()
 
@@ -342,16 +351,11 @@ def rebuild_report_projection(mysql: MySQLSettings, report: dict[str, Any]) -> N
             if projected is not None:
                 tests[test_ref] = projected
 
-    statements = [
-        'START TRANSACTION',
-        f'DELETE FROM telemetry_values WHERE report_id = {_hex_text(report_id)}',
-        f'DELETE FROM report_record_hardware_index WHERE report_id = {_hex_text(report_id)}',
-        f'DELETE FROM report_record_index WHERE report_id = {_hex_text(report_id)}',
-    ]
+    statements = ['START TRANSACTION']
 
     for test in tests.values():
         statements.append(f"""
-INSERT INTO test_definitions (
+INSERT IGNORE INTO test_definitions (
   test_definition_id, namespace, name, description, category
 ) VALUES (
   {_hex_text(test.test_definition_id)},
@@ -360,10 +364,9 @@ INSERT INTO test_definitions (
   {_nullable_text(test.description)},
   NULL
 )
-ON DUPLICATE KEY UPDATE test_definition_id = test_definition_id
 """.strip())
         statements.append(f"""
-INSERT INTO test_versions (
+INSERT IGNORE INTO test_versions (
   test_version_id, test_definition_id, version, kind,
   definition_json, fingerprint, status
 ) VALUES (
@@ -375,11 +378,10 @@ INSERT INTO test_versions (
   {_hex_text(test.fingerprint)},
   'candidate'
 )
-ON DUPLICATE KEY UPDATE test_version_id = test_version_id
 """.strip())
         for ordinal, telemetry_type in enumerate(test.telemetry_types):
             statements.append(f"""
-INSERT INTO test_version_telemetry_types (
+INSERT IGNORE INTO test_version_telemetry_types (
   test_version_id, telemetry_type_id, required, ordinal
 ) VALUES (
   {_hex_text(test.test_version_id)},
@@ -387,7 +389,6 @@ INSERT INTO test_version_telemetry_types (
   FALSE,
   {ordinal}
 )
-ON DUPLICATE KEY UPDATE ordinal = VALUES(ordinal)
 """.strip())
 
     for record in records:
@@ -416,7 +417,7 @@ ON DUPLICATE KEY UPDATE ordinal = VALUES(ordinal)
         runtime_json = None if runtime_configuration is None else _canonical_json(runtime_configuration)
         duration = _duration_ms(timing.get('started_at'), timing.get('completed_at'))
         statements.append(f"""
-INSERT INTO report_record_index (
+INSERT IGNORE INTO report_record_index (
   report_id, record_id, tester_user_id, target_kind,
   test_version_id, system_id, compute_profile_id,
   started_at, completed_at, duration_ms, ttft_ms,

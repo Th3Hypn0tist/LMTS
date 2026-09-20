@@ -190,17 +190,12 @@ class TUIRenderer:
         settings = self.state.settings
         ftp_count = len(load_ftp_profiles().profiles)
         runtime_count = len(load_runtime_targets())
-        dvs = self.state.dvs_service_state
-        dvs_s3d = 'ready' if dvs.s3d_ready else ('not ready' if dvs.s3d_configured else 'not configured')
         return (
             'Application, server and connection settings.', '',
             f'Output folder    : {settings.output_folder}',
             f'MySQL outputs    : {len(settings.mysql_connections)}',
             f'PHP API outputs  : {len(settings.php_api_connections)}',
             f'Auto-publish     : {len(settings.auto_publish_targets)} selected',
-            f'DVS status       : {dvs.state.upper()}',
-            f'DVS endpoint     : {settings.dvs.host}:{settings.dvs.port}',
-            f'DVS S3D          : {dvs_s3d}',
             f'FTP profiles     : {ftp_count}',
             f'Runtime targets  : {runtime_count}',
             f'Shortcuts        : {len(self.state.shortcut_overrides)} custom binding(s)',

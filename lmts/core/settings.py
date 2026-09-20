@@ -8,7 +8,7 @@ from pathlib import Path
 from .paths import SETTINGS_PATH
 
 
-SETTINGS_SCHEMA_VERSION = 6
+SETTINGS_SCHEMA_VERSION = 7
 DEFAULT_SETTINGS_PATH = SETTINGS_PATH
 DEFAULT_OUTPUT_FOLDER = 'exports'
 
@@ -75,21 +75,6 @@ class PHPAPISettings:
         return f"{self.base_url.rstrip('/')}/api/reports.php"
 
 
-@dataclass(frozen=True, slots=True)
-class DVSSettings:
-    host: str = '0.0.0.0'
-    port: int = 8775
-    s3d_root: str = '../S3D'
-    studio_root: str = '.lmts/dvs'
-
-    def __post_init__(self) -> None:
-        if not str(self.host).strip():
-            raise ValueError('DVS host must not be empty')
-        if isinstance(self.port, bool) or not isinstance(self.port, int) or not 1 <= self.port <= 65535:
-            raise ValueError('DVS port must be an integer between 1 and 65535')
-        if not str(self.studio_root).strip():
-            raise ValueError('DVS Studio root must not be empty')
-
 
 def mysql_target_id(connection_id: str) -> str:
     return f'mysql:{connection_id}'
@@ -106,7 +91,6 @@ class LMTSSettings:
     mysql_connections: tuple[MySQLSettings, ...] = field(default_factory=lambda: (MySQLSettings(),))
     php_api_connections: tuple[PHPAPISettings, ...] = ()
     auto_publish_targets: tuple[str, ...] = ()
-    dvs: DVSSettings = field(default_factory=DVSSettings)
 
     def __post_init__(self) -> None:
         if not self.mysql_connections:
@@ -199,33 +183,6 @@ def _php_connections_from_payload(value: object) -> tuple[PHPAPISettings, ...]:
     )
 
 
-def _dvs_from_payload(value: object) -> DVSSettings:
-    if value is None:
-        return DVSSettings()
-    if not isinstance(value, dict):
-        raise ValueError('settings.dvs must be an object')
-    port = value.get('port', 8775)
-    if isinstance(port, bool):
-        raise ValueError('DVS port must be an integer')
-    try:
-        parsed_port = int(port)
-    except (TypeError, ValueError) as exc:
-        raise ValueError('DVS port must be an integer') from exc
-    return DVSSettings(
-        host=str(value.get('host') or '0.0.0.0').strip(),
-        port=parsed_port,
-        s3d_root=str(value.get('s3d_root') if value.get('s3d_root') is not None else '../S3D').strip(),
-        studio_root=str(value.get('studio_root') or '.lmts/dvs').strip(),
-    )
-
-
-def _dvs_from_v3_payload(value: object) -> DVSSettings:
-    settings = _dvs_from_payload(value)
-    if settings == DVSSettings(host='127.0.0.1', port=8775, s3d_root='../S3D', studio_root='.lmts/dvs'):
-        return DVSSettings()
-    return settings
-
-
 def _migrate_v5(payload: dict[str, object]) -> LMTSSettings:
     mysql = _mysql_from_payload(payload.get('mysql'))
     api_connections: list[PHPAPISettings] = []
@@ -249,7 +206,6 @@ def _migrate_v5(payload: dict[str, object]) -> LMTSSettings:
         mysql_connections=(mysql,),
         php_api_connections=tuple(api_connections),
         auto_publish_targets=auto,
-        dvs=_dvs_from_payload(payload.get('dvs')),
     )
 
 
@@ -269,14 +225,17 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
     schema_version = payload.get('schema_version')
     if schema_version == 1:
         return LMTSSettings(output_folder=_normalise_output_folder(payload.get('output_folder')))
-    if schema_version == 2:
-        return LMTSSettings(output_folder=_normalise_output_folder(payload.get('output_folder')), mysql_connections=(_mysql_from_payload(payload.get('mysql')),), dvs=DVSSettings())
-    if schema_version == 3:
-        return LMTSSettings(output_folder=_normalise_output_folder(payload.get('output_folder')), mysql_connections=(_mysql_from_payload(payload.get('mysql')),), dvs=_dvs_from_v3_payload(payload.get('dvs')))
-    if schema_version == 4:
-        return LMTSSettings(output_folder=_normalise_output_folder(payload.get('output_folder')), mysql_connections=(_mysql_from_payload(payload.get('mysql')),), dvs=_dvs_from_payload(payload.get('dvs')))
+    if schema_version in {2, 3, 4}:
+        return LMTSSettings(output_folder=_normalise_output_folder(payload.get('output_folder')), mysql_connections=(_mysql_from_payload(payload.get('mysql')),))
     if schema_version == 5:
         return _migrate_v5(payload)
+    if schema_version == 6:
+        return LMTSSettings(
+            output_folder=_normalise_output_folder(payload.get('output_folder')),
+            mysql_connections=_mysql_connections_from_payload(payload.get('mysql_connections')),
+            php_api_connections=_php_connections_from_payload(payload.get('php_api_connections')),
+            auto_publish_targets=tuple(str(item).strip() for item in (payload.get('auto_publish_targets') or []) if str(item).strip()),
+        )
     if schema_version != SETTINGS_SCHEMA_VERSION:
         raise ValueError(f'unsupported LMTS settings schema: {schema_version!r}')
 
@@ -292,7 +251,6 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
         mysql_connections=_mysql_connections_from_payload(payload.get('mysql_connections')),
         php_api_connections=_php_connections_from_payload(payload.get('php_api_connections')),
         auto_publish_targets=auto_publish_targets,
-        dvs=_dvs_from_payload(payload.get('dvs')),
     )
 
 

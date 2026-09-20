@@ -12,11 +12,12 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from lmts.core.paths import DVS_SERVICE_LOG_PATH, DVS_SERVICE_STATE_PATH
 from lmts.core.settings import DVSSettings
 
 
-DEFAULT_STATE_PATH = Path('.lmts/dvs-service.json')
-DEFAULT_LOG_PATH = Path('.lmts/dvs-service.log')
+DEFAULT_STATE_PATH = DVS_SERVICE_STATE_PATH
+DEFAULT_LOG_PATH = DVS_SERVICE_LOG_PATH
 STARTUP_GRACE_SECONDS = 5.0
 DVS_SOURCE_ROOT = Path(__file__).resolve().parents[2]
 REQUIRED_DVS_API_FEATURES = {
@@ -24,6 +25,7 @@ REQUIRED_DVS_API_FEATURES = {
     'report_source_statuses',
     'report_source_reports',
     'report_source_report',
+    'report_source_dataset',
 }
 
 

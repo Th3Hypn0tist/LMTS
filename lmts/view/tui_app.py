@@ -6,7 +6,6 @@ from lmts.cli import default_provider_registry
 from lmts.lib.view import UIEventBus
 from lmts.services.settings import SettingsService
 from lmts.tests.catalog import default_test_matrix, default_test_type_registry
-from lmts.tools.dvs_service import dvs_status
 
 from .actions.benchmark import BenchmarkActions
 from .actions.navigation import NavigationActions
@@ -43,7 +42,6 @@ class TUIApplication:
             cw_bench_page=CWBenchPage(controller),
             settings=settings,
             settings_service=settings_service,
-            dvs_service_state=dvs_status(settings.dvs),
             shortcut_overrides=shortcut_overrides,
             shortcuts=shortcuts,
             events=events,
@@ -129,7 +127,6 @@ class TUIApplication:
             'settings.user': lambda _: navigation.open_tab('user'),
             'settings.output': settings.edit_output_folder,
             'settings.report_output': settings.report_output_settings,
-            'settings.dvs': settings.edit_dvs,
             'settings.targets': settings.runtime_target_settings,
             'settings.shortcuts': settings.shortcut_editor,
         }

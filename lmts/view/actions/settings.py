@@ -9,7 +9,6 @@ from lmts.tools.mysql_schema import install_mysql_schema
 from lmts.tools.report_targets import configured_report_targets
 
 from ..dialogs.server_setup import manage_server_setup
-from ..dvs_settings_dialog import manage_dvs
 from ..output_dialog import manage_ftp_profiles
 from ..registries import build_shortcut_registry
 from ..runtime_target_dialog import manage_runtime_targets
@@ -217,14 +216,6 @@ class SettingsActions(TUIActions):
         self.state.settings = replace(self.state.settings, auto_publish_targets=auto_publish_targets)
         self._save_core()
         self.set_message(f'auto-publish outputs: {len(auto_publish_targets)}')
-
-    def edit_dvs(self, _stdscr) -> None:
-        updated, status, message = manage_dvs(self.host, self.stdscr, self.state.settings.dvs)
-        if updated != self.state.settings.dvs:
-            self.state.settings = replace(self.state.settings, dvs=updated)
-            self._save_core()
-        self.state.dvs_service_state = status
-        self.set_message(message or f'DVS status: {status.state}')
 
     def ftp_settings(self, _stdscr) -> None:
         manage_ftp_profiles(self.host, self.stdscr, store_path=self.settings_service.path('ftp_profiles'))

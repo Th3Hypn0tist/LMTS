@@ -48,18 +48,17 @@ class SystemRepository:
         query = f"""
 INSERT INTO systems (
   system_id, user_id, label, system_class, probe_version, last_probed_at
-) VALUES (
+)
+SELECT
   {_hex_text(system_id)},
   {_hex_text(user_id)},
   {_hex_text(resolved_label)},
   'local',
   {_hex_text(probe_version)},
   CURRENT_TIMESTAMP(6)
-)
-ON DUPLICATE KEY UPDATE
-  label = VALUES(label),
-  probe_version = VALUES(probe_version),
-  last_probed_at = CURRENT_TIMESTAMP(6);
+WHERE NOT EXISTS (
+  SELECT 1 FROM systems WHERE system_id = {_hex_text(system_id)}
+);
 SELECT JSON_OBJECT(
   'system_id', system_id,
   'user_id', user_id,

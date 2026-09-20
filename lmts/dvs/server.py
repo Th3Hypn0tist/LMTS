@@ -11,6 +11,7 @@ from typing import Any
 from lmts.core.settings import DEFAULT_SETTINGS_PATH
 
 from .database_sources import database_source_statuses, load_all_dvs_database_sources, load_database_report, list_database_reports
+from .report_dataset import project_percent_telemetry_dataset
 from .report_sources import load_all_dvs_report_sources, load_report_source_report, list_report_source_reports, report_source_statuses
 from .registry import DVSRegistry
 from .runtime import project_visualization
@@ -35,6 +36,7 @@ API_FEATURES = [
     'report_source_statuses',
     'report_source_reports',
     'report_source_report',
+    'report_source_dataset',
 ]
 STATIC_DIR = (PACKAGE_DIR / 'static').resolve()
 HOST = os.environ.get('LMTS_DVS_HOST', '0.0.0.0')
@@ -223,6 +225,31 @@ class Handler(BaseHTTPRequestHandler):
                     'report_id': str(payload['report_id']),
                     'source': load_report_source_report(str(payload['source_id']), str(payload['report_id'])),
                 })
+            if path == '/api/report-source-dataset':
+                payload = self._body()
+                if set(payload) != {'reports'}:
+                    raise ValueError('/api/report-source-dataset requires exactly reports')
+                selections = payload['reports']
+                if not isinstance(selections, list) or not selections:
+                    raise ValueError('reports must be a non-empty array')
+                if len(selections) > 100:
+                    raise ValueError('reports selection must contain at most 100 items')
+                loaded: list[tuple[str, str, dict[str, Any]]] = []
+                seen: set[tuple[str, str]] = set()
+                for index, selection in enumerate(selections):
+                    if not isinstance(selection, dict) or set(selection) != {'source_id', 'report_id'}:
+                        raise ValueError(f'reports[{index}] requires exactly source_id and report_id')
+                    source_id = str(selection['source_id']).strip()
+                    report_id = str(selection['report_id']).strip()
+                    if not source_id or not report_id:
+                        raise ValueError(f'reports[{index}] source_id and report_id must not be empty')
+                    key = (source_id, report_id)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    loaded.append((source_id, report_id, load_report_source_report(source_id, report_id)))
+                dataset = project_percent_telemetry_dataset(loaded)
+                return self._json({'ok': True, 'selected_report_count': len(seen), 'source': dataset})
             if path == '/api/studio/validate/input-template':
                 return self._json({'ok': True, 'input_template': validate_input_template(self._body())})
             if path == '/api/studio/preview/input-template':

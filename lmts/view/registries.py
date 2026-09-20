@@ -64,7 +64,6 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("settings.user", ("u",), "User", "Settings", scope="settings", order=90),
     ShortcutDefinition("settings.output", ("o",), "Output folder", "Settings", scope="settings", order=100),
     ShortcutDefinition("settings.report_output", ("r",), "Report output", "Settings", scope="settings", order=110),
-    ShortcutDefinition("settings.dvs", ("d",), "DVS", "Settings", scope="settings", order=120),
     ShortcutDefinition("settings.targets", ("t",), "Runtime targets", "Settings", scope="settings", order=130),
     ShortcutDefinition("settings.shortcuts", ("k",), "Shortcut editor", "Settings", scope="settings", order=140),
 )

@@ -6,7 +6,7 @@ This directory is the **single source of truth (SSOT)** for LMTS database struct
 
 - `schema_v1.sql` — canonical MariaDB/MySQL schema for LMTS shared data, user-owned data, immutable report storage, and rebuildable report indexes.
 
-Do not introduce new database semantics first in installers, service-local SQL, DVS code, or report-server code. Those are consumers/projections of this schema.
+Do not introduce new database semantics first in installers, service-local SQL, or report-server code. Those are consumers/projections of this schema.
 
 There is no compatibility or legacy database schema. Installers and services must consume this directory's canonical schema directly.
 
@@ -33,7 +33,6 @@ Registered users own:
 - Systems
 - Compute Profiles
 - Compositions
-- private DVS presets
 - invite records they create
 
 Tier-4 is an anonymous Reader state and therefore has no `users` row.
@@ -41,8 +40,8 @@ Tier-4 is an anonymous Reader state and therefore has no `users` row.
 Registered tiers:
 
 - Tier-3 — Registered User
-- Tier-2 — Invite-capable; may create/use private DVS presets
-- Tier-1 — Canonical Authority; may define/maintain canonical data and approve/publish public DVS presets
+- Tier-2 — Invite-capable
+- Tier-1 — Canonical Authority; may define/maintain canonical data
 - Tier-1337 — Test Authority; defines test content and semantics
 
 Higher authority carries higher accountable scope.
@@ -108,7 +107,6 @@ The database follows these rules:
 4. Reports carry immutable execution evidence and canonical references.
 5. Software/runtime state is report-owned historical snapshot data.
 6. Leaderboards, ranks, aggregates and report indexes are derived projections.
-7. Public DVS presets are governed publication records; private presets remain user-owned.
 8. Authentication data is separate from the public tester profile.
 
 ## Probe identity rule

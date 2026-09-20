@@ -690,7 +690,6 @@ function stats_scope(): array {
         'user_id' => 'rri.tester_user_id',
         'system_id' => 'rri.system_id',
         'test_version_id' => 'rri.test_version_id',
-        'outcome' => 'rri.outcome',
         'report_id' => 'rri.report_id',
         'target_kind' => 'rri.target_kind',
     ];
@@ -700,6 +699,14 @@ function stats_scope(): array {
             $conditions[] = $column . ' = ?';
             $params[] = $value;
         }
+    }
+
+    $outcome = stats_param('outcome');
+    if ($outcome === 'unknown') {
+        $conditions[] = "(rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled'))";
+    } elseif ($outcome !== null) {
+        $conditions[] = 'rri.outcome = ?';
+        $params[] = $outcome;
     }
 
     $targetId = stats_param('target_id');

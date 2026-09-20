@@ -1,0 +1,23 @@
+{
+  "format": "s3d.dvs.input-template",
+  "version": "1.0",
+  "id": "lmts.report-telemetry-percent.v1.0",
+  "source_format": "lmts.dvs.report-telemetry-percent/1.0",
+  "reader": "json",
+  "rows": "records[*]",
+  "columns": [
+    {"name": "report_source_id", "selector": "report_source_id", "type": "string"},
+    {"name": "report_id", "selector": "report_id", "type": "string"},
+    {"name": "record_id", "selector": "record_id", "type": "string"},
+    {"name": "run_key", "selector": "run_key", "type": "string"},
+    {"name": "target", "selector": "target", "type": "string"},
+    {"name": "test", "selector": "test", "type": "string"},
+    {"name": "result", "selector": "result", "type": "string"},
+    {"name": "resource", "selector": "resource", "type": "string"},
+    {"name": "metric", "selector": "metric", "type": "string"},
+    {"name": "aggregation", "selector": "aggregation", "type": "string"},
+    {"name": "metric_key", "selector": "metric_key", "type": "string"},
+    {"name": "value", "selector": "value", "type": "number"},
+    {"name": "unit", "selector": "unit", "type": "string"}
+  ]
+}

@@ -8,10 +8,10 @@
 -- This is a forward-only development convergence script. It does not drop data.
 -- /schema/schema_v1.sql remains the database SSOT for fresh databases.
 
-ALTER TABLE test_definitions
+ALTER TABLE LMTS_test_definitions
     ADD COLUMN IF NOT EXISTS description TEXT NULL AFTER name;
 
-CREATE TABLE IF NOT EXISTS telemetry_types (
+CREATE TABLE IF NOT EXISTS LMTS_telemetry_types (
     telemetry_type_id  VARCHAR(128) NOT NULL,
     canonical_key      VARCHAR(255) NOT NULL,
     name               VARCHAR(255) NOT NULL,
@@ -26,14 +26,14 @@ CREATE TABLE IF NOT EXISTS telemetry_types (
     UNIQUE KEY uq_telemetry_types_key (canonical_key),
     KEY idx_telemetry_types_replacement (replacement_id),
     CONSTRAINT fk_telemetry_types_replacement
-        FOREIGN KEY (replacement_id) REFERENCES telemetry_types(telemetry_type_id)
+        FOREIGN KEY (replacement_id) REFERENCES LMTS_telemetry_types(telemetry_type_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_telemetry_types_definition CHECK (
         definition_json IS NULL OR JSON_VALID(definition_json)
     )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS test_version_telemetry_types (
+CREATE TABLE IF NOT EXISTS LMTS_test_version_telemetry_types (
     test_version_id     VARCHAR(128) NOT NULL,
     telemetry_type_id   VARCHAR(128) NOT NULL,
     required            BOOLEAN NOT NULL DEFAULT TRUE,
@@ -42,17 +42,17 @@ CREATE TABLE IF NOT EXISTS test_version_telemetry_types (
     PRIMARY KEY (test_version_id, telemetry_type_id),
     KEY idx_test_version_telemetry_type (telemetry_type_id),
     CONSTRAINT fk_test_version_telemetry_test
-        FOREIGN KEY (test_version_id) REFERENCES test_versions(test_version_id)
+        FOREIGN KEY (test_version_id) REFERENCES LMTS_test_versions(test_version_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_test_version_telemetry_type
-        FOREIGN KEY (telemetry_type_id) REFERENCES telemetry_types(telemetry_type_id)
+        FOREIGN KEY (telemetry_type_id) REFERENCES LMTS_telemetry_types(telemetry_type_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_test_version_telemetry_config CHECK (
         configuration_json IS NULL OR JSON_VALID(configuration_json)
     )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS telemetry_values (
+CREATE TABLE IF NOT EXISTS LMTS_telemetry_values (
     telemetry_value_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     report_id           VARCHAR(128) NOT NULL,
     record_id           VARCHAR(128) NOT NULL,
@@ -82,28 +82,28 @@ CREATE TABLE IF NOT EXISTS telemetry_values (
     KEY idx_telemetry_resource (system_resource_id),
     CONSTRAINT fk_telemetry_record
         FOREIGN KEY (report_id, record_id)
-        REFERENCES report_record_index(report_id, record_id)
+        REFERENCES LMTS_report_record_index(report_id, record_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_system
-        FOREIGN KEY (system_id) REFERENCES systems(system_id)
+        FOREIGN KEY (system_id) REFERENCES LMTS_systems(system_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_compute_profile
-        FOREIGN KEY (compute_profile_id) REFERENCES compute_profiles(compute_profile_id)
+        FOREIGN KEY (compute_profile_id) REFERENCES LMTS_compute_profiles(compute_profile_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_system_resource
-        FOREIGN KEY (system_resource_id) REFERENCES system_resources(system_resource_id)
+        FOREIGN KEY (system_resource_id) REFERENCES LMTS_system_resources(system_resource_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_test_definition
-        FOREIGN KEY (test_definition_id) REFERENCES test_definitions(test_definition_id)
+        FOREIGN KEY (test_definition_id) REFERENCES LMTS_test_definitions(test_definition_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_test_version
-        FOREIGN KEY (test_version_id) REFERENCES test_versions(test_version_id)
+        FOREIGN KEY (test_version_id) REFERENCES LMTS_test_versions(test_version_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_type
-        FOREIGN KEY (telemetry_type_id) REFERENCES telemetry_types(telemetry_type_id)
+        FOREIGN KEY (telemetry_type_id) REFERENCES LMTS_telemetry_types(telemetry_type_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_telemetry_value_json CHECK (
         value_json IS NULL OR JSON_VALID(value_json)
@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS telemetry_values (
 
 -- Current canonical telemetry vocabulary. New telemetry is added by inserting
 -- rows here; adding a telemetry type must not require a schema change.
-INSERT INTO telemetry_types (
+INSERT INTO LMTS_telemetry_types (
     telemetry_type_id, canonical_key, name, description, value_kind, unit
 ) VALUES
     ('input_tokens', 'input_tokens', 'Input tokens', 'Input token count for the executed record.', 'integer', 'tokens'),

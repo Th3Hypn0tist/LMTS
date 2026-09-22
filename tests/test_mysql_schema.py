@@ -14,9 +14,9 @@ def test_schema_path_points_to_canonical_ssot() -> None:
 
 def test_schema_file_contains_canonical_database_tables() -> None:
     text = mysql_schema.SCHEMA_PATH.read_text(encoding='utf-8')
-    assert 'CREATE TABLE IF NOT EXISTS lmts_schema_version' in text
-    assert 'CREATE TABLE IF NOT EXISTS users' in text
-    assert 'CREATE TABLE IF NOT EXISTS reports' in text
+    assert 'CREATE TABLE IF NOT EXISTS LMTS_schema_version' in text
+    assert 'CREATE TABLE IF NOT EXISTS IAM_users' in text
+    assert 'CREATE TABLE IF NOT EXISTS LMTS_reports' in text
     assert "VALUES ('database_ssot', 1)" in text
 
 

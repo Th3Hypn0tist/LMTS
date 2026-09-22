@@ -1,27 +1,27 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import os
-import secrets
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-from lmts.core.paths import AUTH_SESSION_PATH, AUTH_SESSION_SECRET_PATH
-from lmts.repositories.user import UserRecord, UserRepository
+from lmts.core.paths import AUTH_SESSION_PATH
 
 
-SCRYPT_N = 1 << 14
-SCRYPT_R = 8
-SCRYPT_P = 1
-SCRYPT_DKLEN = 32
+IAM_BASE_URL = 'https://aigm.fi/iam'
+IAM_CONTRACT = 'iam.light'
+IAM_VERSION = '1.0'
 SESSION_SCHEMA_VERSION = 1
+DEFAULT_TIMEOUT_SECONDS = 15
 
 
 class AuthenticationError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,132 +37,213 @@ def is_origin(user_id: str) -> bool:
     return str(user_id) == '0'
 
 
-def _password_bytes(password: str) -> bytes:
-    if not isinstance(password, str):
-        raise TypeError('password must be a string')
-    if len(password) < 8:
-        raise ValueError('password must be at least 8 characters')
-    if len(password) > 1024:
-        raise ValueError('password is too long')
-    return password.encode('utf-8')
-
-
-def hash_password(password: str) -> str:
-    raw = _password_bytes(password)
-    salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(raw, salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, dklen=SCRYPT_DKLEN)
-    return 'scrypt$' + str(SCRYPT_N) + '$' + str(SCRYPT_R) + '$' + str(SCRYPT_P) + '$' + salt.hex() + '$' + digest.hex()
-
-
-def verify_password(password: str, encoded: str) -> bool:
-    try:
-        scheme, n, r, p, salt_hex, digest_hex = encoded.split('$', 5)
-        if scheme != 'scrypt':
-            return False
-        salt = bytes.fromhex(salt_hex)
-        expected = bytes.fromhex(digest_hex)
-        actual = hashlib.scrypt(
-            password.encode('utf-8'),
-            salt=salt,
-            n=int(n),
-            r=int(r),
-            p=int(p),
-            dklen=len(expected),
-        )
-    except (TypeError, ValueError):
-        return False
-    return hmac.compare_digest(actual, expected)
-
-
-def _identity(user: UserRecord) -> UserIdentity:
-    return UserIdentity(
-        user_id=user.user_id,
-        username=user.username,
-        tier=user.tier,
-        verified=user.verified,
-        status=user.status,
-    )
-
-
 @dataclass(frozen=True, slots=True)
-class AuthSession:
-    connection_id: str
-    user_id: str
+class IAMSession:
+    token: str
+    expires_at: str
+    identity: UserIdentity
 
 
-class LocalAuthSessionStore:
-    """Signed local session adapter for the LMTS desktop/TUI surface."""
+Transport = Callable[[str, str, dict[str, object] | None, str | None], dict[str, object]]
+
+
+class IAMHTTPClient:
+    """Dependency-free client for the fixed iam.light HTTP boundary."""
 
     def __init__(
         self,
-        path: Path = AUTH_SESSION_PATH,
-        secret_path: Path = AUTH_SESSION_SECRET_PATH,
+        base_url: str = IAM_BASE_URL,
+        *,
+        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        transport: Transport | None = None,
     ) -> None:
-        self.path = path
-        self.secret_path = secret_path
+        normalized = base_url.rstrip('/')
+        if normalized != IAM_BASE_URL:
+            raise ValueError(f'IAM base URL is fixed to {IAM_BASE_URL}')
+        if timeout_seconds <= 0:
+            raise ValueError('IAM timeout must be positive')
+        self.base_url = normalized
+        self.timeout_seconds = int(timeout_seconds)
+        self._transport = transport
 
-    def _secret(self) -> bytes:
-        if self.secret_path.exists():
-            raw = self.secret_path.read_text(encoding='ascii').strip()
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        *,
+        token: str | None = None,
+    ) -> dict[str, object]:
+        if self._transport is not None:
+            response = self._transport(method, self.base_url + path, payload, token)
+            if not isinstance(response, dict):
+                raise AuthenticationError('IAM returned an invalid response')
+            return self._validate_response(response)
+
+        body = None
+        headers = {
+            'Accept': 'application/json',
+            'User-Agent': 'LMTS/iam.light',
+        }
+        if payload is not None:
+            body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+            headers['Content-Type'] = 'application/json'
+        if token is not None:
+            headers['Authorization'] = f'Bearer {token}'
+
+        request = Request(
+            self.base_url + path,
+            data=body,
+            headers=headers,
+            method=method,
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds) as response:
+                raw = response.read()
+        except HTTPError as exc:
             try:
-                value = bytes.fromhex(raw)
-            except ValueError as exc:
-                raise AuthenticationError('local auth session secret is invalid') from exc
-            if len(value) != 32:
-                raise AuthenticationError('local auth session secret has invalid length')
-            return value
-        self.secret_path.parent.mkdir(parents=True, exist_ok=True)
-        value = secrets.token_bytes(32)
-        temp = self.secret_path.with_name(self.secret_path.name + '.tmp')
-        temp.write_text(value.hex(), encoding='ascii')
-        os.chmod(temp, 0o600)
-        temp.replace(self.secret_path)
-        os.chmod(self.secret_path, 0o600)
-        return value
+                error_payload = json.loads(exc.read().decode('utf-8'))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                error_payload = {}
+            message = (
+                str(error_payload.get('error') or '').strip()
+                if isinstance(error_payload, dict)
+                else ''
+            )
+            raise AuthenticationError(
+                message or f'IAM request failed with HTTP {exc.code}',
+                status=int(exc.code),
+            ) from None
+        except (URLError, TimeoutError, OSError) as exc:
+            raise AuthenticationError(f'IAM is unreachable: {exc}') from None
+
+        try:
+            decoded = json.loads(raw.decode('utf-8'))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise AuthenticationError('IAM returned invalid JSON') from None
+        if not isinstance(decoded, dict):
+            raise AuthenticationError('IAM returned an invalid response')
+        return self._validate_response(decoded)
 
     @staticmethod
-    def _message(connection_id: str, user_id: str) -> bytes:
-        return (connection_id + '\0' + user_id).encode('utf-8')
+    def _validate_response(payload: dict[str, object]) -> dict[str, object]:
+        if payload.get('ok') is not True:
+            raise AuthenticationError(str(payload.get('error') or 'IAM request failed'))
+        if payload.get('contract') != IAM_CONTRACT:
+            raise AuthenticationError('IAM contract mismatch')
+        if payload.get('version') != IAM_VERSION:
+            raise AuthenticationError('IAM version mismatch')
+        return payload
 
-    def save(self, session: AuthSession) -> None:
-        signature = hmac.new(
-            self._secret(),
-            self._message(session.connection_id, session.user_id),
-            hashlib.sha256,
-        ).hexdigest()
+    @staticmethod
+    def _identity(payload: dict[str, object]) -> UserIdentity:
+        user = payload.get('user')
+        claims = payload.get('claims')
+        if not isinstance(user, dict) or not isinstance(claims, dict):
+            raise AuthenticationError('IAM identity payload is incomplete')
+        try:
+            user_id = str(user['id'])
+            username = str(user['username'])
+            tier = int(claims['tier'])
+            status = str(user['status'])
+            verified = bool(user['verified'])
+        except (KeyError, TypeError, ValueError):
+            raise AuthenticationError('IAM identity payload is invalid') from None
+        if not user_id or not username:
+            raise AuthenticationError('IAM identity payload is invalid')
+        return UserIdentity(
+            user_id=user_id,
+            username=username,
+            tier=tier,
+            verified=verified,
+            status=status,
+        )
+
+    def login(self, username: str, password: str) -> IAMSession:
+        payload = self._request(
+            'POST',
+            '/api/login.php',
+            {'username': username, 'password': password},
+        )
+        return self._session(payload)
+
+    def register(
+        self,
+        invite_code: str,
+        username: str,
+        password: str,
+        *,
+        email: str | None = None,
+    ) -> IAMSession:
+        request_payload: dict[str, object] = {
+            'invite_code': invite_code,
+            'username': username,
+            'password': password,
+        }
+        if email:
+            request_payload['email'] = email
+        payload = self._request('POST', '/api/register.php', request_payload)
+        return self._session(payload)
+
+    def me(self, token: str) -> UserIdentity:
+        return self._identity(self._request('GET', '/api/me.php', token=token))
+
+    def logout(self, token: str) -> None:
+        self._request('POST', '/api/logout.php', token=token)
+
+    def _session(self, payload: dict[str, object]) -> IAMSession:
+        token = str(payload.get('token') or '')
+        expires_at = str(payload.get('expires_at') or '')
+        if not token or not expires_at:
+            raise AuthenticationError('IAM session payload is incomplete')
+        return IAMSession(
+            token=token,
+            expires_at=expires_at,
+            identity=self._identity(payload),
+        )
+
+
+class IAMTokenStore:
+    """Private local storage for the opaque IAM bearer token."""
+
+    def __init__(self, path: Path = AUTH_SESSION_PATH) -> None:
+        self.path = path
+
+    def save(self, session: IAMSession) -> None:
         payload = {
             'schema_version': SESSION_SCHEMA_VERSION,
-            'connection_id': session.connection_id,
-            'user_id': session.user_id,
-            'signature': signature,
+            'base_url': IAM_BASE_URL,
+            'token': session.token,
+            'expires_at': session.expires_at,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_name(self.path.name + '.tmp')
-        temp.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding='utf-8')
+        temp.write_text(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            encoding='utf-8',
+        )
         os.chmod(temp, 0o600)
         temp.replace(self.path)
         os.chmod(self.path, 0o600)
 
-    def load(self) -> AuthSession | None:
+    def load(self) -> tuple[str, str] | None:
         if not self.path.exists():
             return None
         try:
             payload = json.loads(self.path.read_text(encoding='utf-8'))
         except (OSError, json.JSONDecodeError) as exc:
-            raise AuthenticationError('local auth session is invalid') from exc
-        if not isinstance(payload, dict) or payload.get('schema_version') != SESSION_SCHEMA_VERSION:
-            raise AuthenticationError('local auth session schema is invalid')
-        connection_id = str(payload.get('connection_id') or '')
-        user_id = str(payload.get('user_id') or '')
-        signature = str(payload.get('signature') or '')
-        expected = hmac.new(
-            self._secret(),
-            self._message(connection_id, user_id),
-            hashlib.sha256,
-        ).hexdigest()
-        if not connection_id or not user_id or not hmac.compare_digest(signature, expected):
-            raise AuthenticationError('local auth session signature is invalid')
-        return AuthSession(connection_id=connection_id, user_id=user_id)
+            raise AuthenticationError('local IAM session is invalid') from exc
+        if not isinstance(payload, dict):
+            raise AuthenticationError('local IAM session is invalid')
+        if payload.get('schema_version') != SESSION_SCHEMA_VERSION:
+            raise AuthenticationError('local IAM session schema is invalid')
+        if payload.get('base_url') != IAM_BASE_URL:
+            raise AuthenticationError('local IAM session belongs to another IAM endpoint')
+        token = str(payload.get('token') or '')
+        expires_at = str(payload.get('expires_at') or '')
+        if not token or not expires_at:
+            raise AuthenticationError('local IAM session is incomplete')
+        return token, expires_at
 
     def clear(self) -> None:
         try:
@@ -172,41 +253,23 @@ class LocalAuthSessionStore:
 
 
 class AuthService:
+    """LMTS authentication boundary backed exclusively by IAM HTTP."""
+
     def __init__(
         self,
-        repository: UserRepository,
+        client: IAMHTTPClient | None = None,
         *,
-        connection_id: str,
-        session_store: LocalAuthSessionStore | None = None,
+        token_store: IAMTokenStore | None = None,
     ) -> None:
-        if not connection_id.strip():
-            raise ValueError('auth connection_id must not be empty')
-        self.repository = repository
-        self.connection_id = connection_id
-        self.session_store = session_store or LocalAuthSessionStore()
+        self.client = client or IAMHTTPClient()
+        self.token_store = token_store or IAMTokenStore()
         self._current: UserIdentity | None = None
 
-    def bootstrap_origin(self, password: str, *, email: str | None = None) -> UserIdentity:
-        origin = self.repository.user_by_id('0')
-        if origin is None:
-            raise AuthenticationError("Origin users row does not exist")
-        if self.repository.account_by_user_id('0') is not None:
-            raise AuthenticationError('Origin account already exists')
-        if not self.repository.attach_account('0', hash_password(password), email):
-            raise AuthenticationError('Origin account could not be created')
-        identity = _identity(origin)
-        self._set_current(identity)
-        return identity
-
     def login(self, username: str, password: str) -> UserIdentity:
-        account = self.repository.account_by_username(username)
-        if account is None or not verify_password(password, account.password_hash):
-            raise AuthenticationError('invalid username or password')
-        if account.user.status != 'active' or account.account_status != 'active':
-            raise AuthenticationError('account is not active')
-        identity = _identity(account.user)
-        self._set_current(identity)
-        return identity
+        session = self.client.login(username.strip(), password)
+        self.token_store.save(session)
+        self._current = session.identity
+        return session.identity
 
     def register(
         self,
@@ -216,49 +279,31 @@ class AuthService:
         *,
         email: str | None = None,
     ) -> UserIdentity:
-        from .invite import hash_invite_token
-
-        username = username.strip()
-        if not username:
-            raise ValueError('username must not be empty')
-        user_id = f'usr_{uuid.uuid4().hex}'
-        created = self.repository.register_from_invite(
-            token_hash=hash_invite_token(raw_invite_token),
-            user_id=user_id,
-            username=username,
-            password_hash=hash_password(password),
-            email=email,
+        session = self.client.register(
+            raw_invite_token.strip(),
+            username.strip(),
+            password,
+            email=None if email is None else email.strip(),
         )
-        if not created:
-            raise AuthenticationError('invite is invalid, expired or already claimed')
-        user = self.repository.user_by_id(user_id)
-        if user is None:
-            raise RuntimeError('registered user could not be read back')
-        identity = _identity(user)
-        self._set_current(identity)
-        return identity
-
-    def _set_current(self, identity: UserIdentity) -> None:
-        self._current = identity
-        self.session_store.save(AuthSession(connection_id=self.connection_id, user_id=identity.user_id))
+        self.token_store.save(session)
+        self._current = session.identity
+        return session.identity
 
     def current_identity(self) -> UserIdentity | None:
         if self._current is not None:
             return self._current
-        session = self.session_store.load()
-        if session is None:
+        stored = self.token_store.load()
+        if stored is None:
             return None
-        if session.connection_id != self.connection_id:
-            raise AuthenticationError(
-                f'local auth session belongs to MySQL connection {session.connection_id!r}, not {self.connection_id!r}'
-            )
-        account = self.repository.account_by_user_id(session.user_id)
-        if account is None:
-            raise AuthenticationError('session user account no longer exists')
-        if account.user.status != 'active' or account.account_status != 'active':
-            raise AuthenticationError('session user account is not active')
-        self._current = _identity(account.user)
-        return self._current
+        token, _expires_at = stored
+        try:
+            identity = self.client.me(token)
+        except AuthenticationError as exc:
+            if exc.status == 401:
+                self.token_store.clear()
+            raise
+        self._current = identity
+        return identity
 
     def require_identity(self) -> UserIdentity:
         identity = self.current_identity()
@@ -267,5 +312,11 @@ class AuthService:
         return identity
 
     def logout(self) -> None:
-        self._current = None
-        self.session_store.clear()
+        stored = self.token_store.load()
+        token = None if stored is None else stored[0]
+        try:
+            if token is not None:
+                self.client.logout(token)
+        finally:
+            self._current = None
+            self.token_store.clear()

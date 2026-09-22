@@ -114,7 +114,7 @@ SELECT JSON_OBJECT(
   'status', status,
   'verified', verified
 )
-FROM users
+FROM IAM_users
 WHERE user_id = {_hex_text(user_id)}
 LIMIT 1
 """.strip()
@@ -130,7 +130,7 @@ SELECT JSON_OBJECT(
   'status', status,
   'verified', verified
 )
-FROM users
+FROM IAM_users
 WHERE username = {_hex_text(username)}
 LIMIT 1
 """.strip()
@@ -149,8 +149,8 @@ SELECT JSON_OBJECT(
   'account_status', a.account_status,
   'email', a.email
 )
-FROM users u
-JOIN user_accounts a ON a.user_id = u.user_id
+FROM IAM_users u
+JOIN IAM_user_accounts a ON a.user_id = u.user_id
 WHERE {where_sql}
 LIMIT 1
 """.strip()
@@ -172,11 +172,11 @@ LIMIT 1
 
     def attach_account(self, user_id: str, password_hash: str, email: str | None = None) -> bool:
         query = f"""
-INSERT INTO user_accounts (user_id, password_hash, email, account_status)
+INSERT INTO IAM_user_accounts (user_id, password_hash, email, account_status)
 SELECT {_hex_text(user_id)}, {_hex_text(password_hash)}, {_nullable_text(email)}, 'active'
-FROM users
+FROM IAM_users
 WHERE user_id = {_hex_text(user_id)}
-  AND NOT EXISTS (SELECT 1 FROM user_accounts WHERE user_id = {_hex_text(user_id)});
+  AND NOT EXISTS (SELECT 1 FROM IAM_user_accounts WHERE user_id = {_hex_text(user_id)});
 SELECT ROW_COUNT()
 """.strip()
         return _run(self.mysql, query).strip().splitlines()[-1:] == ['1']
@@ -186,54 +186,54 @@ SELECT ROW_COUNT()
         user_sql = _hex_text(user_id)
         query = f"""
 SELECT JSON_OBJECT(
-  'reports', (SELECT COUNT(DISTINCT report_id) FROM report_record_index WHERE tester_user_id = {user_sql}),
-  'submissions', (SELECT COUNT(*) FROM report_submissions WHERE submitter_user_id = {user_sql}),
-  'result_records', (SELECT COUNT(*) FROM report_record_index WHERE tester_user_id = {user_sql}),
-  'pass_records', (SELECT COUNT(*) FROM report_record_index WHERE tester_user_id = {user_sql} AND outcome = 'pass'),
-  'fail_records', (SELECT COUNT(*) FROM report_record_index WHERE tester_user_id = {user_sql} AND outcome = 'fail'),
-  'error_records', (SELECT COUNT(*) FROM report_record_index WHERE tester_user_id = {user_sql} AND outcome = 'error'),
-  'cancelled_records', (SELECT COUNT(*) FROM report_record_index WHERE tester_user_id = {user_sql} AND outcome = 'cancelled'),
+  'reports', (SELECT COUNT(DISTINCT report_id) FROM LMTS_report_record_index WHERE tester_user_id = {user_sql}),
+  'submissions', (SELECT COUNT(*) FROM LMTS_report_submissions WHERE submitter_user_id = {user_sql}),
+  'result_records', (SELECT COUNT(*) FROM LMTS_report_record_index WHERE tester_user_id = {user_sql}),
+  'pass_records', (SELECT COUNT(*) FROM LMTS_report_record_index WHERE tester_user_id = {user_sql} AND outcome = 'pass'),
+  'fail_records', (SELECT COUNT(*) FROM LMTS_report_record_index WHERE tester_user_id = {user_sql} AND outcome = 'fail'),
+  'error_records', (SELECT COUNT(*) FROM LMTS_report_record_index WHERE tester_user_id = {user_sql} AND outcome = 'error'),
+  'cancelled_records', (SELECT COUNT(*) FROM LMTS_report_record_index WHERE tester_user_id = {user_sql} AND outcome = 'cancelled'),
   'unknown_records', (
-    SELECT COUNT(*) FROM report_record_index
+    SELECT COUNT(*) FROM LMTS_report_record_index
     WHERE tester_user_id = {user_sql}
       AND (outcome IS NULL OR outcome NOT IN ('pass','fail','error','cancelled'))
   ),
   'test_definitions', (
     SELECT COUNT(DISTINCT tv.test_definition_id)
-    FROM report_record_index rri
-    JOIN test_versions tv ON tv.test_version_id = rri.test_version_id
+    FROM LMTS_report_record_index rri
+    JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
     WHERE rri.tester_user_id = {user_sql}
   ),
   'test_versions', (
     SELECT COUNT(DISTINCT test_version_id)
-    FROM report_record_index
+    FROM LMTS_report_record_index
     WHERE tester_user_id = {user_sql} AND test_version_id IS NOT NULL
   ),
-  'telemetry_values', (SELECT COUNT(*) FROM telemetry_values WHERE user_id = {user_sql}),
+  'telemetry_values', (SELECT COUNT(*) FROM LMTS_telemetry_values WHERE user_id = {user_sql}),
   'models', (
     SELECT COUNT(DISTINCT model_node_id)
-    FROM report_record_index
+    FROM LMTS_report_record_index
     WHERE tester_user_id = {user_sql} AND model_node_id IS NOT NULL
   ),
   'compositions', (
     SELECT COUNT(DISTINCT composition_id)
-    FROM report_record_index
+    FROM LMTS_report_record_index
     WHERE tester_user_id = {user_sql} AND composition_id IS NOT NULL
   ),
   'systems', (
     SELECT COUNT(DISTINCT system_id)
-    FROM report_record_index
+    FROM LMTS_report_record_index
     WHERE tester_user_id = {user_sql} AND system_id IS NOT NULL
   ),
   'compute_profiles', (
     SELECT COUNT(DISTINCT compute_profile_id)
-    FROM report_record_index
+    FROM LMTS_report_record_index
     WHERE tester_user_id = {user_sql} AND compute_profile_id IS NOT NULL
   ),
   'hardware_nodes', (
     SELECT COUNT(DISTINCT rrhi.hardware_id)
-    FROM report_record_hardware_index rrhi
-    JOIN report_record_index rri
+    FROM LMTS_report_record_hardware_index rrhi
+    JOIN LMTS_report_record_index rri
       ON rri.report_id = rrhi.report_id
      AND rri.record_id = rrhi.record_id
     WHERE rri.tester_user_id = {user_sql}
@@ -273,7 +273,7 @@ SELECT JSON_OBJECT(
             else f'DATE_ADD(CURRENT_TIMESTAMP(6), INTERVAL {int(expires_in_seconds)} SECOND)'
         )
         query = f"""
-INSERT INTO invites (invite_id, owner_user_id, token_hash, expires_at, status)
+INSERT INTO IAM_invites (invite_id, owner_user_id, token_hash, expires_at, status)
 VALUES (
   {_hex_text(invite_id)},
   {_hex_text(owner_user_id)},
@@ -298,7 +298,7 @@ SELECT JSON_OBJECT(
   'expires_at', IF(expires_at IS NULL, NULL, DATE_FORMAT(expires_at, '%Y-%m-%dT%H:%i:%s.%f')),
   'expired', IF(expires_at IS NOT NULL AND expires_at <= CURRENT_TIMESTAMP(6), 1, 0)
 )
-FROM invites
+FROM IAM_invites
 WHERE token_hash = {_hex_text(token_hash)}
 LIMIT 1
 """.strip()
@@ -328,22 +328,22 @@ LIMIT 1
         query = f"""
 START TRANSACTION;
 SELECT invite_id
-FROM invites
+FROM IAM_invites
 WHERE token_hash = {_hex_text(token_hash)}
 FOR UPDATE;
-INSERT INTO users (user_id, username, tier, status, verified)
+INSERT INTO IAM_users (user_id, username, tier, status, verified)
 SELECT {_hex_text(user_id)}, {_hex_text(username)}, 3, 'active', FALSE
-FROM invites
+FROM IAM_invites
 WHERE token_hash = {_hex_text(token_hash)}
   AND status = 'active'
   AND claimed_by_user_id IS NULL
   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP(6))
 LIMIT 1;
-INSERT INTO user_accounts (user_id, password_hash, email, account_status)
+INSERT INTO IAM_user_accounts (user_id, password_hash, email, account_status)
 SELECT {_hex_text(user_id)}, {_hex_text(password_hash)}, {_nullable_text(email)}, 'active'
-FROM users
+FROM IAM_users
 WHERE user_id = {_hex_text(user_id)};
-UPDATE invites
+UPDATE IAM_invites
 SET status = 'claimed',
     claimed_by_user_id = {_hex_text(user_id)},
     claimed_at = CURRENT_TIMESTAMP(6)
@@ -351,13 +351,13 @@ WHERE token_hash = {_hex_text(token_hash)}
   AND status = 'active'
   AND claimed_by_user_id IS NULL
   AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP(6))
-  AND EXISTS (SELECT 1 FROM users WHERE user_id = {_hex_text(user_id)});
+  AND EXISTS (SELECT 1 FROM IAM_users WHERE user_id = {_hex_text(user_id)});
 COMMIT;
 SELECT JSON_OBJECT(
-  'created', EXISTS(SELECT 1 FROM users WHERE user_id = {_hex_text(user_id)}),
+  'created', EXISTS(SELECT 1 FROM IAM_users WHERE user_id = {_hex_text(user_id)}),
   'claimed', EXISTS(
     SELECT 1
-    FROM invites
+    FROM IAM_invites
     WHERE token_hash = {_hex_text(token_hash)}
       AND status = 'claimed'
       AND claimed_by_user_id = {_hex_text(user_id)}

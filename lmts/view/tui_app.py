@@ -12,6 +12,7 @@ from .actions.navigation import NavigationActions
 from .actions.profile import ProfileActions
 from .actions.results import ResultActions
 from .actions.settings import SettingsActions
+from .actions.user import UserActions
 from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
 from .lmts_host import LMTSInteractiveHost
@@ -65,6 +66,36 @@ class TUIApplication:
             monitor_fraction=1 / 3,
             events=self.state.events,
         )
+        startup = host.choose(stdscr, 'LMTS startup', ['Login', 'Register', 'Local'], 0)
+        if startup is None:
+            return
+        startup_user = UserActions(self.state, host, stdscr)
+        if startup == 0:
+            try:
+                identity = controller.auth_service.current_identity()
+            except Exception:
+                identity = None
+            if identity is None:
+                startup_user.login(stdscr)
+                try:
+                    identity = controller.auth_service.current_identity()
+                except Exception:
+                    identity = None
+                if identity is None:
+                    return
+            else:
+                self.state.events.publish('ui.message', f'authenticated: {identity.username}', source='tui_app')
+        elif startup == 1:
+            startup_user.register(stdscr)
+            try:
+                identity = controller.auth_service.current_identity()
+            except Exception:
+                identity = None
+            if identity is None:
+                return
+        else:
+            startup_user.local(stdscr)
+
         if controller.state.profile_required:
             self.state.active_tab = 'profile'
             ProfileActions(self.state, host, stdscr).profile_system(stdscr)
@@ -76,6 +107,7 @@ class TUIApplication:
         benchmark = self.benchmark_actions_class(self.state, host, stdscr, navigation)
         results = ResultActions(self.state, host, stdscr)
         settings = SettingsActions(self.state, host, stdscr)
+        user = UserActions(self.state, host, stdscr)
 
         def run_cw_bench(_stdscr) -> None:
             self.state.cw_bench_page.run(host)
@@ -109,7 +141,11 @@ class TUIApplication:
                 if controller.stats_service is not None
                 else None
             ),
-            'user.refresh': lambda _: controller.user_service.dashboard_snapshot(refresh=True),
+            'user.login': user.login,
+            'user.register': user.register,
+            'user.logout': user.logout,
+            'user.local': user.local,
+            'user.refresh': user.refresh,
             'benchmark.tests': benchmark.tests_dialog,
             'benchmark.targets': benchmark.select_targets,
             'benchmark.run': benchmark.run_dialog,

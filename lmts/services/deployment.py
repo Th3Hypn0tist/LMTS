@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from lmts.tools.output import FilePayload, OutputTarget, write_files
-from lmts.tools.web_deploy import web_root_files
+from lmts.tools.web_deploy import php_package_files
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +49,8 @@ def render_server_db_php(config: ServerDeployConfig) -> str:
 
 class DeploymentPackageBuilder:
     def build(self, config: ServerDeployConfig) -> dict[str, FilePayload]:
-        files: dict[str, FilePayload] = dict(web_root_files())
-        files['config/db.php'] = render_server_db_php(config)
+        files: dict[str, FilePayload] = dict(php_package_files())
+        files['config.php'] = render_server_db_php(config)
         return files
 
 

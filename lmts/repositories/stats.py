@@ -8,49 +8,49 @@ from lmts.tools.mysql_reports import _run
 
 
 TEST_STAT_EXPRESSIONS: tuple[tuple[str, str], ...] = (
-    ('test_definitions', '(SELECT COUNT(*) FROM test_definitions)'),
-    ('test_versions', '(SELECT COUNT(*) FROM test_versions)'),
-    ('telemetry_types', '(SELECT COUNT(*) FROM telemetry_types)'),
-    ('telemetry_bindings', '(SELECT COUNT(*) FROM test_version_telemetry_types)'),
-    ('reports', '(SELECT COUNT(*) FROM reports)'),
-    ('report_submissions', '(SELECT COUNT(*) FROM report_submissions)'),
-    ('result_records', '(SELECT COUNT(*) FROM report_record_index)'),
-    ('passed_records', "(SELECT COUNT(*) FROM report_record_index WHERE outcome = 'pass')"),
-    ('failed_records', "(SELECT COUNT(*) FROM report_record_index WHERE outcome = 'fail')"),
-    ('unresolved_records', "(SELECT COUNT(*) FROM report_record_index WHERE outcome IS NULL OR outcome NOT IN ('pass','fail'))"),
-    ('telemetry_values', '(SELECT COUNT(*) FROM telemetry_values)'),
-    ('hardware_references', '(SELECT COUNT(*) FROM report_record_hardware_index)'),
+    ('test_definitions', '(SELECT COUNT(*) FROM LMTS_test_definitions)'),
+    ('test_versions', '(SELECT COUNT(*) FROM LMTS_test_versions)'),
+    ('telemetry_types', '(SELECT COUNT(*) FROM LMTS_telemetry_types)'),
+    ('telemetry_bindings', '(SELECT COUNT(*) FROM LMTS_test_version_telemetry_types)'),
+    ('reports', '(SELECT COUNT(*) FROM LMTS_reports)'),
+    ('report_submissions', '(SELECT COUNT(*) FROM LMTS_report_submissions)'),
+    ('result_records', '(SELECT COUNT(*) FROM LMTS_report_record_index)'),
+    ('passed_records', "(SELECT COUNT(*) FROM LMTS_report_record_index WHERE outcome = 'pass')"),
+    ('failed_records', "(SELECT COUNT(*) FROM LMTS_report_record_index WHERE outcome = 'fail')"),
+    ('unresolved_records', "(SELECT COUNT(*) FROM LMTS_report_record_index WHERE outcome IS NULL OR outcome NOT IN ('pass','fail'))"),
+    ('telemetry_values', '(SELECT COUNT(*) FROM LMTS_telemetry_values)'),
+    ('hardware_references', '(SELECT COUNT(*) FROM LMTS_report_record_hardware_index)'),
     ('executed_test_definitions', (
         '(SELECT COUNT(DISTINCT tv.test_definition_id) '
-        'FROM report_record_index rri '
-        'JOIN test_versions tv ON tv.test_version_id = rri.test_version_id)'
+        'FROM LMTS_report_record_index rri '
+        'JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id)'
     )),
     ('executed_test_versions', (
         '(SELECT COUNT(DISTINCT test_version_id) '
-        'FROM report_record_index WHERE test_version_id IS NOT NULL)'
+        'FROM LMTS_report_record_index WHERE test_version_id IS NOT NULL)'
     )),
     ('testers', (
         '(SELECT COUNT(DISTINCT tester_user_id) '
-        'FROM report_record_index WHERE tester_user_id IS NOT NULL)'
+        'FROM LMTS_report_record_index WHERE tester_user_id IS NOT NULL)'
     )),
     ('tested_models', (
         '(SELECT COUNT(DISTINCT model_node_id) '
-        'FROM report_record_index WHERE model_node_id IS NOT NULL)'
+        'FROM LMTS_report_record_index WHERE model_node_id IS NOT NULL)'
     )),
     ('tested_compositions', (
         '(SELECT COUNT(DISTINCT composition_id) '
-        'FROM report_record_index WHERE composition_id IS NOT NULL)'
+        'FROM LMTS_report_record_index WHERE composition_id IS NOT NULL)'
     )),
     ('tested_systems', (
         '(SELECT COUNT(DISTINCT system_id) '
-        'FROM report_record_index WHERE system_id IS NOT NULL)'
+        'FROM LMTS_report_record_index WHERE system_id IS NOT NULL)'
     )),
     ('tested_compute_profiles', (
         '(SELECT COUNT(DISTINCT compute_profile_id) '
-        'FROM report_record_index WHERE compute_profile_id IS NOT NULL)'
+        'FROM LMTS_report_record_index WHERE compute_profile_id IS NOT NULL)'
     )),
     ('tested_hardware_nodes', (
-        '(SELECT COUNT(DISTINCT hardware_id) FROM report_record_hardware_index)'
+        '(SELECT COUNT(DISTINCT hardware_id) FROM LMTS_report_record_hardware_index)'
     )),
 )
 

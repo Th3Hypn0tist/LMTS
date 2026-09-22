@@ -119,7 +119,7 @@ try {
     $summary = stats_query(
         $pdo,
         "SELECT
-            COUNT(DISTINCT rri.report_id) AS reports,
+            COUNT(DISTINCT rri.report_id) AS LMTS_reports,
             COUNT(*) AS result_records,
             COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
             COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
@@ -128,8 +128,8 @@ try {
             COALESCE(SUM(CASE
                 WHEN rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled')
                 THEN 1 ELSE 0 END), 0) AS unknown
-         FROM report_record_index rri
-         JOIN reports r ON r.report_id = rri.report_id
+         FROM LMTS_report_record_index rri
+         JOIN LMTS_reports r ON r.report_id = rri.report_id
          $where",
         $params,
     )->fetch() ?: [];
@@ -137,10 +137,10 @@ try {
     $telemetryCount = stats_query(
         $pdo,
         "SELECT COUNT(*)
-         FROM telemetry_values tv
-         JOIN report_record_index rri
+         FROM LMTS_telemetry_values tv
+         JOIN LMTS_report_record_index rri
            ON rri.report_id = tv.report_id AND rri.record_id = tv.record_id
-         JOIN reports r ON r.report_id = rri.report_id
+         JOIN LMTS_reports r ON r.report_id = rri.report_id
          $where",
         $params,
     )->fetchColumn();
@@ -175,7 +175,7 @@ try {
         rri.score_percent,
         (
             SELECT input_tv.value_number
-            FROM telemetry_values input_tv
+            FROM LMTS_telemetry_values input_tv
             WHERE input_tv.report_id = rri.report_id
               AND input_tv.record_id = rri.record_id
               AND input_tv.telemetry_type_id = 'input_tokens'
@@ -184,20 +184,20 @@ try {
         ) AS input_tokens,
         (
             SELECT output_tv.value_number
-            FROM telemetry_values output_tv
+            FROM LMTS_telemetry_values output_tv
             WHERE output_tv.report_id = rri.report_id
               AND output_tv.record_id = rri.record_id
               AND output_tv.telemetry_type_id = 'output_tokens'
             ORDER BY output_tv.sample_ordinal, output_tv.telemetry_value_id
             LIMIT 1
         ) AS output_tokens
-     FROM report_record_index rri
-     JOIN reports r ON r.report_id = rri.report_id
-     LEFT JOIN model_nodes mn ON mn.model_node_id = rri.model_node_id
-     LEFT JOIN compositions c ON c.composition_id = rri.composition_id
-     LEFT JOIN test_versions tv ON tv.test_version_id = rri.test_version_id
-     LEFT JOIN test_definitions td ON td.test_definition_id = tv.test_definition_id
-     LEFT JOIN systems s ON s.system_id = rri.system_id
+     FROM LMTS_report_record_index rri
+     JOIN LMTS_reports r ON r.report_id = rri.report_id
+     LEFT JOIN LMTS_model_nodes mn ON mn.model_node_id = rri.model_node_id
+     LEFT JOIN LMTS_compositions c ON c.composition_id = rri.composition_id
+     LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
+     LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
+     LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
      $where
      ORDER BY COALESCE(rri.started_at, r.created_at) DESC, rri.report_id, rri.record_id
      LIMIT $limit";
@@ -205,8 +205,8 @@ try {
     $records = stats_query($pdo, $recordSql, $params)->fetchAll();
 
     $selectedSql = "SELECT rri.report_id, rri.record_id
-        FROM report_record_index rri
-        JOIN reports r ON r.report_id = rri.report_id
+        FROM LMTS_report_record_index rri
+        JOIN LMTS_reports r ON r.report_id = rri.report_id
         $where
         ORDER BY COALESCE(rri.started_at, r.created_at) DESC, rri.report_id, rri.record_id
         LIMIT $limit";
@@ -232,8 +232,8 @@ try {
         tv.value_text,
         tv.value_boolean,
         tv.value_json
-     FROM telemetry_values tv
-     JOIN telemetry_types tt ON tt.telemetry_type_id = tv.telemetry_type_id
+     FROM LMTS_telemetry_values tv
+     JOIN LMTS_telemetry_types tt ON tt.telemetry_type_id = tv.telemetry_type_id
      JOIN ($selectedSql) selected
        ON selected.report_id = tv.report_id AND selected.record_id = tv.record_id
      ORDER BY tt.canonical_key, COALESCE(tv.unit_snapshot, tt.unit), tv.report_id, tv.record_id,
@@ -243,15 +243,15 @@ try {
 
     $users = $pdo->query(
         "SELECT DISTINCT tester_user_id AS user_id
-         FROM report_record_index
+         FROM LMTS_report_record_index
          WHERE tester_user_id IS NOT NULL
          ORDER BY tester_user_id"
     )->fetchAll();
 
-    $systems = $pdo->query(
+    $LMTS_systems = $pdo->query(
         "SELECT DISTINCT rri.system_id, COALESCE(s.label, rri.system_id) AS label
-         FROM report_record_index rri
-         LEFT JOIN systems s ON s.system_id = rri.system_id
+         FROM LMTS_report_record_index rri
+         LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
          WHERE rri.system_id IS NOT NULL
          ORDER BY label, rri.system_id"
     )->fetchAll();
@@ -260,16 +260,16 @@ try {
         "SELECT DISTINCT rri.test_version_id,
                 CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
                        CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS label
-         FROM report_record_index rri
-         LEFT JOIN test_versions tv ON tv.test_version_id = rri.test_version_id
-         LEFT JOIN test_definitions td ON td.test_definition_id = tv.test_definition_id
+         FROM LMTS_report_record_index rri
+         LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
+         LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
          WHERE rri.test_version_id IS NOT NULL
          ORDER BY label, rri.test_version_id"
     )->fetchAll();
 
-    $reports = $pdo->query(
+    $LMTS_reports = $pdo->query(
         "SELECT report_id, DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS created_at
-         FROM reports
+         FROM LMTS_reports
          ORDER BY created_at DESC, imported_at DESC
          LIMIT 500"
     )->fetchAll();
@@ -278,7 +278,7 @@ try {
         static fn(array $row): string => (string)$row['outcome'],
         $pdo->query(
             "SELECT DISTINCT COALESCE(outcome, 'unknown') AS outcome
-             FROM report_record_index
+             FROM LMTS_report_record_index
              ORDER BY outcome"
         )->fetchAll(),
     );
@@ -292,9 +292,9 @@ try {
                 ELSE NULL
             END AS target_id,
             COALESCE(mn.label, c.name, CONCAT(rri.target_kind, ' (unresolved)')) AS label
-         FROM report_record_index rri
-         LEFT JOIN model_nodes mn ON mn.model_node_id = rri.model_node_id
-         LEFT JOIN compositions c ON c.composition_id = rri.composition_id
+         FROM LMTS_report_record_index rri
+         LEFT JOIN LMTS_model_nodes mn ON mn.model_node_id = rri.model_node_id
+         LEFT JOIN LMTS_compositions c ON c.composition_id = rri.composition_id
          ORDER BY label, rri.target_kind"
     )->fetchAll();
     foreach ($targets as &$target) {
@@ -320,14 +320,14 @@ try {
         'format' => 'lmts.statistics',
         'version' => 1,
         'summary' => [
-            'reports' => (int)($summary['reports'] ?? 0),
+            'LMTS_reports' => (int)($summary['LMTS_reports'] ?? 0),
             'result_records' => (int)($summary['result_records'] ?? 0),
             'pass' => (int)($summary['pass'] ?? 0),
             'fail' => (int)($summary['fail'] ?? 0),
             'error' => (int)($summary['error'] ?? 0),
             'cancelled' => (int)($summary['cancelled'] ?? 0),
             'unknown' => (int)($summary['unknown'] ?? 0),
-            'telemetry_values' => (int)$telemetryCount,
+            'LMTS_telemetry_values' => (int)$telemetryCount,
         ],
         'records' => $records,
         'telemetry' => $telemetry,
@@ -335,11 +335,11 @@ try {
             'selected' => $selected,
             'options' => [
                 'users' => $users,
-                'systems' => $systems,
+                'LMTS_systems' => $LMTS_systems,
                 'targets' => $targets,
                 'tests' => $tests,
                 'outcomes' => $outcomes,
-                'reports' => $reports,
+                'LMTS_reports' => $LMTS_reports,
             ],
         ],
     ];

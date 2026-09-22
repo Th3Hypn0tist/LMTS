@@ -95,12 +95,7 @@ def _ensure_authenticated(
     try:
         identity = auth.login(username, password)
     except (AuthenticationError, RuntimeError, ValueError) as exc:
-        mysql = getattr(auth.repository, 'mysql', None)
-        if mysql is None:
-            target = auth.connection_id
-        else:
-            target = f'{mysql.id} ({mysql.host}:{mysql.port}/{mysql.database})'
-        controller.state.message = f'login failed against {target}: {exc}'
+        controller.state.message = f'IAM login failed: {exc}'
         return False
     controller.user_service.clear()
     controller.state.message = f'authenticated: {identity.username}'

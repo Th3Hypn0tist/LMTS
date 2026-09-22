@@ -75,8 +75,10 @@ def _ensure_authenticated(
 ) -> bool:
     auth = controller.auth_service
     if auth is None:
-        controller.state.message = 'registered user authentication is required before testing'
+        controller.state.message = 'IAM authentication is not configured'
         return False
+    if auth.local_mode:
+        return True
     try:
         if auth.current_identity() is not None:
             return True

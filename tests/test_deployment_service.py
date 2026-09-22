@@ -30,14 +30,14 @@ def test_server_deploy_config_rejects_empty_values() -> None:
 def test_deployment_package_overrides_packaged_db_config(monkeypatch) -> None:
     monkeypatch.setattr(
         deployment,
-        'web_root_files',
-        lambda: {'index.html': 'viewer', 'config/db.php': 'PACKAGED DEFAULT'},
+        'php_package_files',
+        lambda: {'visualizer/index.html': 'viewer', 'config.php': 'PACKAGED DEFAULT'},
     )
 
     files = DeploymentPackageBuilder().build(_config())
-    db_php = str(files['config/db.php'])
+    db_php = str(files['config.php'])
 
-    assert files['index.html'] == 'viewer'
+    assert files['visualizer/index.html'] == 'viewer'
     assert 'PACKAGED DEFAULT' not in db_php
     assert 'db.example.test' in db_php
     assert 'lmts_server' in db_php
@@ -50,8 +50,8 @@ def test_deploy_server_transfers_complete_package_once(monkeypatch, tmp_path: Pa
     calls: list[tuple[object, dict[str, object]]] = []
     monkeypatch.setattr(
         deployment,
-        'web_root_files',
-        lambda: {'index.html': 'viewer', 'config/db.php': 'PACKAGED DEFAULT'},
+        'php_package_files',
+        lambda: {'visualizer/index.html': 'viewer', 'config.php': 'PACKAGED DEFAULT'},
     )
 
     def record_write(target, files):
@@ -65,6 +65,6 @@ def test_deploy_server_transfers_complete_package_once(monkeypatch, tmp_path: Pa
 
     assert len(calls) == 1
     assert calls[0][0] == target
-    assert 'index.html' in calls[0][1]
-    assert 'db.example.test' in str(calls[0][1]['config/db.php'])
-    assert written == ['config/db.php', 'index.html']
+    assert 'visualizer/index.html' in calls[0][1]
+    assert 'db.example.test' in str(calls[0][1]['config.php'])
+    assert written == ['config.php', 'visualizer/index.html']

@@ -119,7 +119,7 @@ try {
     $summary = stats_query(
         $pdo,
         "SELECT
-            COUNT(DISTINCT rri.report_id) AS LMTS_reports,
+            COUNT(DISTINCT rri.report_id) AS reports,
             COUNT(*) AS result_records,
             COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
             COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
@@ -248,7 +248,7 @@ try {
          ORDER BY tester_user_id"
     )->fetchAll();
 
-    $LMTS_systems = $pdo->query(
+    $systems = $pdo->query(
         "SELECT DISTINCT rri.system_id, COALESCE(s.label, rri.system_id) AS label
          FROM LMTS_report_record_index rri
          LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
@@ -267,7 +267,7 @@ try {
          ORDER BY label, rri.test_version_id"
     )->fetchAll();
 
-    $LMTS_reports = $pdo->query(
+    $reports = $pdo->query(
         "SELECT report_id, DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS created_at
          FROM LMTS_reports
          ORDER BY created_at DESC, imported_at DESC
@@ -320,14 +320,14 @@ try {
         'format' => 'lmts.statistics',
         'version' => 1,
         'summary' => [
-            'LMTS_reports' => (int)($summary['LMTS_reports'] ?? 0),
+            'reports' => (int)($summary['reports'] ?? 0),
             'result_records' => (int)($summary['result_records'] ?? 0),
             'pass' => (int)($summary['pass'] ?? 0),
             'fail' => (int)($summary['fail'] ?? 0),
             'error' => (int)($summary['error'] ?? 0),
             'cancelled' => (int)($summary['cancelled'] ?? 0),
             'unknown' => (int)($summary['unknown'] ?? 0),
-            'LMTS_telemetry_values' => (int)$telemetryCount,
+            'telemetry_values' => (int)$telemetryCount,
         ],
         'records' => $records,
         'telemetry' => $telemetry,
@@ -335,11 +335,11 @@ try {
             'selected' => $selected,
             'options' => [
                 'users' => $users,
-                'LMTS_systems' => $LMTS_systems,
+                'systems' => $systems,
                 'targets' => $targets,
                 'tests' => $tests,
                 'outcomes' => $outcomes,
-                'LMTS_reports' => $LMTS_reports,
+                'reports' => $reports,
             ],
         ],
     ];

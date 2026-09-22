@@ -106,11 +106,11 @@ def test_projection_writes_test_record_and_telemetry(monkeypatch) -> None:
     projection.rebuild_report_projection(_mysql(), _report())
 
     query = captured['query']
-    assert 'INSERT INTO test_definitions' in query
-    assert 'INSERT INTO test_versions' in query
-    assert 'INSERT INTO test_version_telemetry_types' in query
-    assert 'INSERT INTO report_record_index' in query
-    assert 'INSERT INTO telemetry_values' in query
+    assert 'INSERT INTO LMTS_test_definitions' in query
+    assert 'INSERT INTO LMTS_test_versions' in query
+    assert 'INSERT INTO LMTS_test_version_telemetry_types' in query
+    assert 'INSERT INTO LMTS_report_record_index' in query
+    assert 'INSERT INTO LMTS_telemetry_values' in query
     assert 'input_tokens' in query
     assert 'gpu_memory_used_mib' in query
     assert 'usr_test' not in query
@@ -130,5 +130,5 @@ def test_projection_without_provenance_indexes_result_but_not_telemetry(monkeypa
     monkeypatch.setattr(projection, '_run', fake_run)
     projection.rebuild_report_projection(_mysql(), report)
 
-    assert 'INSERT INTO report_record_index' in captured['query']
-    assert 'INSERT INTO telemetry_values' not in captured['query']
+    assert 'INSERT INTO LMTS_report_record_index' in captured['query']
+    assert 'INSERT INTO LMTS_telemetry_values' not in captured['query']

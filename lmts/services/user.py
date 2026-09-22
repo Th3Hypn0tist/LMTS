@@ -76,6 +76,20 @@ class UserService:
         if self.auth_service is None:
             self._snapshot = self._anonymous('IAM authentication is not configured')
             return self._snapshot
+        if self.auth_service.local_mode:
+            local = self._anonymous()
+            self._snapshot = UserDashboardSnapshot(
+                user_id=None,
+                username='local',
+                tier=4,
+                tier_label='Local',
+                status='local',
+                verified=None,
+                can_invite=False,
+                activity=dict(EMPTY_ACTIVITY),
+                identity_error=None,
+            )
+            return self._snapshot
         try:
             identity = self.auth_service.current_identity()
         except (AuthenticationError, RuntimeError, ValueError) as exc:

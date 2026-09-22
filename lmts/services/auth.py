@@ -264,10 +264,23 @@ class AuthService:
         self.client = client or IAMHTTPClient()
         self.token_store = token_store or IAMTokenStore()
         self._current: UserIdentity | None = None
+        self._local_mode = False
+
+    @property
+    def local_mode(self) -> bool:
+        return self._local_mode
+
+    def enter_local(self) -> None:
+        self._local_mode = True
+        self._current = None
+
+    def leave_local(self) -> None:
+        self._local_mode = False
 
     def login(self, username: str, password: str) -> UserIdentity:
         session = self.client.login(username.strip(), password)
         self.token_store.save(session)
+        self._local_mode = False
         self._current = session.identity
         return session.identity
 
@@ -286,10 +299,13 @@ class AuthService:
             email=None if email is None else email.strip(),
         )
         self.token_store.save(session)
+        self._local_mode = False
         self._current = session.identity
         return session.identity
 
     def current_identity(self) -> UserIdentity | None:
+        if self._local_mode:
+            return None
         if self._current is not None:
             return self._current
         stored = self.token_store.load()
@@ -318,5 +334,6 @@ class AuthService:
             if token is not None:
                 self.client.logout(token)
         finally:
+            self._local_mode = False
             self._current = None
             self.token_store.clear()

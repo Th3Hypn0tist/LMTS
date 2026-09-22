@@ -73,8 +73,8 @@ class UserService:
     def dashboard_snapshot(self, *, refresh: bool = False) -> UserDashboardSnapshot:
         if self._snapshot is not None and not refresh:
             return self._snapshot
-        if self.auth_service is None or self.repository is None:
-            self._snapshot = self._anonymous('user database is not configured')
+        if self.auth_service is None:
+            self._snapshot = self._anonymous('IAM authentication is not configured')
             return self._snapshot
         try:
             identity = self.auth_service.current_identity()
@@ -84,13 +84,17 @@ class UserService:
         if identity is None:
             self._snapshot = self._anonymous()
             return self._snapshot
-        try:
-            activity = self.repository.activity_for_user(identity.user_id).to_dict()
-        except (RuntimeError, ValueError) as exc:
+        if self.repository is None:
             activity = dict(EMPTY_ACTIVITY)
-            warning = str(exc)
+            warning = 'local user activity database is not configured'
         else:
-            warning = None
+            try:
+                activity = self.repository.activity_for_user(identity.user_id).to_dict()
+            except (RuntimeError, ValueError) as exc:
+                activity = dict(EMPTY_ACTIVITY)
+                warning = str(exc)
+            else:
+                warning = None
         self._snapshot = UserDashboardSnapshot(
             user_id=identity.user_id,
             username=identity.username,

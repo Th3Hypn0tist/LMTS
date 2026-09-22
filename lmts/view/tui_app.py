@@ -66,35 +66,42 @@ class TUIApplication:
             monitor_fraction=1 / 3,
             events=self.state.events,
         )
-        startup = host.choose(stdscr, 'LMTS startup', ['Login', 'Register', 'Local'], 0)
-        if startup is None:
-            return
         startup_user = UserActions(self.state, host, stdscr)
-        if startup == 0:
-            try:
-                identity = controller.auth_service.current_identity()
-            except Exception:
-                identity = None
-            if identity is None:
-                startup_user.login(stdscr)
+        while True:
+            startup = host.choose(stdscr, 'LMTS startup', ['Login', 'Register', 'Local'], 0)
+            if startup is None:
+                return
+            if startup == 0:
                 try:
                     identity = controller.auth_service.current_identity()
                 except Exception:
                     identity = None
                 if identity is None:
-                    return
-            else:
-                self.state.events.publish('ui.message', f'authenticated: {identity.username}', source='tui_app')
-        elif startup == 1:
-            startup_user.register(stdscr)
-            try:
-                identity = controller.auth_service.current_identity()
-            except Exception:
-                identity = None
-            if identity is None:
-                return
-        else:
+                    startup_user.login(stdscr)
+                    try:
+                        identity = controller.auth_service.current_identity()
+                    except Exception:
+                        identity = None
+                    if identity is None:
+                        continue
+                else:
+                    self.state.events.publish(
+                        'ui.message',
+                        f'authenticated: {identity.username}',
+                        source='tui_app',
+                    )
+                break
+            if startup == 1:
+                startup_user.register(stdscr)
+                try:
+                    identity = controller.auth_service.current_identity()
+                except Exception:
+                    identity = None
+                if identity is None:
+                    continue
+                break
             startup_user.local(stdscr)
+            break
 
         if controller.state.profile_required:
             self.state.active_tab = 'profile'

@@ -123,6 +123,47 @@ CREATE TABLE IF NOT EXISTS IAM_user_tier_history (
     )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS IAM_sessions (
+    session_id       VARCHAR(128) NOT NULL,
+    user_id          VARCHAR(128) NOT NULL,
+    token_hash       CHAR(64) NOT NULL,
+    created_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    expires_at       DATETIME(6) NOT NULL,
+    last_seen_at     DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    revoked_at       DATETIME(6) NULL,
+    PRIMARY KEY (session_id),
+    UNIQUE KEY uq_IAM_sessions_token_hash (token_hash),
+    KEY idx_IAM_sessions_user (user_id, created_at),
+    KEY idx_IAM_sessions_expiry (expires_at),
+    CONSTRAINT fk_IAM_sessions_user
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
+        ON UPDATE RESTRICT ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS IAM_abuse_events (
+    event_id          VARCHAR(128) NOT NULL,
+    ip_hash           CHAR(64) NOT NULL,
+    identifier_hash   CHAR(64) NULL,
+    action            VARCHAR(32) NOT NULL,
+    outcome           VARCHAR(32) NOT NULL,
+    created_at        DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (event_id),
+    KEY idx_IAM_abuse_ip_action_time (ip_hash, action, created_at),
+    KEY idx_IAM_abuse_identifier_action_time (identifier_hash, action, created_at),
+    KEY idx_IAM_abuse_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS IAM_ip_blocks (
+    ip_hash           CHAR(64) NOT NULL,
+    reason            VARCHAR(128) NOT NULL,
+    source            VARCHAR(32) NOT NULL,
+    created_at        DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    expires_at        DATETIME(6) NULL,
+    PRIMARY KEY (ip_hash),
+    KEY idx_IAM_ip_blocks_expiry (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 -- ===========================================================================
 -- CANONICAL HARDWARE
 -- model -> component -> variant

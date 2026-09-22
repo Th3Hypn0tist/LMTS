@@ -114,7 +114,7 @@ def write_report(mysql: MySQLSettings, report: dict[str, Any], *, verify: bool =
 
     report_json = json.dumps(report, ensure_ascii=False, separators=(',', ':'))
     query = (
-        'INSERT INTO reports '
+        'INSERT INTO LMTS_reports '
         '(report_id, report_type, created_at, source_type, source_id, report_json) VALUES ('
         f'{_hex_text(report_id)}, '
         f'{_hex_text(report_type)}, '
@@ -149,7 +149,7 @@ SELECT JSON_OBJECT(
   'report_version', JSON_UNQUOTE(JSON_EXTRACT(report_json, '$.version')),
   'imported_at', DATE_FORMAT(imported_at, '%Y-%m-%dT%H:%i:%s.%fZ')
 )
-FROM reports
+FROM LMTS_reports
 ORDER BY created_at DESC, imported_at DESC
 LIMIT {limit}
 """.strip()
@@ -169,7 +169,7 @@ def read_report(mysql: MySQLSettings, report_id: str) -> dict[str, object]:
         raise ValueError('report id must not be empty')
     encoded = value.encode('utf-8').hex()
     query = (
-        "SELECT report_json FROM reports "
+        "SELECT report_json FROM LMTS_reports "
         f"WHERE report_id = CONVERT(0x{encoded} USING utf8mb4) LIMIT 1"
     )
     raw = _run(mysql, query).strip()

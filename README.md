@@ -25,11 +25,11 @@ The goal is not to manufacture one universal leaderboard. LMTS produces reproduc
 | Results | Canonical append-only RunResult and MatrixRunRecord evidence |
 | Result UI | Live target x test matrix, historical matrices, run drill-down and target comparison |
 | Reporting | LMTS Benchmark Report Template `lmts.report/1.1` |
-| Report server | Immutable/idempotent `lmts.report/1.1` GET/POST service backed by MariaDB/MySQL |
+| PHP server package | Standalone `php/` deployment with read-only visualizer and authenticated MariaDB result storage |
 | DVS | Data Visualizer Studio with strict input templates, presets and S3D integration |
 | Model Downloader | Modular downloader core with Ollama integration |
 | AIGMos View | `|lmts:view` adapter |
-| Runtime dependencies | Python 3.11+, zero third-party Python runtime dependencies |
+| Runtime dependencies | Python 3.11+, zero third-party Python runtime dependencies; standalone PHP package uses PDO_MYSQL with MariaDB |
 
 ## Core architecture
 
@@ -366,7 +366,7 @@ From the repository root:
 python3 -m lmts
 ```
 
-LMTS is executed directly from source and does not require package installation or third-party Python runtime dependencies.
+LMTS is executed directly from source and does not require package installation or third-party Python runtime dependencies. The separate `php/` tree can be copied manually to a PHP server; it uses PDO_MYSQL for MariaDB access.
 
 Top-level TUI tabs:
 
@@ -670,7 +670,7 @@ tests/           repository-level verification tests
 These are explicit implementation boundaries, not hidden fallbacks:
 
 - LMTS Runtime Protocol v1 currently exposes bot/composition execution as prompt -> normalized response. Internal composition routing, delegation and member provenance are not yet canonical runtime evidence.
-- The current report-server persistence implementation is MariaDB/MySQL.
+- The standalone PHP server package uses MariaDB through PDO_MYSQL. `visualizer/` owns read-only presentation; `storage/` owns HTTP result ingestion.
 - DVS consumes canonical `lmts.report/1.1` documents, but direct report-server browsing/selection is not yet wired into DVS Studio.
 - A DVS public-page action is not yet wired.
 - `AIGM LM Benchmark Report` is not yet a locked benchmark profile.
@@ -697,3 +697,14 @@ LMTS fails visibly at unsupported boundaries rather than pretending unsupported 
 14. **Secure by limitations.** Capabilities are explicit, bounded and reject invalid states rather than guessing.
 
 LMTS is not just a collection of prompts. It is a controlled evaluation runtime for producing structured evidence that can be compared, inspected, exported, published and visualized without losing the context that produced it.
+
+
+## Standalone PHP package
+
+```text
+php/
+├── visualizer/   read-only Results / Statistics UI
+└── storage/      authenticated result ingestion and storage
+```
+
+The package can be copied manually to a PHP server. Shared MariaDB credentials are configured in `php/config.php` using `php/config.example.php` as the template.

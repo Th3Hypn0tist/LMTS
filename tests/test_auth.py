@@ -1,119 +1,171 @@
 from __future__ import annotations
 
-from dataclasses import replace
+import json
 from pathlib import Path
 
 import pytest
 
-from lmts.repositories.user import AccountRecord, InviteRecord, UserRecord
 from lmts.services.auth import (
+    IAM_BASE_URL,
     AuthService,
     AuthenticationError,
-    LocalAuthSessionStore,
+    IAMHTTPClient,
+    IAMSession,
+    IAMTokenStore,
     UserIdentity,
-    hash_password,
     is_origin,
-    verify_password,
 )
-from lmts.services.invite import InviteError, InviteService
 
 
-class FakeRepository:
-    def __init__(self) -> None:
-        self.users = {
-            '0': UserRecord('0', 'origin', 1337, 'active', True),
+def _identity() -> UserIdentity:
+    return UserIdentity('0', 'origin', 1337, True)
+
+
+def _session() -> IAMSession:
+    return IAMSession('opaque-token', '2026-10-22T18:00:00Z', _identity())
+
+
+def _success_payload(*, token: bool = True) -> dict[str, object]:
+    payload: dict[str, object] = {
+        'ok': True,
+        'contract': 'iam.light',
+        'version': '1.0',
+        'auth_level': 'light',
+        'user': {
+            'id': '0',
+            'username': 'origin',
+            'status': 'active',
+            'verified': True,
+        },
+        'claims': {'tier': 1337},
+    }
+    if token:
+        payload['token'] = 'opaque-token'
+        payload['expires_at'] = '2026-10-22T18:00:00Z'
+    return payload
+
+
+def test_iam_base_url_is_fixed() -> None:
+    assert IAMHTTPClient().base_url == IAM_BASE_URL
+    with pytest.raises(ValueError, match='fixed'):
+        IAMHTTPClient('https://example.invalid/iam')
+
+
+def test_login_uses_iam_http_contract_and_stores_only_token(tmp_path: Path) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None, str | None]] = []
+
+    def transport(method, url, payload, token):
+        calls.append((method, url, payload, token))
+        return _success_payload()
+
+    store = IAMTokenStore(tmp_path / 'auth-session.json')
+    auth = AuthService(IAMHTTPClient(transport=transport), token_store=store)
+
+    identity = auth.login('origin', 'secret-password')
+
+    assert identity == _identity()
+    assert calls == [(
+        'POST',
+        IAM_BASE_URL + '/api/login.php',
+        {'username': 'origin', 'password': 'secret-password'},
+        None,
+    )]
+    raw = (tmp_path / 'auth-session.json').read_text(encoding='utf-8')
+    assert 'secret-password' not in raw
+    assert 'opaque-token' in raw
+    assert (tmp_path / 'auth-session.json').stat().st_mode & 0o777 == 0o600
+
+
+def test_current_identity_restores_session_through_me(tmp_path: Path) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None, str | None]] = []
+
+    def transport(method, url, payload, token):
+        calls.append((method, url, payload, token))
+        return _success_payload(token=False)
+
+    store = IAMTokenStore(tmp_path / 'auth-session.json')
+    store.save(_session())
+    auth = AuthService(IAMHTTPClient(transport=transport), token_store=store)
+
+    identity = auth.current_identity()
+
+    assert identity == _identity()
+    assert calls == [(
+        'GET',
+        IAM_BASE_URL + '/api/me.php',
+        None,
+        'opaque-token',
+    )]
+
+
+def test_unauthorized_me_clears_local_token(tmp_path: Path) -> None:
+    def transport(method, url, payload, token):
+        raise AuthenticationError('invalid or expired session', status=401)
+
+    store = IAMTokenStore(tmp_path / 'auth-session.json')
+    store.save(_session())
+    auth = AuthService(IAMHTTPClient(transport=transport), token_store=store)
+
+    with pytest.raises(AuthenticationError, match='expired'):
+        auth.current_identity()
+
+    assert not (tmp_path / 'auth-session.json').exists()
+
+
+def test_register_propagates_locked_invite_error(tmp_path: Path) -> None:
+    def transport(method, url, payload, token):
+        assert method == 'POST'
+        assert url == IAM_BASE_URL + '/api/register.php'
+        raise AuthenticationError('Invite code not valid.', status=400)
+
+    auth = AuthService(
+        IAMHTTPClient(transport=transport),
+        token_store=IAMTokenStore(tmp_path / 'auth-session.json'),
+    )
+
+    with pytest.raises(AuthenticationError, match=r'^Invite code not valid\.$'):
+        auth.register('wrong', 'tester', 'tester-password')
+
+
+def test_logout_revokes_remote_session_and_deletes_local_token(tmp_path: Path) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None, str | None]] = []
+
+    def transport(method, url, payload, token):
+        calls.append((method, url, payload, token))
+        return {
+            'ok': True,
+            'contract': 'iam.light',
+            'version': '1.0',
         }
-        self.accounts: dict[str, AccountRecord] = {}
-        self.invites: dict[str, InviteRecord] = {}
 
-    def user_by_id(self, user_id: str):
-        return self.users.get(user_id)
+    store = IAMTokenStore(tmp_path / 'auth-session.json')
+    store.save(_session())
+    auth = AuthService(IAMHTTPClient(transport=transport), token_store=store)
 
-    def account_by_user_id(self, user_id: str):
-        return self.accounts.get(user_id)
+    auth.logout()
 
-    def account_by_username(self, username: str):
-        return next((item for item in self.accounts.values() if item.user.username == username), None)
-
-    def attach_account(self, user_id: str, password_hash: str, email: str | None = None) -> bool:
-        user = self.users.get(user_id)
-        if user is None or user_id in self.accounts:
-            return False
-        self.accounts[user_id] = AccountRecord(user, password_hash, 'active', email)
-        return True
-
-    def create_invite(self, *, invite_id, owner_user_id, token_hash, expires_in_seconds):
-        record = InviteRecord(invite_id, owner_user_id, 'active', None, None, False)
-        self.invites[token_hash] = record
-        return record
-
-    def invite_by_token_hash(self, token_hash: str):
-        return self.invites.get(token_hash)
-
-    def register_from_invite(self, *, token_hash, user_id, username, password_hash, email):
-        invite = self.invites.get(token_hash)
-        if invite is None or invite.status != 'active' or invite.expired:
-            return False
-        user = UserRecord(user_id, username, 3, 'active', False)
-        self.users[user_id] = user
-        self.accounts[user_id] = AccountRecord(user, password_hash, 'active', email)
-        self.invites[token_hash] = replace(invite, status='claimed', claimed_by_user_id=user_id)
-        return True
+    assert calls == [(
+        'POST',
+        IAM_BASE_URL + '/api/logout.php',
+        None,
+        'opaque-token',
+    )]
+    assert not (tmp_path / 'auth-session.json').exists()
 
 
-def _store(tmp_path: Path) -> LocalAuthSessionStore:
-    return LocalAuthSessionStore(tmp_path / 'session.json', tmp_path / 'secret')
+def test_origin_identity_semantics_are_preserved() -> None:
+    assert is_origin('0')
+    assert not is_origin('usr_x')
 
 
-def test_password_hash_round_trip() -> None:
-    encoded = hash_password('correct horse battery staple')
-    assert encoded.startswith('scrypt$')
-    assert verify_password('correct horse battery staple', encoded)
-    assert not verify_password('wrong password', encoded)
+def test_token_store_rejects_wrong_endpoint(tmp_path: Path) -> None:
+    path = tmp_path / 'auth-session.json'
+    path.write_text(json.dumps({
+        'schema_version': 1,
+        'base_url': 'https://example.invalid/iam',
+        'token': 'opaque-token',
+        'expires_at': '2026-10-22T18:00:00Z',
+    }), encoding='utf-8')
 
-
-def test_origin_bootstrap_creates_account_without_creating_origin_user(tmp_path: Path) -> None:
-    repo = FakeRepository()
-    auth = AuthService(repo, connection_id='local', session_store=_store(tmp_path))
-
-    identity = auth.bootstrap_origin('origin-password')
-
-    assert identity == UserIdentity('0', 'origin', 1337, True)
-    assert is_origin(identity.user_id)
-    assert list(repo.users) == ['0']
-    assert verify_password('origin-password', repo.accounts['0'].password_hash)
-
-
-def test_register_from_invite_is_tier_three_and_restores_signed_session(tmp_path: Path) -> None:
-    repo = FakeRepository()
-    auth = AuthService(repo, connection_id='local', session_store=_store(tmp_path))
-    origin = auth.bootstrap_origin('origin-password')
-    invite = InviteService(repo).create_invite(origin)
-
-    identity = auth.register(invite.raw_token, 'tester', 'tester-password')
-
-    assert identity.tier == 3
-    assert identity.user_id.startswith('usr_')
-    assert identity.user_id != '0'
-
-    restored = AuthService(repo, connection_id='local', session_store=_store(tmp_path)).current_identity()
-    assert restored == identity
-
-
-def test_tier_three_user_cannot_create_invites() -> None:
-    repo = FakeRepository()
-    service = InviteService(repo)
-    with pytest.raises(InviteError, match='invite authority'):
-        service.create_invite(UserIdentity('usr_x', 'reader', 3, False))
-
-
-def test_session_tampering_is_rejected(tmp_path: Path) -> None:
-    repo = FakeRepository()
-    auth = AuthService(repo, connection_id='local', session_store=_store(tmp_path))
-    auth.bootstrap_origin('origin-password')
-    path = tmp_path / 'session.json'
-    text = path.read_text(encoding='utf-8').replace('"user_id": "0"', '"user_id": "1337"')
-    path.write_text(text, encoding='utf-8')
-
-    with pytest.raises(AuthenticationError, match='signature'):
-        AuthService(repo, connection_id='local', session_store=_store(tmp_path)).current_identity()
+    with pytest.raises(AuthenticationError, match='another IAM endpoint'):
+        IAMTokenStore(path).load()

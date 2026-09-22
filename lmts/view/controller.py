@@ -55,7 +55,7 @@ class LMTSViewController:
         self.result_service = ResultService(results_root=results_root, logs_root=logs_root)
         self.user_repository = None if mysql is None else UserRepository(mysql)
         self.system_repository = None if mysql is None else SystemRepository(mysql)
-        self.auth_service = None if self.user_repository is None else AuthService(self.user_repository, connection_id=mysql.id)
+        self.auth_service = AuthService()
         self.system_service = None if self.system_repository is None else SystemService(self.system_repository, self.profile_service)
         self.stats_service = None if mysql is None else StatsService(StatsRepository(mysql))
         self.user_service = UserService(self.user_repository, self.auth_service)

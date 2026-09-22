@@ -32,11 +32,11 @@ def test_stats_repository_reads_all_declared_test_counts_in_one_query(monkeypatc
 
     assert snapshot.counts == expected
     assert seen['query'].count('SELECT JSON_OBJECT') == 1
-    assert 'FROM test_definitions' in seen['query']
-    assert 'FROM test_versions' in seen['query']
-    assert 'FROM telemetry_values' in seen['query']
-    assert 'FROM report_record_index' in seen['query']
-    assert 'FROM report_record_hardware_index' in seen['query']
+    assert 'FROM LMTS_test_definitions' in seen['query']
+    assert 'FROM LMTS_test_versions' in seen['query']
+    assert 'FROM LMTS_telemetry_values' in seen['query']
+    assert 'FROM LMTS_report_record_index' in seen['query']
+    assert 'FROM LMTS_report_record_hardware_index' in seen['query']
 
 
 def test_stats_service_caches_until_explicit_refresh() -> None:

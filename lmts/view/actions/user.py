@@ -34,7 +34,9 @@ class UserActions(TUIActions):
         try:
             identity = self.controller.auth_service.login(username, password)
         except (AuthenticationError, RuntimeError, ValueError) as exc:
-            self.set_message(f'IAM login failed: {exc}')
+            message = f'IAM login failed: {exc}'
+            self.set_message(message)
+            self.host.text_viewer(self.stdscr, 'Login failed', (message,))
             return
         self.controller.user_service.clear()
         self.set_message(f'authenticated: {identity.username}')
@@ -68,7 +70,9 @@ class UserActions(TUIActions):
                 email=email or None,
             )
         except (AuthenticationError, RuntimeError, ValueError) as exc:
-            self.set_message(str(exc))
+            message = str(exc)
+            self.set_message(message)
+            self.host.text_viewer(self.stdscr, 'Registration failed', (message,))
             return
         self.controller.user_service.clear()
         self.set_message(f'registered and authenticated: {identity.username}')

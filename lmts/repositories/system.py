@@ -46,7 +46,7 @@ class SystemRepository:
             raise ValueError('system label must not be empty')
         probe_version = f'profile-v{int(profile_schema_version)}'
         query = f"""
-INSERT INTO systems (
+INSERT INTO LMTS_systems (
   system_id, user_id, label, system_class, probe_version, last_probed_at
 )
 SELECT
@@ -57,14 +57,14 @@ SELECT
   {_hex_text(probe_version)},
   CURRENT_TIMESTAMP(6)
 WHERE NOT EXISTS (
-  SELECT 1 FROM systems WHERE system_id = {_hex_text(system_id)}
+  SELECT 1 FROM LMTS_systems WHERE system_id = {_hex_text(system_id)}
 );
 SELECT JSON_OBJECT(
   'system_id', system_id,
   'user_id', user_id,
   'label', label
 )
-FROM systems
+FROM LMTS_systems
 WHERE system_id = {_hex_text(system_id)}
   AND user_id = {_hex_text(user_id)}
 LIMIT 1

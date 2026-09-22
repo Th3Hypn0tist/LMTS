@@ -20,25 +20,23 @@ def short_test_label(ref: str) -> str:
     return (ref.split('#', 1)[-1] if '#' in ref else ref.rsplit('.', 1)[-1])[:18]
 
 
-def single_line(host, stdscr, title: str, *, initial: str = '', allow_empty: bool = False) -> str | None:
-    while True:
-        value = host.input_multiline(stdscr, title, initial=initial)
-        if value is None:
-            return None
-        value = value.strip()
-        if '\n' not in value and '\r' not in value and (value or allow_empty):
-            return value
-        host.message = f"{title}: enter one {'line' if allow_empty else 'non-empty line'}"
-
-
-def secret_line(stdscr: curses.window, title: str, *, maximum: int = 1024) -> str | None:
-    value: list[str] = []
+def _line_editor(
+    stdscr: curses.window,
+    title: str,
+    *,
+    initial: str = '',
+    allow_empty: bool = False,
+    maximum: int = 1024,
+    masked: bool = False,
+) -> str | None:
+    value = list(initial)
     try:
         while True:
             height, width = stdscr.getmaxyx()
             win_h = max(5, min(height - 2, 7))
             win_w = max(30, min(width - 2, 80))
             body_w = max(1, win_w - 4)
+            field_w = max(1, body_w - 1)
             win = curses.newwin(
                 win_h,
                 win_w,
@@ -49,21 +47,26 @@ def secret_line(stdscr: curses.window, title: str, *, maximum: int = 1024) -> st
             win.erase()
             win.box()
             win.addnstr(0, 2, f" {title} ", max(0, win_w - 4))
-            masked = '*' * min(len(value), body_w)
-            win.addnstr(2, 2, masked, body_w)
+
+            raw = ''.join(value)
+            display = '*' * len(raw) if masked else raw
+            visible = display[-field_w:]
+            win.addnstr(2, 2, visible, field_w)
             win.addnstr(win_h - 2, 2, 'Enter accept  Esc cancel', body_w, curses.A_DIM)
             try:
                 curses.curs_set(1)
-                win.move(2, 2 + min(len(masked), max(0, body_w - 1)))
+                win.move(2, 2 + min(len(visible), field_w))
             except curses.error:
                 pass
             win.refresh()
+
             key = win.get_wch()
             if key == '\x1b':
                 return None
             if key in ('\n', '\r') or key == curses.KEY_ENTER:
-                if value:
-                    return ''.join(value)
+                result = raw if masked else raw.strip()
+                if result or allow_empty:
+                    return result
                 continue
             if key in (curses.KEY_BACKSPACE, '\b', '\x7f'):
                 if value:
@@ -76,3 +79,31 @@ def secret_line(stdscr: curses.window, title: str, *, maximum: int = 1024) -> st
             curses.curs_set(0)
         except curses.error:
             pass
+
+
+def single_line(
+    host,
+    stdscr,
+    title: str,
+    *,
+    initial: str = '',
+    allow_empty: bool = False,
+    maximum: int = 1024,
+) -> str | None:
+    return _line_editor(
+        stdscr,
+        title,
+        initial=initial,
+        allow_empty=allow_empty,
+        maximum=maximum,
+        masked=False,
+    )
+
+
+def secret_line(stdscr: curses.window, title: str, *, maximum: int = 1024) -> str | None:
+    return _line_editor(
+        stdscr,
+        title,
+        maximum=maximum,
+        masked=True,
+    )

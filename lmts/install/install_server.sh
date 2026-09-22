@@ -304,11 +304,11 @@ else
 fi
 
 GRANTS="$(mariadb --protocol=socket -Nse "SHOW GRANTS FOR '${DB_USER}'@'localhost';")"
-EXPECTED_GRANT="GRANT SELECT, INSERT ON \`${DB_NAME}\`.* TO \`${DB_USER}\`@\`localhost\`"
-if [[ "${GRANTS}" != *"${EXPECTED_GRANT}"* ]] || echo "${GRANTS}" | grep -Eq "GRANT .* (UPDATE|DELETE|CREATE|DROP|ALTER|INDEX|ALL PRIVILEGES)"; then
+EXPECTED_GRANT="GRANT SELECT, INSERT, UPDATE, DELETE ON \`${DB_NAME}\`.* TO \`${DB_USER}\`@\`localhost\`"
+if [[ "${GRANTS}" != *"${EXPECTED_GRANT}"* ]] || echo "${GRANTS}" | grep -Eq "GRANT .* (CREATE|DROP|ALTER|INDEX|ALL PRIVILEGES)"; then
     mariadb --protocol=socket <<SQL
 REVOKE ALL PRIVILEGES, GRANT OPTION FROM '${DB_USER}'@'localhost';
-GRANT SELECT, INSERT ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 SQL
     changed "runtime database grants"
@@ -320,10 +320,10 @@ fi
 # 6. Canonical schema.
 # ------------------------------------------------------------
 echo "[6/8] Checking LMTS schema version..."
-HAS_VERSION_TABLE="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='${DB_NAME}' AND TABLE_NAME='lmts_schema_version';")"
+HAS_VERSION_TABLE="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='${DB_NAME}' AND TABLE_NAME='LMTS_schema_version';")"
 CURRENT_SCHEMA_VERSION=0
 if [[ "${HAS_VERSION_TABLE}" == "1" ]]; then
-    CURRENT_SCHEMA_VERSION="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT COALESCE(MAX(schema_version),0) FROM lmts_schema_version WHERE component='database_ssot';")"
+    CURRENT_SCHEMA_VERSION="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT COALESCE(MAX(schema_version),0) FROM LMTS_schema_version WHERE component='database_ssot';")"
 fi
 if (( CURRENT_SCHEMA_VERSION > SCHEMA_VERSION )); then
     echo "ERROR: installed database SSOT schema v${CURRENT_SCHEMA_VERSION} is newer than this installer supports (v${SCHEMA_VERSION})."
@@ -404,7 +404,7 @@ else
     restarted "Apache started"
 fi
 
-VERIFIED_SCHEMA="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT schema_version FROM lmts_schema_version WHERE component='database_ssot';")"
+VERIFIED_SCHEMA="$(mariadb --protocol=socket "${DB_NAME}" -Nse "SELECT schema_version FROM LMTS_schema_version WHERE component='database_ssot';")"
 if [[ "${VERIFIED_SCHEMA}" != "${SCHEMA_VERSION}" ]]; then
     echo "ERROR: expected database SSOT schema v${SCHEMA_VERSION}, found v${VERIFIED_SCHEMA:-none}."
     exit 1

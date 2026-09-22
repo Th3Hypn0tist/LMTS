@@ -164,15 +164,18 @@ class LMTSViewController:
         if not targets or not tests:
             self.state.message = 'select at least one target and one configured test'
             return False
-        if self.auth_service is None or self.system_service is None:
-            self.state.message = 'registered user authentication is required before testing'
-            return False
-        try:
-            identity = self.auth_service.require_identity()
-            provenance = self.system_service.run_provenance(identity.user_id).to_dict()
-        except (RuntimeError, ValueError) as exc:
-            self.state.message = f'cannot start test: {exc}'
-            return False
+        if self.auth_service.local_mode:
+            provenance: dict[str, object] = {}
+        else:
+            if self.system_service is None:
+                self.state.message = 'local system persistence is not configured'
+                return False
+            try:
+                identity = self.auth_service.require_identity()
+                provenance = self.system_service.run_provenance(identity.user_id).to_dict()
+            except (RuntimeError, ValueError) as exc:
+                self.state.message = f'cannot start test: {exc}'
+                return False
 
         self.last_errors = []
         self.last_publish_errors = []

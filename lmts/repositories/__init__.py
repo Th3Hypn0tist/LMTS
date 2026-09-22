@@ -1,3 +1,3 @@
-from .user import AccountRecord, InviteRecord, UserRecord, UserRepository
+from .user import UserActivityRecord, UserRepository
 
-__all__ = ['AccountRecord', 'InviteRecord', 'UserRecord', 'UserRepository']
+__all__ = ['UserActivityRecord', 'UserRepository']

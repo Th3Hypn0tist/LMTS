@@ -1,6 +1,6 @@
 # LMTS Database Schema SSOT
 
-This directory is the **single source of truth (SSOT)** for LMTS database structure and database-level ownership boundaries.
+This directory is the **single source of truth (SSOT)** for the LMTS database baseline and its database-level ownership boundaries. Table ownership is explicit in the table name: `IAM_*` belongs to IAM identity/access lifecycle; `LMTS_*` belongs to the LMTS domain.
 
 ## Canonical file
 
@@ -26,7 +26,11 @@ Shared `unknown` identities are valid canonical buckets when multiple probes res
 
 Manual annotations never change canonical identity.
 
-### User-owned data
+### IAM-owned identity data
+
+The shared database contains IAM-owned `IAM_*` tables for canonical users, credentials, invites, tier lifecycle, sessions and abuse/IP-block state. LMTS references IAM user IDs and does not define a parallel user identity.
+
+### User-owned LMTS data
 
 Registered users own:
 
@@ -35,7 +39,7 @@ Registered users own:
 - Compositions
 - invite records they create
 
-Tier-4 is an anonymous Reader state and therefore has no `users` row.
+Tier-4 is an anonymous Reader state and therefore has no `IAM_users` row.
 
 Registered tiers:
 
@@ -91,7 +95,7 @@ Their definition/fingerprint may be snapshotted into reports so later user edits
 
 The immutable LMTS report document remains evidence truth.
 
-The `reports.report_json` payload is not normalized into an alternate SQL truth.
+The `LMTS_reports.report_json` payload is not normalized into an alternate SQL truth.
 
 SQL report index tables in this schema are explicitly **derived and rebuildable**. They exist for search, leaderboard and visualization performance only.
 
@@ -137,7 +141,7 @@ Execution-time state belongs to the report.
 
 ## Schema evolution
 
-The canonical schema is versioned through `lmts_schema_version` using component `database_ssot`.
+The canonical schema is versioned through `LMTS_schema_version` using component `database_ssot`.
 
 Schema evolution must preserve:
 

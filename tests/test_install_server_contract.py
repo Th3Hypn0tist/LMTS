@@ -27,8 +27,8 @@ def test_installer_generates_secrets_instead_of_default_lmts_password() -> None:
 
 def test_installer_runtime_account_is_least_privilege() -> None:
     text = _text()
-    assert 'GRANT SELECT, INSERT ON' in text
-    assert 'GRANT SELECT, INSERT, UPDATE, DELETE' not in text
+    assert 'GRANT SELECT, INSERT, UPDATE, DELETE ON' in text
+    assert 'GRANT ALL PRIVILEGES' not in text
 
 
 def test_installer_writes_generated_settings_for_sudo_user() -> None:

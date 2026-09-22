@@ -34,7 +34,8 @@ class UserActions(TUIActions):
         try:
             identity = self.controller.auth_service.login(username, password)
         except (AuthenticationError, RuntimeError, ValueError) as exc:
-            message = f'IAM login failed: {exc}'
+            status = f' (HTTP {exc.status})' if isinstance(exc, AuthenticationError) and exc.status is not None else ''
+            message = f'IAM login failed{status}: {exc}'
             self.set_message(message)
             self.host.text_viewer(self.stdscr, 'Login failed', (message,))
             return

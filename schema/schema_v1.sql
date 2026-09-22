@@ -7,7 +7,7 @@
 -- Immutable report_json remains benchmark evidence truth.
 -- report_*_index tables are derived/rebuildable projections only.
 
-CREATE TABLE IF NOT EXISTS lmts_schema_version (
+CREATE TABLE IF NOT EXISTS LMTS_schema_version (
     component       VARCHAR(64) NOT NULL,
     schema_version  INT UNSIGNED NOT NULL,
     applied_at      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -16,11 +16,11 @@ CREATE TABLE IF NOT EXISTS lmts_schema_version (
 
 -- ===========================================================================
 -- USER / RESPONSIBILITY
--- Tier-4 is anonymous Reader state and has no users row.
+-- Tier-4 is anonymous Reader state and has no IAM_users row.
 -- Registered tiers: 3, 2, 1, 1337.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS IAM_users (
     user_id          VARCHAR(128) NOT NULL,
     username         VARCHAR(128) NOT NULL,
     display_name     VARCHAR(255) NULL,
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
     CONSTRAINT chk_users_tier CHECK (tier IN (1,2,3,1337))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS user_accounts (
+CREATE TABLE IF NOT EXISTS IAM_user_accounts (
     user_id          VARCHAR(128) NOT NULL,
     password_hash    VARCHAR(255) NOT NULL,
     email            VARCHAR(320) NULL,
@@ -45,11 +45,11 @@ CREATE TABLE IF NOT EXISTS user_accounts (
     PRIMARY KEY (user_id),
     UNIQUE KEY uq_user_accounts_email (email),
     CONSTRAINT fk_user_accounts_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS invites (
+CREATE TABLE IF NOT EXISTS IAM_invites (
     invite_id            VARCHAR(128) NOT NULL,
     owner_user_id        VARCHAR(128) NOT NULL,
     token_hash           VARCHAR(255) NOT NULL,
@@ -63,14 +63,14 @@ CREATE TABLE IF NOT EXISTS invites (
     KEY idx_invites_owner (owner_user_id),
     KEY idx_invites_claimed_by (claimed_by_user_id),
     CONSTRAINT fk_invites_owner
-        FOREIGN KEY (owner_user_id) REFERENCES users(user_id)
+        FOREIGN KEY (owner_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_invites_claimed_by
-        FOREIGN KEY (claimed_by_user_id) REFERENCES users(user_id)
+        FOREIGN KEY (claimed_by_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS tier_progression_requests (
+CREATE TABLE IF NOT EXISTS IAM_tier_progression_requests (
     progression_id                   VARCHAR(128) NOT NULL,
     user_id                          VARCHAR(128) NOT NULL,
     current_tier                     SMALLINT UNSIGNED NOT NULL,
@@ -85,10 +85,10 @@ CREATE TABLE IF NOT EXISTS tier_progression_requests (
     KEY idx_tier_progression_user (user_id),
     KEY idx_tier_progression_approver (approval_required_from_user_id),
     CONSTRAINT fk_tier_progression_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_tier_progression_approver
-        FOREIGN KEY (approval_required_from_user_id) REFERENCES users(user_id)
+        FOREIGN KEY (approval_required_from_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_tier_progression_current CHECK (current_tier IN (1,2,3,1337)),
     CONSTRAINT chk_tier_progression_requested CHECK (requested_tier IN (1,2,3,1337)),
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS tier_progression_requests (
     )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS user_tier_history (
+CREATE TABLE IF NOT EXISTS IAM_user_tier_history (
     history_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     user_id              VARCHAR(128) NOT NULL,
     from_tier            SMALLINT UNSIGNED NOT NULL,
@@ -111,10 +111,10 @@ CREATE TABLE IF NOT EXISTS user_tier_history (
     PRIMARY KEY (history_id),
     KEY idx_user_tier_history_user (user_id, created_at),
     CONSTRAINT fk_user_tier_history_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_user_tier_history_approver
-        FOREIGN KEY (approved_by_user_id) REFERENCES users(user_id)
+        FOREIGN KEY (approved_by_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_user_tier_history_from CHECK (from_tier IN (1,2,3,1337)),
     CONSTRAINT chk_user_tier_history_to CHECK (to_tier IN (1,2,3,1337)),
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS user_tier_history (
 -- Manual annotations never change canonical identity.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS hardware_nodes (
+CREATE TABLE IF NOT EXISTS LMTS_hardware_nodes (
     hardware_id        VARCHAR(128) NOT NULL,
     category           VARCHAR(64) NOT NULL,
     level              VARCHAR(32) NOT NULL,
@@ -150,10 +150,10 @@ CREATE TABLE IF NOT EXISTS hardware_nodes (
     KEY idx_hardware_nodes_category_level (category, level),
     KEY idx_hardware_nodes_replacement (replacement_id),
     CONSTRAINT fk_hardware_nodes_parent
-        FOREIGN KEY (parent_id) REFERENCES hardware_nodes(hardware_id)
+        FOREIGN KEY (parent_id) REFERENCES LMTS_hardware_nodes(hardware_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_hardware_nodes_replacement
-        FOREIGN KEY (replacement_id) REFERENCES hardware_nodes(hardware_id)
+        FOREIGN KEY (replacement_id) REFERENCES LMTS_hardware_nodes(hardware_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_hardware_nodes_level CHECK (level IN ('model','component','variant')),
     CONSTRAINT chk_hardware_nodes_resolution CHECK (resolution_type IN ('exact','partial','unknown')),
@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS hardware_nodes (
     CONSTRAINT chk_hardware_nodes_profile CHECK (JSON_VALID(profile_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS hardware_aliases (
+CREATE TABLE IF NOT EXISTS LMTS_hardware_aliases (
     alias_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     hardware_id       VARCHAR(128) NOT NULL,
     alias_type        VARCHAR(64) NOT NULL,
@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS hardware_aliases (
     UNIQUE KEY uq_hardware_alias (alias_type, normalized_value),
     KEY idx_hardware_alias_hardware (hardware_id),
     CONSTRAINT fk_hardware_alias_hardware
-        FOREIGN KEY (hardware_id) REFERENCES hardware_nodes(hardware_id)
+        FOREIGN KEY (hardware_id) REFERENCES LMTS_hardware_nodes(hardware_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -182,7 +182,7 @@ CREATE TABLE IF NOT EXISTS hardware_aliases (
 -- declare canonical hardware identity.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS systems (
+CREATE TABLE IF NOT EXISTS LMTS_systems (
     system_id             VARCHAR(128) NOT NULL,
     user_id               VARCHAR(128) NOT NULL,
     label                 VARCHAR(255) NOT NULL,
@@ -196,14 +196,14 @@ CREATE TABLE IF NOT EXISTS systems (
     KEY idx_systems_user (user_id),
     KEY idx_systems_device (canonical_device_ref),
     CONSTRAINT fk_systems_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_systems_device
-        FOREIGN KEY (canonical_device_ref) REFERENCES hardware_nodes(hardware_id)
+        FOREIGN KEY (canonical_device_ref) REFERENCES LMTS_hardware_nodes(hardware_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS system_resources (
+CREATE TABLE IF NOT EXISTS LMTS_system_resources (
     system_resource_id  VARCHAR(128) NOT NULL,
     system_id           VARCHAR(128) NOT NULL,
     local_key           VARCHAR(128) NOT NULL,
@@ -218,16 +218,16 @@ CREATE TABLE IF NOT EXISTS system_resources (
     UNIQUE KEY uq_system_resources_local (system_id, local_key),
     KEY idx_system_resources_hardware (hardware_id),
     CONSTRAINT fk_system_resources_system
-        FOREIGN KEY (system_id) REFERENCES systems(system_id)
+        FOREIGN KEY (system_id) REFERENCES LMTS_systems(system_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_system_resources_hardware
-        FOREIGN KEY (hardware_id) REFERENCES hardware_nodes(hardware_id)
+        FOREIGN KEY (hardware_id) REFERENCES LMTS_hardware_nodes(hardware_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_system_resources_resolution CHECK (resolution_status IN ('exact','partial','unknown')),
     CONSTRAINT chk_system_resources_probe CHECK (JSON_VALID(probe_data_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS system_memory_pools (
+CREATE TABLE IF NOT EXISTS LMTS_system_memory_pools (
     memory_pool_id     VARCHAR(128) NOT NULL,
     system_id          VARCHAR(128) NOT NULL,
     pool_kind          VARCHAR(32) NOT NULL,
@@ -236,21 +236,21 @@ CREATE TABLE IF NOT EXISTS system_memory_pools (
     PRIMARY KEY (memory_pool_id),
     KEY idx_system_memory_pools_system (system_id),
     CONSTRAINT fk_system_memory_pools_system
-        FOREIGN KEY (system_id) REFERENCES systems(system_id)
+        FOREIGN KEY (system_id) REFERENCES LMTS_systems(system_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_system_memory_pools_kind CHECK (pool_kind IN ('system','dedicated','unified','other')),
     CONSTRAINT chk_system_memory_pools_properties CHECK (JSON_VALID(properties_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS system_memory_pool_access (
+CREATE TABLE IF NOT EXISTS LMTS_system_memory_pool_access (
     memory_pool_id      VARCHAR(128) NOT NULL,
     system_resource_id  VARCHAR(128) NOT NULL,
     PRIMARY KEY (memory_pool_id, system_resource_id),
     CONSTRAINT fk_memory_pool_access_pool
-        FOREIGN KEY (memory_pool_id) REFERENCES system_memory_pools(memory_pool_id)
+        FOREIGN KEY (memory_pool_id) REFERENCES LMTS_system_memory_pools(memory_pool_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_memory_pool_access_resource
-        FOREIGN KEY (system_resource_id) REFERENCES system_resources(system_resource_id)
+        FOREIGN KEY (system_resource_id) REFERENCES LMTS_system_resources(system_resource_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -259,7 +259,7 @@ CREATE TABLE IF NOT EXISTS system_memory_pool_access (
 -- Convenience presets selecting which System resources participate in tests.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS compute_profiles (
+CREATE TABLE IF NOT EXISTS LMTS_compute_profiles (
     compute_profile_id  VARCHAR(128) NOT NULL,
     user_id             VARCHAR(128) NOT NULL,
     system_id           VARCHAR(128) NOT NULL,
@@ -270,23 +270,23 @@ CREATE TABLE IF NOT EXISTS compute_profiles (
     UNIQUE KEY uq_compute_profiles_name (user_id, system_id, name),
     KEY idx_compute_profiles_system (system_id),
     CONSTRAINT fk_compute_profiles_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_compute_profiles_system
-        FOREIGN KEY (system_id) REFERENCES systems(system_id)
+        FOREIGN KEY (system_id) REFERENCES LMTS_systems(system_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS compute_profile_resources (
+CREATE TABLE IF NOT EXISTS LMTS_compute_profile_resources (
     compute_profile_id  VARCHAR(128) NOT NULL,
     system_resource_id  VARCHAR(128) NOT NULL,
     configuration_json  LONGTEXT NULL,
     PRIMARY KEY (compute_profile_id, system_resource_id),
     CONSTRAINT fk_compute_profile_resources_profile
-        FOREIGN KEY (compute_profile_id) REFERENCES compute_profiles(compute_profile_id)
+        FOREIGN KEY (compute_profile_id) REFERENCES LMTS_compute_profiles(compute_profile_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_compute_profile_resources_resource
-        FOREIGN KEY (system_resource_id) REFERENCES system_resources(system_resource_id)
+        FOREIGN KEY (system_resource_id) REFERENCES LMTS_system_resources(system_resource_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_compute_profile_resources_config CHECK (
         configuration_json IS NULL OR JSON_VALID(configuration_json)
@@ -300,7 +300,7 @@ CREATE TABLE IF NOT EXISTS compute_profile_resources (
 -- Quantization belongs to variant identity.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS model_providers (
+CREATE TABLE IF NOT EXISTS LMTS_model_providers (
     provider_id       VARCHAR(128) NOT NULL,
     canonical_key     VARCHAR(255) NOT NULL,
     name              VARCHAR(255) NOT NULL,
@@ -311,7 +311,7 @@ CREATE TABLE IF NOT EXISTS model_providers (
     CONSTRAINT chk_model_providers_properties CHECK (JSON_VALID(properties_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS model_nodes (
+CREATE TABLE IF NOT EXISTS LMTS_model_nodes (
     model_node_id        VARCHAR(128) NOT NULL,
     level                VARCHAR(32) NOT NULL,
     parent_id            VARCHAR(128) NULL,
@@ -331,13 +331,13 @@ CREATE TABLE IF NOT EXISTS model_nodes (
     KEY idx_model_nodes_level (level),
     KEY idx_model_nodes_replacement (replacement_id),
     CONSTRAINT fk_model_nodes_parent
-        FOREIGN KEY (parent_id) REFERENCES model_nodes(model_node_id)
+        FOREIGN KEY (parent_id) REFERENCES LMTS_model_nodes(model_node_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_model_nodes_provider
-        FOREIGN KEY (provider_id) REFERENCES model_providers(provider_id)
+        FOREIGN KEY (provider_id) REFERENCES LMTS_model_providers(provider_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_model_nodes_replacement
-        FOREIGN KEY (replacement_id) REFERENCES model_nodes(model_node_id)
+        FOREIGN KEY (replacement_id) REFERENCES LMTS_model_nodes(model_node_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_model_nodes_level CHECK (
         level IN ('family','base','branch','provider_model','variant','artifact')
@@ -347,7 +347,7 @@ CREATE TABLE IF NOT EXISTS model_nodes (
     CONSTRAINT chk_model_nodes_profile CHECK (JSON_VALID(profile_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS model_aliases (
+CREATE TABLE IF NOT EXISTS LMTS_model_aliases (
     alias_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     model_node_id     VARCHAR(128) NOT NULL,
     alias_type        VARCHAR(64) NOT NULL,
@@ -358,7 +358,7 @@ CREATE TABLE IF NOT EXISTS model_aliases (
     UNIQUE KEY uq_model_alias (alias_type, normalized_value),
     KEY idx_model_alias_node (model_node_id),
     CONSTRAINT fk_model_alias_node
-        FOREIGN KEY (model_node_id) REFERENCES model_nodes(model_node_id)
+        FOREIGN KEY (model_node_id) REFERENCES LMTS_model_nodes(model_node_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -366,7 +366,7 @@ CREATE TABLE IF NOT EXISTS model_aliases (
 -- USER-OWNED COMPOSITIONS
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS compositions (
+CREATE TABLE IF NOT EXISTS LMTS_compositions (
     composition_id   VARCHAR(128) NOT NULL,
     user_id          VARCHAR(128) NOT NULL,
     name             VARCHAR(255) NOT NULL,
@@ -379,7 +379,7 @@ CREATE TABLE IF NOT EXISTS compositions (
     KEY idx_compositions_user (user_id),
     KEY idx_compositions_fingerprint (fingerprint),
     CONSTRAINT fk_compositions_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_compositions_definition CHECK (JSON_VALID(definition_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -391,7 +391,7 @@ CREATE TABLE IF NOT EXISTS compositions (
 -- Parameter Sweep is a test kind, not a separate storage model.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS test_definitions (
+CREATE TABLE IF NOT EXISTS LMTS_test_definitions (
     test_definition_id  VARCHAR(128) NOT NULL,
     namespace           VARCHAR(255) NOT NULL,
     name                VARCHAR(255) NOT NULL,
@@ -402,7 +402,7 @@ CREATE TABLE IF NOT EXISTS test_definitions (
     UNIQUE KEY uq_test_definitions_namespace (namespace)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS test_versions (
+CREATE TABLE IF NOT EXISTS LMTS_test_versions (
     test_version_id       VARCHAR(128) NOT NULL,
     test_definition_id    VARCHAR(128) NOT NULL,
     version               VARCHAR(64) NOT NULL,
@@ -419,13 +419,13 @@ CREATE TABLE IF NOT EXISTS test_versions (
     KEY idx_test_versions_fingerprint (fingerprint),
     KEY idx_test_versions_kind_status (kind, status),
     CONSTRAINT fk_test_versions_definition
-        FOREIGN KEY (test_definition_id) REFERENCES test_definitions(test_definition_id)
+        FOREIGN KEY (test_definition_id) REFERENCES LMTS_test_definitions(test_definition_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_test_versions_creator
-        FOREIGN KEY (created_by_user_id) REFERENCES users(user_id)
+        FOREIGN KEY (created_by_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_test_versions_publisher
-        FOREIGN KEY (published_by_user_id) REFERENCES users(user_id)
+        FOREIGN KEY (published_by_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_test_versions_definition CHECK (JSON_VALID(definition_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -433,13 +433,13 @@ CREATE TABLE IF NOT EXISTS test_versions (
 -- ===========================================================================
 -- CANONICAL TELEMETRY
 -- Telemetry vocabulary is data, not schema. New telemetry types are inserted
--- into telemetry_types without changing the database structure.
+-- into LMTS_telemetry_types without changing the database structure.
 -- Test versions declare which telemetry types they expect.
 -- Telemetry values duplicate critical evidence context intentionally so
 -- result queries do not depend on reconstructing ownership/topology joins.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS telemetry_types (
+CREATE TABLE IF NOT EXISTS LMTS_telemetry_types (
     telemetry_type_id  VARCHAR(128) NOT NULL,
     canonical_key      VARCHAR(255) NOT NULL,
     name               VARCHAR(255) NOT NULL,
@@ -454,14 +454,14 @@ CREATE TABLE IF NOT EXISTS telemetry_types (
     UNIQUE KEY uq_telemetry_types_key (canonical_key),
     KEY idx_telemetry_types_replacement (replacement_id),
     CONSTRAINT fk_telemetry_types_replacement
-        FOREIGN KEY (replacement_id) REFERENCES telemetry_types(telemetry_type_id)
+        FOREIGN KEY (replacement_id) REFERENCES LMTS_telemetry_types(telemetry_type_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_telemetry_types_definition CHECK (
         definition_json IS NULL OR JSON_VALID(definition_json)
     )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS test_version_telemetry_types (
+CREATE TABLE IF NOT EXISTS LMTS_test_version_telemetry_types (
     test_version_id     VARCHAR(128) NOT NULL,
     telemetry_type_id   VARCHAR(128) NOT NULL,
     required            BOOLEAN NOT NULL DEFAULT TRUE,
@@ -470,10 +470,10 @@ CREATE TABLE IF NOT EXISTS test_version_telemetry_types (
     PRIMARY KEY (test_version_id, telemetry_type_id),
     KEY idx_test_version_telemetry_type (telemetry_type_id),
     CONSTRAINT fk_test_version_telemetry_test
-        FOREIGN KEY (test_version_id) REFERENCES test_versions(test_version_id)
+        FOREIGN KEY (test_version_id) REFERENCES LMTS_test_versions(test_version_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_test_version_telemetry_type
-        FOREIGN KEY (telemetry_type_id) REFERENCES telemetry_types(telemetry_type_id)
+        FOREIGN KEY (telemetry_type_id) REFERENCES LMTS_telemetry_types(telemetry_type_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_test_version_telemetry_config CHECK (
         configuration_json IS NULL OR JSON_VALID(configuration_json)
@@ -481,7 +481,7 @@ CREATE TABLE IF NOT EXISTS test_version_telemetry_types (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Canonical telemetry vocabulary. Extend by INSERT, not ALTER TABLE.
-INSERT INTO telemetry_types (
+INSERT INTO LMTS_telemetry_types (
     telemetry_type_id, canonical_key, name, description, value_kind, unit
 ) VALUES
     ('input_tokens', 'input_tokens', 'Input tokens', 'Input token count for the executed record.', 'integer', 'tokens'),
@@ -511,7 +511,7 @@ ON DUPLICATE KEY UPDATE
 -- report_json is evidence truth.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS reports (
+CREATE TABLE IF NOT EXISTS LMTS_reports (
     report_id       VARCHAR(128) NOT NULL,
     report_type     VARCHAR(64) NOT NULL,
     created_at      DATETIME(6) NOT NULL,
@@ -525,7 +525,7 @@ CREATE TABLE IF NOT EXISTS reports (
     CONSTRAINT chk_report_json CHECK (JSON_VALID(report_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS report_submissions (
+CREATE TABLE IF NOT EXISTS LMTS_report_submissions (
     submission_id        VARCHAR(128) NOT NULL,
     report_id            VARCHAR(128) NOT NULL,
     submitter_user_id    VARCHAR(128) NULL,
@@ -536,10 +536,10 @@ CREATE TABLE IF NOT EXISTS report_submissions (
     KEY idx_report_submissions_report (report_id),
     KEY idx_report_submissions_submitter (submitter_user_id),
     CONSTRAINT fk_report_submissions_report
-        FOREIGN KEY (report_id) REFERENCES reports(report_id)
+        FOREIGN KEY (report_id) REFERENCES LMTS_reports(report_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_report_submissions_submitter
-        FOREIGN KEY (submitter_user_id) REFERENCES users(user_id)
+        FOREIGN KEY (submitter_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -548,7 +548,7 @@ CREATE TABLE IF NOT EXISTS report_submissions (
 -- These tables are query accelerators only and may be rebuilt from report_json.
 -- ===========================================================================
 
-CREATE TABLE IF NOT EXISTS report_record_index (
+CREATE TABLE IF NOT EXISTS LMTS_report_record_index (
     report_id                   VARCHAR(128) NOT NULL,
     record_id                   VARCHAR(128) NOT NULL,
     tester_user_id              VARCHAR(128) NULL,
@@ -575,23 +575,23 @@ CREATE TABLE IF NOT EXISTS report_record_index (
     KEY idx_report_record_duration (duration_ms),
     KEY idx_report_record_outcome (outcome),
     CONSTRAINT fk_report_record_report
-        FOREIGN KEY (report_id) REFERENCES reports(report_id)
+        FOREIGN KEY (report_id) REFERENCES LMTS_reports(report_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_report_record_tester
-        FOREIGN KEY (tester_user_id) REFERENCES users(user_id)
+        FOREIGN KEY (tester_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_report_record_model
-        FOREIGN KEY (model_node_id) REFERENCES model_nodes(model_node_id)
+        FOREIGN KEY (model_node_id) REFERENCES LMTS_model_nodes(model_node_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_report_record_test
-        FOREIGN KEY (test_version_id) REFERENCES test_versions(test_version_id)
+        FOREIGN KEY (test_version_id) REFERENCES LMTS_test_versions(test_version_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_report_record_runtime_config CHECK (
         runtime_configuration_json IS NULL OR JSON_VALID(runtime_configuration_json)
     )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS telemetry_values (
+CREATE TABLE IF NOT EXISTS LMTS_telemetry_values (
     telemetry_value_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     report_id           VARCHAR(128) NOT NULL,
     record_id           VARCHAR(128) NOT NULL,
@@ -621,28 +621,28 @@ CREATE TABLE IF NOT EXISTS telemetry_values (
     KEY idx_telemetry_resource (system_resource_id),
     CONSTRAINT fk_telemetry_record
         FOREIGN KEY (report_id, record_id)
-        REFERENCES report_record_index(report_id, record_id)
+        REFERENCES LMTS_report_record_index(report_id, record_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_user
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
+        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_system
-        FOREIGN KEY (system_id) REFERENCES systems(system_id)
+        FOREIGN KEY (system_id) REFERENCES LMTS_systems(system_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_compute_profile
-        FOREIGN KEY (compute_profile_id) REFERENCES compute_profiles(compute_profile_id)
+        FOREIGN KEY (compute_profile_id) REFERENCES LMTS_compute_profiles(compute_profile_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_system_resource
-        FOREIGN KEY (system_resource_id) REFERENCES system_resources(system_resource_id)
+        FOREIGN KEY (system_resource_id) REFERENCES LMTS_system_resources(system_resource_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_test_definition
-        FOREIGN KEY (test_definition_id) REFERENCES test_definitions(test_definition_id)
+        FOREIGN KEY (test_definition_id) REFERENCES LMTS_test_definitions(test_definition_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_test_version
-        FOREIGN KEY (test_version_id) REFERENCES test_versions(test_version_id)
+        FOREIGN KEY (test_version_id) REFERENCES LMTS_test_versions(test_version_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_type
-        FOREIGN KEY (telemetry_type_id) REFERENCES telemetry_types(telemetry_type_id)
+        FOREIGN KEY (telemetry_type_id) REFERENCES LMTS_telemetry_types(telemetry_type_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_telemetry_value_json CHECK (
         value_json IS NULL OR JSON_VALID(value_json)
@@ -663,7 +663,7 @@ CREATE TABLE IF NOT EXISTS telemetry_values (
 -- deliberately as query-ready evidence context and must agree with report_json
 -- when the projection is written or rebuilt.
 
-CREATE TABLE IF NOT EXISTS report_record_hardware_index (
+CREATE TABLE IF NOT EXISTS LMTS_report_record_hardware_index (
     report_id          VARCHAR(128) NOT NULL,
     record_id          VARCHAR(128) NOT NULL,
     resource_role      VARCHAR(128) NOT NULL,
@@ -673,14 +673,14 @@ CREATE TABLE IF NOT EXISTS report_record_hardware_index (
     KEY idx_report_hardware_hardware (hardware_id),
     CONSTRAINT fk_report_hardware_record
         FOREIGN KEY (report_id, record_id)
-        REFERENCES report_record_index(report_id, record_id)
+        REFERENCES LMTS_report_record_index(report_id, record_id)
         ON UPDATE RESTRICT ON DELETE CASCADE,
     CONSTRAINT fk_report_hardware_hardware
-        FOREIGN KEY (hardware_id) REFERENCES hardware_nodes(hardware_id)
+        FOREIGN KEY (hardware_id) REFERENCES LMTS_hardware_nodes(hardware_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO lmts_schema_version (component, schema_version)
+INSERT INTO LMTS_schema_version (component, schema_version)
 VALUES ('database_ssot', 1)
 ON DUPLICATE KEY UPDATE
     schema_version = VALUES(schema_version),

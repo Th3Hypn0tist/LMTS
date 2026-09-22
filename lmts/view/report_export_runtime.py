@@ -21,6 +21,53 @@ from .tui_common import single_line
 
 _ACTIVE_CONTROLLER: 'ReportExportController | None' = None
 
+def _secret_line(stdscr: curses.window, title: str, *, maximum: int = 1024) -> str | None:
+    """Read one non-empty secret without rendering the plaintext value."""
+    value: list[str] = []
+    try:
+        while True:
+            height, width = stdscr.getmaxyx()
+            win_h = max(5, min(height - 2, 7))
+            win_w = max(30, min(width - 2, 80))
+            body_w = max(1, win_w - 4)
+            win = curses.newwin(
+                win_h,
+                win_w,
+                max(0, (height - win_h) // 2),
+                max(0, (width - win_w) // 2),
+            )
+            win.keypad(True)
+            win.erase()
+            win.box()
+            win.addnstr(0, 2, f" {title} ", max(0, win_w - 4))
+            masked = '*' * min(len(value), body_w)
+            win.addnstr(2, 2, masked, body_w)
+            win.addnstr(win_h - 2, 2, 'Enter accept  Esc cancel', body_w, curses.A_DIM)
+            try:
+                curses.curs_set(1)
+                win.move(2, 2 + min(len(masked), max(0, body_w - 1)))
+            except curses.error:
+                pass
+            win.refresh()
+            key = win.get_wch()
+            if key == '\x1b':
+                return None
+            if key in ('\n', '\r') or key == curses.KEY_ENTER:
+                if value:
+                    return ''.join(value)
+                continue
+            if key in (curses.KEY_BACKSPACE, '\b', '\x7f'):
+                if value:
+                    value.pop()
+                continue
+            if isinstance(key, str) and key.isprintable() and len(value) < maximum:
+                value.append(key)
+    finally:
+        try:
+            curses.curs_set(0)
+        except curses.error:
+            pass
+
 def _ensure_authenticated(
     host: LMTSInteractiveHost,
     stdscr: curses.window,
@@ -41,14 +88,19 @@ def _ensure_authenticated(
     if username is None:
         controller.state.message = 'run cancelled: authentication required'
         return False
-    password = single_line(host, stdscr, 'LMTS password')
+    password = _secret_line(stdscr, 'LMTS password')
     if password is None:
         controller.state.message = 'run cancelled: authentication required'
         return False
     try:
         identity = auth.login(username, password)
     except (AuthenticationError, RuntimeError, ValueError) as exc:
-        controller.state.message = f'login failed: {exc}'
+        mysql = getattr(auth.repository, 'mysql', None)
+        if mysql is None:
+            target = auth.connection_id
+        else:
+            target = f'{mysql.id} ({mysql.host}:{mysql.port}/{mysql.database})'
+        controller.state.message = f'login failed against {target}: {exc}'
         return False
     controller.user_service.clear()
     controller.state.message = f'authenticated: {identity.username}'

@@ -25,10 +25,10 @@ try {
     ]);
     $id = trim((string)($_GET['id'] ?? ''));
     if ($id !== '') {
-        $stmt = $pdo->prepare('SELECT report_json FROM reports WHERE report_id = ? LIMIT 1');
+        $stmt = $pdo->prepare('SELECT report_json FROM LMTS_reports WHERE report_id = ? LIMIT 1');
         $stmt->execute([$id]);
     } else {
-        $stmt = $pdo->query('SELECT report_json FROM reports ORDER BY created_at DESC, imported_at DESC LIMIT 1');
+        $stmt = $pdo->query('SELECT report_json FROM LMTS_reports ORDER BY created_at DESC, imported_at DESC LIMIT 1');
     }
     $json = $stmt->fetchColumn();
     if ($json === false) visualizer_fail(404, 'report not found');

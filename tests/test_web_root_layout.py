@@ -2,20 +2,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lmts.tools.web_deploy import web_root_files
+from lmts.tools.web_deploy import PHP_PACKAGE_ROOT, php_package_files
 
 
 INSTALLER = Path('lmts/install/install_server.sh')
 
 
-def test_web_deploy_starts_at_target_root() -> None:
-    files = web_root_files()
-    assert 'index.html' in files
-    assert 'app.js' in files
-    assert 'api/report.php' in files
-    assert 'assets/lmts.css' in files
-    assert 'config/db.php' in files
-    assert all(not path.startswith('public/') for path in files)
+def test_php_package_has_two_application_subdirectories() -> None:
+    directories = sorted(path.name for path in PHP_PACKAGE_ROOT.iterdir() if path.is_dir())
+    assert directories == ['storage', 'visualizer']
+
+
+def test_php_package_is_directly_copyable() -> None:
+    files = php_package_files()
+    assert 'README.md' in files
+    assert 'config.example.php' in files
+    assert 'visualizer/index.html' in files
+    assert 'visualizer/app.js' in files
+    assert 'visualizer/api/stats.php' in files
+    assert 'visualizer/api/report.php' in files
+    assert 'storage/report.php' in files
+    assert 'storage/lib/report_contract.php' in files
 
 
 def test_privileged_installer_does_not_own_web_location() -> None:
@@ -26,4 +33,3 @@ def test_privileged_installer_does_not_own_web_location() -> None:
     assert 'Alias /benchmark/' not in text
     assert 'ServerName aigm.fi' not in text
     assert '/home/www' not in text
-    assert 'Deploy the LMTS web package from the TUI to any web-visible directory you choose.' in text

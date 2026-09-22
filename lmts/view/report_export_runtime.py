@@ -8,6 +8,7 @@ from lmts.core.result_export import build_matrix_bundle
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
 from lmts.reporting import project_matrix_bundle
 from lmts.reporting.single import project_run_result
+from lmts.services.auth import AuthenticationError
 from lmts.tools.report_export import export_report_json
 from lmts.tools.report_publish import publish_report
 from lmts.tools.report_targets import ReportTarget, configured_report_targets, resolve_report_target
@@ -16,8 +17,42 @@ from .actions.benchmark import BenchmarkActions
 from .controller import LMTSViewController
 from .lmts_host import LMTSInteractiveHost
 from .tui_app import TUIApplication
+from .tui_common import single_line
 
 _ACTIVE_CONTROLLER: 'ReportExportController | None' = None
+
+def _ensure_authenticated(
+    host: LMTSInteractiveHost,
+    stdscr: curses.window,
+    controller: 'ReportExportController',
+) -> bool:
+    auth = controller.auth_service
+    if auth is None:
+        controller.state.message = 'registered user authentication is required before testing'
+        return False
+    try:
+        if auth.current_identity() is not None:
+            return True
+    except AuthenticationError as exc:
+        controller.state.message = f'cannot restore authentication: {exc}'
+        return False
+
+    username = single_line(host, stdscr, 'LMTS username')
+    if username is None:
+        controller.state.message = 'run cancelled: authentication required'
+        return False
+    password = single_line(host, stdscr, 'LMTS password')
+    if password is None:
+        controller.state.message = 'run cancelled: authentication required'
+        return False
+    try:
+        identity = auth.login(username, password)
+    except (AuthenticationError, RuntimeError, ValueError) as exc:
+        controller.state.message = f'login failed: {exc}'
+        return False
+    controller.user_service.clear()
+    controller.state.message = f'authenticated: {identity.username}'
+    return True
 
 def _select_report_target(host: LMTSInteractiveHost, stdscr: curses.window) -> ReportTarget | None:
     settings = load_settings(DEFAULT_SETTINGS_PATH)
@@ -138,6 +173,9 @@ class ReportExportBenchmarkActions(BenchmarkActions):
         controller = self.controller
         if not isinstance(controller, ReportExportController):
             raise TypeError('report-aware benchmark actions require ReportExportController')
+        if not _ensure_authenticated(self.host, self.stdscr, controller):
+            self.set_message(controller.state.message)
+            return False
         controller.configure_next_publish(())
         auto_targets = _auto_publish_targets()
         if auto_targets:

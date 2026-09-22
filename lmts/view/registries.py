@@ -35,7 +35,11 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("profile.scan", ("p",), "Profile system", "Profiling", scope="profile", order=100),
 
     ShortcutDefinition("stats.refresh", ("f",), "Refresh", "Stats", scope="stats", order=100),
-    ShortcutDefinition("user.refresh", ("f",), "Refresh", "User", scope="user", order=100),
+    ShortcutDefinition("user.login", ("l",), "Login", "User", scope="user", order=90),
+    ShortcutDefinition("user.register", ("r",), "Register", "User", scope="user", order=100),
+    ShortcutDefinition("user.logout", ("o",), "Logout", "User", scope="user", order=110),
+    ShortcutDefinition("user.local", ("c",), "Local", "User", scope="user", order=120),
+    ShortcutDefinition("user.refresh", ("f",), "Refresh", "User", scope="user", order=130),
 
     ShortcutDefinition("benchmark.tests", ("t",), "Tests", "Benchmark", scope="benchmark", order=100),
     ShortcutDefinition("benchmark.targets", ("m",), "Targets", "Benchmark", scope="benchmark", order=110),

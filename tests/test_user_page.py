@@ -6,18 +6,27 @@ from lmts.services.user import UserDashboardSnapshot
 from lmts.view.user_page import UserPage
 
 
-def test_user_page_projects_activity_without_inventing_account_state() -> None:
+def test_user_page_projects_canonical_identity_and_activity() -> None:
     snapshot = UserDashboardSnapshot(
-        username=None,
-        tier=None,
+        user_id='0',
+        username='origin',
+        tier=1337,
+        tier_label='Test-content authority',
+        status='active',
+        verified=True,
+        can_invite=True,
         activity={
-            'runs': 7,
-            'matrices': 2,
-            'targets': 3,
-            'tests': 4,
+            'reports': 7,
+            'submissions': 2,
+            'result_records': 7,
+            'test_definitions': 4,
+            'test_versions': 4,
+            'telemetry_values': 11,
             'models': 2,
-            'bots': 1,
             'compositions': 0,
+            'systems': 1,
+            'compute_profiles': 0,
+            'hardware_nodes': 3,
             'pass': 5,
             'fail': 1,
             'error': 1,
@@ -30,8 +39,9 @@ def test_user_page_projects_activity_without_inventing_account_state() -> None:
 
     lines = UserPage(controller).lines()
 
-    assert '  Username : not connected' in lines
-    assert '  Tier     : -' in lines
-    assert '  Test runs    : 7' in lines
-    assert '  PASS      : 5' in lines
-    assert '  ERROR     : 1' in lines
+    assert '  Username   : origin' in lines
+    assert '  User ID    : 0' in lines
+    assert '  Tier       : 1337 Test-content authority' in lines
+    assert '  Reports            : 7' in lines
+    assert '  PASS               : 5' in lines
+    assert '  ERROR              : 1' in lines

@@ -33,8 +33,8 @@ def _line_editor(
     try:
         while True:
             height, width = stdscr.getmaxyx()
-            win_h = max(5, min(height - 2, 7))
-            win_w = max(30, min(width - 2, 80))
+            win_h = max(5, min(height - 2, 5))
+            win_w = max(28, min(width - 2, 52))
             body_w = max(1, win_w - 4)
             field_w = max(1, body_w - 1)
             win = curses.newwin(
@@ -75,6 +75,18 @@ def _line_editor(
             if isinstance(key, str) and key.isprintable() and len(value) < maximum:
                 value.append(key)
     finally:
+        try:
+            if 'win' in locals():
+                win.erase()
+                win.refresh()
+                del win
+        except curses.error:
+            pass
+        try:
+            stdscr.touchwin()
+            stdscr.refresh()
+        except curses.error:
+            pass
         try:
             curses.curs_set(0)
         except curses.error:

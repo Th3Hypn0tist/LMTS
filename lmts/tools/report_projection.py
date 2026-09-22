@@ -176,7 +176,7 @@ def _telemetry_insert(
         value_json = _hex_text(_canonical_json(value))
     unit = _TELEMETRY_UNITS.get(telemetry_type_id)
     return f"""
-INSERT INTO telemetry_values (
+INSERT INTO LMTS_telemetry_values (
   report_id, record_id, user_id, system_id, compute_profile_id,
   test_definition_id, test_version_id, telemetry_type_id,
   sample_ordinal, observed_at,
@@ -202,7 +202,7 @@ SELECT
   {_hex_text(context)}
 WHERE NOT EXISTS (
   SELECT 1
-  FROM telemetry_values
+  FROM LMTS_telemetry_values
   WHERE report_id = {_hex_text(report_id)}
     AND record_id = {_hex_text(record_id)}
     AND telemetry_type_id = {_hex_text(telemetry_type_id)}
@@ -355,7 +355,7 @@ def rebuild_report_projection(mysql: MySQLSettings, report: dict[str, Any]) -> N
 
     for test in tests.values():
         statements.append(f"""
-INSERT IGNORE INTO test_definitions (
+INSERT IGNORE INTO LMTS_test_definitions (
   test_definition_id, namespace, name, description, category
 ) VALUES (
   {_hex_text(test.test_definition_id)},
@@ -366,7 +366,7 @@ INSERT IGNORE INTO test_definitions (
 )
 """.strip())
         statements.append(f"""
-INSERT IGNORE INTO test_versions (
+INSERT IGNORE INTO LMTS_test_versions (
   test_version_id, test_definition_id, version, kind,
   definition_json, fingerprint, status
 ) VALUES (
@@ -381,7 +381,7 @@ INSERT IGNORE INTO test_versions (
 """.strip())
         for ordinal, telemetry_type in enumerate(test.telemetry_types):
             statements.append(f"""
-INSERT IGNORE INTO test_version_telemetry_types (
+INSERT IGNORE INTO LMTS_test_version_telemetry_types (
   test_version_id, telemetry_type_id, required, ordinal
 ) VALUES (
   {_hex_text(test.test_version_id)},
@@ -417,7 +417,7 @@ INSERT IGNORE INTO test_version_telemetry_types (
         runtime_json = None if runtime_configuration is None else _canonical_json(runtime_configuration)
         duration = _duration_ms(timing.get('started_at'), timing.get('completed_at'))
         statements.append(f"""
-INSERT IGNORE INTO report_record_index (
+INSERT IGNORE INTO LMTS_report_record_index (
   report_id, record_id, tester_user_id, target_kind,
   test_version_id, system_id, compute_profile_id,
   started_at, completed_at, duration_ms, ttft_ms,
@@ -451,7 +451,7 @@ def rebuild_all_report_projections(mysql: MySQLSettings) -> int:
     """Rebuild all derived report indexes from immutable report_json documents."""
     from .mysql_reports import read_report
 
-    raw = _run(mysql, 'SELECT report_id FROM reports ORDER BY created_at, report_id')
+    raw = _run(mysql, 'SELECT report_id FROM LMTS_reports ORDER BY created_at, report_id')
     report_ids = [line.strip() for line in raw.splitlines() if line.strip()]
     for report_id in report_ids:
         rebuild_report_projection(mysql, read_report(mysql, report_id))

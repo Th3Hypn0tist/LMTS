@@ -35,10 +35,10 @@ try {
     if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $id = trim((string)($_GET['id'] ?? ''));
         if ($id !== '') {
-            $stmt = $pdo->prepare('SELECT report_json FROM reports WHERE report_id = ? LIMIT 1');
+            $stmt = $pdo->prepare('SELECT report_json FROM LMTS_reports WHERE report_id = ? LIMIT 1');
             $stmt->execute([$id]);
         } else {
-            $stmt = $pdo->query('SELECT report_json FROM reports ORDER BY created_at DESC, imported_at DESC LIMIT 1');
+            $stmt = $pdo->query('SELECT report_json FROM LMTS_reports ORDER BY created_at DESC, imported_at DESC LIMIT 1');
         }
         $json = $stmt->fetchColumn();
         if ($json === false) fail_response(404, 'report not found');
@@ -79,7 +79,7 @@ try {
     $reportJson = json_encode($canonicalReport, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 
     $pdo->beginTransaction();
-    $existingStmt = $pdo->prepare('SELECT report_json FROM reports WHERE report_id = ? FOR UPDATE');
+    $existingStmt = $pdo->prepare('SELECT report_json FROM LMTS_reports WHERE report_id = ? FOR UPDATE');
     $existingStmt->execute([$reportId]);
     $existingJson = $existingStmt->fetchColumn();
 
@@ -94,7 +94,7 @@ try {
     }
 
     $insert = $pdo->prepare(
-        'INSERT INTO reports (report_id, report_type, created_at, source_type, source_id, report_json)
+        'INSERT INTO LMTS_reports (report_id, report_type, created_at, source_type, source_id, report_json)
          VALUES (?, ?, ?, ?, ?, ?)'
     );
     $insert->execute([$reportId, $reportType, $createdAtSql, $sourceType, $sourceId, $reportJson]);

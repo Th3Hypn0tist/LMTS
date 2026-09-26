@@ -61,6 +61,13 @@ class ResponseMonitor:
                 if summary:
                     self._lines.append(summary)
 
+    def append_lines(self, *lines: str) -> None:
+        with self._lock:
+            self._flush_partial(self._channel)
+            if self._lines and self._lines[-1] != "":
+                self._lines.append("")
+            self._lines.extend(lines)
+
     def lines(self) -> tuple[str, ...]:
         with self._lock:
             output: list[str] = []

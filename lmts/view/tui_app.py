@@ -68,6 +68,9 @@ class TUIApplication:
         )
         startup_user = UserActions(self.state, host, stdscr)
         while True:
+            startup_user.set_message('')
+            stdscr.erase()
+            stdscr.refresh()
             startup = host.choose(stdscr, 'LMTS startup', ['Login', 'Register', 'Local'], 0)
             if startup is None:
                 return

@@ -1,10 +1,7 @@
-# Storage
+# Storage support
 
-Authenticated LMTS result ingestion for the standalone PHP package.
+Support files for the canonical LMTS report endpoint at `../report.php`.
 
-- `report.php` accepts LMTS benchmark reports with `POST`.
-- `X-LMTS-Key` must match `publish_key` in `../config.php`.
-- Reports are stored immutably in MariaDB.
-- `GET report.php?id=<report_id>` is available for publish verification.
-
-This directory owns result storage only. Visualization lives in `../visualizer/`.
+- `lib/report_contract.php` validates benchmark report documents.
+- `contracts/` contains the canonical report schema.
+- The public ingestion endpoint is `../report.php`; this directory does not expose a second report endpoint.

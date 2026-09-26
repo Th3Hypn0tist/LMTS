@@ -143,7 +143,7 @@ class SettingsActions(TUIActions):
         label = single_line(self.host, self.stdscr, 'PHP API connection label', initial=current.label if current else connection_id)
         if label is None:
             return None
-        base_url = single_line(self.host, self.stdscr, 'PHP API base URL', initial=current.base_url if current else '')
+        base_url = single_line(self.host, self.stdscr, 'PHP API report endpoint', initial=current.base_url if current else '')
         if base_url is None:
             return None
         publish_key = single_line(self.host, self.stdscr, 'PHP API publish key', initial=current.publish_key if current else '')

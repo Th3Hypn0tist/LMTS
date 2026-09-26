@@ -23,6 +23,7 @@ class UserActions(TUIActions):
         return choice == 1
 
     def login(self, _stdscr=None) -> None:
+        self.set_message('')
         if not self._confirm_replace_session():
             return
         username = single_line(self.host, self.stdscr, 'IAM username')

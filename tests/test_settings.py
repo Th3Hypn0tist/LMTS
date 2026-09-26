@@ -39,3 +39,13 @@ def test_schema_v5_migrates_destination_owned_outputs(tmp_path: Path) -> None:
     assert [item.id for item in settings.mysql_connections] == ['local']
     assert [item.base_url for item in settings.php_api_connections] == ['https://one.example', 'https://two.example']
     assert settings.auto_publish_targets == ('php_api:legacy-dvisualizer',)
+
+
+def test_php_api_report_endpoint_matches_deployed_storage_package() -> None:
+    api = PHPAPISettings(
+        id='public',
+        label='Public',
+        base_url='https://aigm.fi/lmts-report',
+        publish_key='secret',
+    )
+    assert api.report_endpoint == 'https://aigm.fi/lmts-report/storage/report.php'

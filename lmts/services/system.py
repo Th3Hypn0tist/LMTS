@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lmts.repositories.system import SystemRecord, SystemRepository
+from lmts.repositories.system import SystemRecord, SystemRepository, system_id_for
 
 from .profile import SystemProfileService
 
@@ -24,11 +24,11 @@ class RunProvenance:
 class SystemService:
     """Resolve the current probed machine into a persistent user-owned System."""
 
-    def __init__(self, repository: SystemRepository, profile_service: SystemProfileService) -> None:
+    def __init__(self, repository: SystemRepository | None, profile_service: SystemProfileService) -> None:
         self.repository = repository
         self.profile_service = profile_service
 
-    def ensure_current(self, user_id: str) -> SystemRecord:
+    def _profile_identity(self) -> tuple[str, int]:
         profile = self.profile_service.context()
         fingerprint = str(profile.get('fingerprint') or '').strip()
         schema_version = profile.get('schema_version')
@@ -36,6 +36,20 @@ class SystemService:
             raise ValueError('system profile has no fingerprint')
         if isinstance(schema_version, bool) or not isinstance(schema_version, int):
             raise ValueError('system profile has invalid schema_version')
+        return fingerprint, schema_version
+
+    def build_run_provenance(self, user_id: str) -> RunProvenance:
+        fingerprint, _schema_version = self._profile_identity()
+        return RunProvenance(
+            tester_user_id=user_id,
+            system_id=system_id_for(user_id, fingerprint),
+            compute_profile_id=None,
+        )
+
+    def ensure_current(self, user_id: str) -> SystemRecord:
+        if self.repository is None:
+            raise RuntimeError('local system persistence is not configured')
+        fingerprint, schema_version = self._profile_identity()
         return self.repository.ensure_system(
             user_id=user_id,
             fingerprint=fingerprint,
@@ -43,9 +57,4 @@ class SystemService:
         )
 
     def run_provenance(self, user_id: str) -> RunProvenance:
-        system = self.ensure_current(user_id)
-        return RunProvenance(
-            tester_user_id=user_id,
-            system_id=system.system_id,
-            compute_profile_id=None,
-        )
+        return self.build_run_provenance(user_id)

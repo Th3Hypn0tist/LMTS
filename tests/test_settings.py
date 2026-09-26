@@ -41,11 +41,11 @@ def test_schema_v5_migrates_destination_owned_outputs(tmp_path: Path) -> None:
     assert settings.auto_publish_targets == ('php_api:legacy-dvisualizer',)
 
 
-def test_php_api_report_endpoint_matches_deployed_storage_package() -> None:
+def test_php_api_report_endpoint_is_used_verbatim() -> None:
     api = PHPAPISettings(
         id='public',
         label='Public',
-        base_url='https://aigm.fi/lmts-report',
+        base_url='https://aigm.fi/lmts-report/report.php',
         publish_key='secret',
     )
-    assert api.report_endpoint == 'https://aigm.fi/lmts-report/storage/report.php'
+    assert api.report_endpoint == 'https://aigm.fi/lmts-report/report.php'

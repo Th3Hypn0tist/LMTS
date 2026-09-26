@@ -28,29 +28,32 @@ class UserPage:
             f"  Can invite : {self._yes_no(snapshot.can_invite)}",
         ]
         if snapshot.identity_error:
-            lines.extend(['', f'Identity/database warning: {snapshot.identity_error}'])
-        lines.extend([
-            '',
-            'My test activity',
-            f"  Reports            : {activity['reports']}",
-            f"  Submissions        : {activity['submissions']}",
-            f"  Result records     : {activity['result_records']}",
-            f"  Test definitions   : {activity['test_definitions']}",
-            f"  Test versions      : {activity['test_versions']}",
-            f"  Telemetry values   : {activity['telemetry_values']}",
-            '',
-            'My results',
-            f"  PASS               : {activity['pass']}",
-            f"  FAIL               : {activity['fail']}",
-            f"  ERROR              : {activity['error']}",
-            f"  CANCELLED          : {activity['cancelled']}",
-            f"  UNKNOWN            : {activity['unknown']}",
-            '',
-            'My tested coverage',
-            f"  Models             : {activity['models']}",
-            f"  Compositions       : {activity['compositions']}",
-            f"  Systems            : {activity['systems']}",
-            f"  Compute profiles   : {activity['compute_profiles']}",
-            f"  Hardware nodes     : {activity['hardware_nodes']}",
-        ])
+            lines.extend(['', f'IAM identity error: {snapshot.identity_error}'])
+        if snapshot.activity_error:
+            lines.extend(['', f'Local activity unavailable: {snapshot.activity_error}'])
+        if activity is not None:
+            lines.extend([
+                '',
+                'My test activity',
+                f"  Reports            : {activity['reports']}",
+                f"  Submissions        : {activity['submissions']}",
+                f"  Result records     : {activity['result_records']}",
+                f"  Test definitions   : {activity['test_definitions']}",
+                f"  Test versions      : {activity['test_versions']}",
+                f"  Telemetry values   : {activity['telemetry_values']}",
+                '',
+                'My results',
+                f"  PASS               : {activity['pass']}",
+                f"  FAIL               : {activity['fail']}",
+                f"  ERROR              : {activity['error']}",
+                f"  CANCELLED          : {activity['cancelled']}",
+                f"  UNKNOWN            : {activity['unknown']}",
+                '',
+                'My tested coverage',
+                f"  Models             : {activity['models']}",
+                f"  Compositions       : {activity['compositions']}",
+                f"  Systems            : {activity['systems']}",
+                f"  Compute profiles   : {activity['compute_profiles']}",
+                f"  Hardware nodes     : {activity['hardware_nodes']}",
+            ])
         return tuple(lines)

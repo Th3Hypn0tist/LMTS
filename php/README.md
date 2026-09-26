@@ -4,8 +4,9 @@ Standalone PHP deployment surface for LMTS. The whole `php/` directory can be co
 
 ## Application directories
 
+- `report.php` — canonical authenticated report ingestion endpoint.
 - `visualizer/` — read-only Results / Statistics UI and MariaDB-backed read API.
-- `storage/` — authenticated report ingestion, immutable storage and relational projection.
+- `storage/` — report contract and storage support files used by `report.php`.
 
 Shared database configuration lives at `config.php` in the package root. Start from `config.example.php`.
 

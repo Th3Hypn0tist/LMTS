@@ -116,6 +116,12 @@ class EvaluationViewState:
         if outcome.publish_errors:
             self.state.message += f'; {len(outcome.publish_errors)} report publish failure(s)'
 
+        self.response_monitor.append_lines(
+            '========================================',
+            '            TESTS DONE!',
+            '========================================',
+        )
+
     def abort(self, exc: Exception) -> None:
         self.state.progress_errors += 1
         self.state.progress_phase = 'error'

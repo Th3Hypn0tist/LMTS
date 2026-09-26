@@ -66,7 +66,7 @@ class PHPAPISettings:
     def report_endpoint(self) -> str:
         if not self.configured:
             raise ValueError('PHP API is not configured')
-        return f"{self.base_url.rstrip('/')}/api/report.php"
+        return f"{self.base_url.rstrip('/')}/storage/report.php"
 
     @property
     def reports_endpoint(self) -> str:

@@ -121,6 +121,18 @@ class EvaluationViewState:
             '            TESTS DONE!',
             '========================================',
         )
+        if outcome.publish_errors:
+            lines = [
+                '========================================',
+                '          PUBLISH FAILED',
+                '========================================',
+            ]
+            for failure in outcome.publish_errors:
+                lines.append(
+                    f"{failure.get('target_id', '?')} / {failure.get('test_ref', '?')}"
+                )
+                lines.append(str(failure.get('error') or 'unknown publish error'))
+            self.response_monitor.append_lines(*lines)
 
     def abort(self, exc: Exception) -> None:
         self.state.progress_errors += 1

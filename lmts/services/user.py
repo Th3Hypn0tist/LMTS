@@ -44,8 +44,9 @@ class UserDashboardSnapshot:
     status: str
     verified: bool | None
     can_invite: bool
-    activity: dict[str, int]
+    activity: dict[str, int] | None
     identity_error: str | None = None
+    activity_error: str | None = None
 
 
 class UserService:
@@ -66,8 +67,9 @@ class UserService:
             status='anonymous',
             verified=None,
             can_invite=False,
-            activity=dict(EMPTY_ACTIVITY),
+            activity=None,
             identity_error=identity_error,
+            activity_error=None,
         )
 
     def dashboard_snapshot(self, *, refresh: bool = False) -> UserDashboardSnapshot:
@@ -86,8 +88,9 @@ class UserService:
                 status='local',
                 verified=None,
                 can_invite=False,
-                activity=dict(EMPTY_ACTIVITY),
+                activity=None,
                 identity_error=None,
+                activity_error=None,
             )
             return self._snapshot
         try:
@@ -99,16 +102,16 @@ class UserService:
             self._snapshot = self._anonymous()
             return self._snapshot
         if self.repository is None:
-            activity = dict(EMPTY_ACTIVITY)
-            warning = 'local user activity database is not configured'
+            activity = None
+            activity_error = 'local user activity database is not configured'
         else:
             try:
                 activity = self.repository.activity_for_user(identity.user_id).to_dict()
             except (RuntimeError, ValueError) as exc:
-                activity = dict(EMPTY_ACTIVITY)
-                warning = str(exc)
+                activity = None
+                activity_error = str(exc)
             else:
-                warning = None
+                activity_error = None
         self._snapshot = UserDashboardSnapshot(
             user_id=identity.user_id,
             username=identity.username,
@@ -118,7 +121,8 @@ class UserService:
             verified=identity.verified,
             can_invite=is_origin(identity.user_id) or identity.tier in {1, 2, 1337},
             activity=activity,
-            identity_error=warning,
+            identity_error=None,
+            activity_error=activity_error,
         )
         return self._snapshot
 

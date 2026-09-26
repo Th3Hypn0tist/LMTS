@@ -56,7 +56,7 @@ class LMTSViewController:
         self.user_repository = None if mysql is None else UserRepository(mysql)
         self.system_repository = None if mysql is None else SystemRepository(mysql)
         self.auth_service = AuthService()
-        self.system_service = None if self.system_repository is None else SystemService(self.system_repository, self.profile_service)
+        self.system_service = SystemService(self.system_repository, self.profile_service)
         self.stats_service = None if mysql is None else StatsService(StatsRepository(mysql))
         self.user_service = UserService(self.user_repository, self.auth_service)
         self.lifecycle = RunLifecycleService()
@@ -167,12 +167,9 @@ class LMTSViewController:
         if self.auth_service.local_mode:
             provenance: dict[str, object] = {}
         else:
-            if self.system_service is None:
-                self.state.message = 'local system persistence is not configured'
-                return False
             try:
                 identity = self.auth_service.require_identity()
-                provenance = self.system_service.run_provenance(identity.user_id).to_dict()
+                provenance = self.system_service.build_run_provenance(identity.user_id).to_dict()
             except (RuntimeError, ValueError) as exc:
                 self.state.message = f'cannot start test: {exc}'
                 return False

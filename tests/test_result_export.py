@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from lmts.core.result_export import export_matrix_bundle, export_run_json
+from lmts.core.variance_store import VarianceStore
 
 
 def test_single_run_export_is_canonical_run_json(tmp_path: Path) -> None:
@@ -100,3 +101,47 @@ def test_matrix_export_rejects_run_outside_results_root(tmp_path: Path) -> None:
         assert 'escapes results root' in str(exc)
     else:
         raise AssertionError('matrix export accepted a canonical run outside results root')
+
+
+
+def test_matrix_export_attaches_lightweight_variance_samples(tmp_path: Path) -> None:
+    results_root = tmp_path / 'results'
+    run_path = results_root / 'subjects' / 'model' / 'model.demo' / 'fingerprint' / 'tests' / 't' / 'runs' / 'run-1.json'
+    run_path.parent.mkdir(parents=True)
+    run = {
+        'run_id': 'run-1',
+        'executor_id': 'model.demo',
+        'executor_kind': 'model',
+        'test_ref': 't',
+        'status': 'completed',
+        'passed': True,
+    }
+    run_path.write_text(json.dumps(run), encoding='utf-8')
+    VarianceStore(results_root).append(
+        'run-1',
+        True,
+        observed_at='2026-09-27T12:00:00+00:00',
+    )
+    matrix = {
+        'matrix_id': 'matrix-variance',
+        'target_ids': ['model.demo'],
+        'target_kinds': {'model.demo': 'model'},
+        'test_refs': ['t'],
+        'cells': [{
+            'target_id': 'model.demo',
+            'target_kind': 'model',
+            'test_ref': 't',
+            'run_id': 'run-1',
+            'status': 'completed',
+            'passed': True,
+            'result_path': str(run_path),
+        }],
+    }
+
+    path = export_matrix_bundle(matrix, tmp_path / 'exports', results_root=results_root)
+    payload = json.loads(path.read_text(encoding='utf-8'))
+
+    assert payload['runs'][0]['variance_samples'] == [{
+        'outcome': 'pass',
+        'observed_at': '2026-09-27T12:00:00+00:00',
+    }]

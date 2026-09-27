@@ -66,6 +66,20 @@ class TestContext:
         self.checkpoint()
         return response
 
+    def unload_model(self) -> None:
+        unload = getattr(self.executor, 'unload', None)
+        if not callable(unload):
+            raise NotImplementedError('executor does not support model unload')
+        self.checkpoint()
+        unload()
+        self.checkpoint()
+
+    def is_model_loaded(self) -> bool:
+        is_loaded = getattr(self.executor, 'is_loaded', None)
+        if not callable(is_loaded):
+            raise NotImplementedError('executor does not expose model loaded state')
+        return bool(is_loaded())
+
 
 class TestModule(Protocol):
     __test__ = False

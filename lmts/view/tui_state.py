@@ -23,4 +23,5 @@ class TUIState:
     shortcuts: Any
     events: UIEventBus
     active_tab: str = 'benchmark'
+    ui_state_scope: str | None = None
     profile_console: list[str] = field(default_factory=list)

@@ -91,8 +91,7 @@ class MatrixViewState:
         self.state.suite_repeats = suite_repeats
         self.sync()
         available = {test_ref(test) for test in self.state.tests}
-        restored = selected_test_refs & available
-        self.state.selected_test_refs = restored if restored else set(available)
+        self.state.selected_test_refs = selected_test_refs & available
         self.clear_live_matrix()
 
     def replace_with_custom(

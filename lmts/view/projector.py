@@ -16,6 +16,7 @@ class LMTSViewState:
     selected_target_ids: set[str] = field(default_factory=set)
     selected_test_refs: set[str] = field(default_factory=set)
     suite_level: str = "moderate"
+    suite_repeats: int = 1
     message: str = ""
     last_result: dict[str, object] | None = None
 
@@ -114,11 +115,13 @@ class LMTSViewProjector:
             test_text = f"{len(selected_tests)} configured selected"
 
         run_count = len(selected_targets) * len(selected_tests)
+        execution_count = run_count * self.state.suite_repeats
         profile_text = "REQUIRED" if self.state.profile_required else "ready"
         status = (
             f"profile={profile_text}  suite={self.state.suite_level.upper()}  "
             f"targets={len(selected_targets)}/{len(self.state.targets)}  "
-            f"tests={len(selected_tests)}/{len(self.state.tests)}  runs={run_count}"
+            f"tests={len(selected_tests)}/{len(self.state.tests)}  "
+            f"full_runs={run_count}  executions={execution_count}"
         )
         if self.state.running:
             status += f"  RUNNING {self.state.progress_completed}/{self.state.progress_total}"
@@ -127,10 +130,11 @@ class LMTSViewProjector:
             "LMTS evaluation laboratory",
             "",
             f"Profile: {profile_text}",
-            f"Suite  : {self.state.suite_level.upper()} cumulative",
+            f"Suite  : {self.state.suite_level.upper()} cumulative x {self.state.suite_repeats}",
             f"Targets: {target_text}",
             f"Tests  : {test_text}",
-            f"Matrix : {len(selected_targets)} x {len(selected_tests)} = {run_count} run(s)",
+            f"Matrix : {len(selected_targets)} x {len(selected_tests)} = {run_count} full run(s)",
+            f"Loop   : {self.state.suite_repeats} x suite = {execution_count} total execution(s)",
         ]
 
         if self.state.progress_lines():
@@ -191,6 +195,7 @@ class LMTSViewProjector:
             items=(
                 ViewItem("profile", "Profile", profile_text),
                 ViewItem("suite", "Suite", self.state.suite_level),
+                ViewItem("suite_repeats", "Suite repeats", str(self.state.suite_repeats)),
                 ViewItem("targets", "Targets", target_text),
                 ViewItem("tests", "Configured tests", test_text),
                 ViewItem("runs", "Runs", str(run_count)),

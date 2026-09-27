@@ -74,6 +74,7 @@ def test_shortcuts_are_scoped_by_topic_area() -> None:
     assert 'stats.refresh' in stats_actions
     assert {
         'downloader.module',
+        'downloader.catalog',
         'downloader.download',
         'downloader.delete',
         'downloader.progress',

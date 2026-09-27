@@ -182,7 +182,7 @@ def _normalize_memory_type(value: str | None) -> str | None:
         "GDDR6X": "GDDR6X",
         "GDDR7": "GDDR7",
     }
-    return aliases.get(normalized, value.strip())
+    return aliases.get(normalized)
 
 
 def _normalize_form_factor(value: str | None) -> str:
@@ -268,6 +268,7 @@ def _system_memory_profile() -> dict[str, object]:
             "bank": device.get("Bank Locator") or None,
             "capacity_bytes": capacity,
             "memory_type": _normalize_memory_type(device.get("Type")),
+            "memory_type_raw": device.get("Type") or None,
             "ecc": _ecc_from_widths(device.get("Total Width"), device.get("Data Width")),
             "speed_mt_s": _parse_mt_s(device.get("Speed")),
             "configured_speed_mt_s": _parse_mt_s(device.get("Configured Memory Speed")),

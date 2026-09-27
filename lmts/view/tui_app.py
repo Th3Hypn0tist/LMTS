@@ -16,6 +16,7 @@ from .actions.user import UserActions
 from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
 from .lmts_host import LMTSInteractiveHost
+from .model_downloader_page import ModelDownloaderPage
 from .projector import LMTSViewProjector
 from .registries import TAB_REGISTRY, build_shortcut_registry
 from .tui_render import TUIRenderer
@@ -41,6 +42,7 @@ class TUIApplication:
             controller=controller,
             projector=LMTSViewProjector(controller.state),
             cw_bench_page=CWBenchPage(controller),
+            model_explorer_page=ModelDownloaderPage(),
             settings=settings,
             settings_service=settings_service,
             shortcut_overrides=shortcut_overrides,
@@ -189,6 +191,12 @@ class TUIApplication:
             'tab.benchmark': lambda _: navigation.open_tab('benchmark'),
             'tab.stats': lambda _: navigation.open_tab('stats'),
             'tab.downloader': lambda _: navigation.open_tab('downloader'),
+            'downloader.module': lambda _: self.state.model_explorer_page.choose_module(host, stdscr),
+            'downloader.download': lambda _: self.state.model_explorer_page.enqueue(host, stdscr),
+            'downloader.delete': lambda _: self.state.model_explorer_page.delete(host, stdscr),
+            'downloader.progress': lambda _: self.state.model_explorer_page.show_progress(host, stdscr),
+            'downloader.refresh': lambda _: self.state.model_explorer_page.refresh(),
+            'downloader.cancel': lambda _: self.state.model_explorer_page.cancel(host, stdscr),
             'tab.profile': lambda _: navigation.open_tab('profile'),
             'tab.settings': lambda _: navigation.open_tab('settings'),
             'nav.back': navigation.back,

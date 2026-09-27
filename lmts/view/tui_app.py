@@ -71,7 +71,7 @@ class TUIApplication:
             startup_user.set_message('')
             stdscr.erase()
             stdscr.refresh()
-            startup = host.choose(stdscr, 'LMTS startup', ['Login', 'Register', 'Local'], 0)
+            startup = host.choose(stdscr, 'LMTS startup', ['Login', 'Local'], 0)
             if startup is None:
                 return
             if startup == 0:
@@ -93,15 +93,6 @@ class TUIApplication:
                         f'authenticated: {identity.username}',
                         source='tui_app',
                     )
-                break
-            if startup == 1:
-                startup_user.register(stdscr)
-                try:
-                    identity = controller.auth_service.current_identity()
-                except Exception:
-                    identity = None
-                if identity is None:
-                    continue
                 break
             startup_user.local(stdscr)
             break
@@ -152,7 +143,6 @@ class TUIApplication:
                 else None
             ),
             'user.login': user.login,
-            'user.register': user.register,
             'user.logout': user.logout,
             'user.local': user.local,
             'user.refresh': user.refresh,

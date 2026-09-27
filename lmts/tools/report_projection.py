@@ -368,7 +368,6 @@ def _hardware_spec(category: str, probe: dict[str, Any]) -> dict[str, str | None
             'model': probe.get('model'),
             'vram_bytes': probe.get('vram_bytes'),
             'memory_type': probe.get('memory_type'),
-            'ecc': probe.get('ecc') if 'ecc' in probe else None,
         }
         required = ('vendor', 'model', 'vram_bytes')
         label = str(probe.get('model') or probe.get('vendor') or '').strip() or 'Unknown GPU'

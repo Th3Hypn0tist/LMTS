@@ -44,3 +44,55 @@ def test_runtime_executor_missing_requirements_are_explicit() -> None:
     )
 
     assert missing == ("tools",)
+
+
+
+class LifecycleProvider(FakeProvider):
+    def __init__(self):
+        self.loaded = False
+        self.prompts = []
+
+    def generate(self, model, prompt):
+        self.loaded = True
+        self.prompts.append(prompt)
+        return NormalizedResponse(text="OK")
+
+    def unload(self, model):
+        self.loaded = False
+
+    def is_loaded(self, model):
+        return self.loaded
+
+
+def test_model_executor_warmup_is_unmeasured_provider_call() -> None:
+    provider = LifecycleProvider()
+    model = ModelDescriptor(
+        id="fake:model",
+        provider_ref="fake",
+        model_ref="model",
+        location="local",
+    )
+    executor = ModelExecutor(provider, model)
+
+    response = executor.warm_up()
+
+    assert response.text == "OK"
+    assert provider.loaded is True
+    assert provider.prompts == ["Reply exactly OK"]
+
+
+def test_model_executor_exposes_verified_lifecycle_hooks() -> None:
+    provider = LifecycleProvider()
+    model = ModelDescriptor(
+        id="fake:model",
+        provider_ref="fake",
+        model_ref="model",
+        location="local",
+    )
+    executor = ModelExecutor(provider, model)
+
+    executor.warm_up()
+    assert executor.is_loaded() is True
+
+    executor.unload()
+    assert executor.is_loaded() is False

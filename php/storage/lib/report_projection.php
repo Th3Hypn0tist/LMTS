@@ -393,6 +393,13 @@ function lmts_projection_ensure_hardware_configuration(
 
     $configurationId = 'cfg_' . substr($fingerprint, 0, 40);
     $label = 'Configuration ' . substr($fingerprint, 0, 12);
+    $hardwareProfile = [];
+    foreach (['cpu', 'memory', 'gpu', 'npu'] as $key) {
+        if (array_key_exists($key, $profile)) {
+            $hardwareProfile[$key] = $profile[$key];
+        }
+    }
+
     $stmt = $pdo->prepare(
         'INSERT INTO LMTS_hardware_configurations (
             configuration_id, fingerprint, label, identity_json, profile_json
@@ -408,7 +415,7 @@ function lmts_projection_ensure_hardware_configuration(
         $fingerprint,
         $label,
         $identityJson,
-        lmts_projection_json($profile),
+        lmts_projection_json($hardwareProfile),
     ]);
 
     $check = $pdo->prepare(

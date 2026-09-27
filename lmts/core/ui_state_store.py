@@ -41,6 +41,8 @@ def load_ui_state(path: Path = UI_STATE_PATH) -> dict[str, dict[str, object]]:
     for scope, state in scopes.items():
         if not isinstance(scope, str) or not scope.strip() or not isinstance(state, dict):
             raise ValueError('invalid UI state scope')
+        if scope != scope.strip():
+            raise ValueError('UI state scope keys must be canonical')
         _validate_public_state(state)
         normalized[scope] = dict(state)
     return normalized

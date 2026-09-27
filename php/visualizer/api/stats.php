@@ -280,6 +280,35 @@ try {
 
     $telemetry = stats_query($pdo, $telemetrySql, $params)->fetchAll();
 
+    $varianceSql = "SELECT
+        grouped.target_kind,
+        grouped.target_ref,
+        grouped.test_version_id,
+        grouped.configuration_id,
+        grouped.sample_count,
+        grouped.pass_count,
+        grouped.fail_count,
+        CASE WHEN grouped.pass_count > 0 THEN 'pass' ELSE 'fail' END AS status,
+        (100.0 * grouped.pass_count / grouped.sample_count) AS pf_score,
+        (
+            (grouped.pass_count / grouped.sample_count)
+            * (1.0 - (grouped.pass_count / grouped.sample_count))
+        ) AS variance
+     FROM (
+        SELECT
+            vs.target_kind,
+            vs.target_ref,
+            vs.test_version_id,
+            vs.configuration_id,
+            COUNT(*) AS sample_count,
+            SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) AS pass_count,
+            SUM(CASE WHEN vs.outcome = 'fail' THEN 1 ELSE 0 END) AS fail_count
+        FROM LMTS_variance_samples vs
+        GROUP BY vs.target_kind, vs.target_ref, vs.test_version_id, vs.configuration_id
+     ) grouped
+     ORDER BY grouped.target_kind, grouped.target_ref, grouped.test_version_id, grouped.configuration_id";
+    $variance = stats_query($pdo, $varianceSql)->fetchAll();
+
     $users = $pdo->query(
         "SELECT DISTINCT tester_user_id AS user_id
          FROM LMTS_report_record_index
@@ -384,6 +413,7 @@ try {
         'matrix' => $matrix,
         'records' => $records,
         'telemetry' => $telemetry,
+        'variance' => $variance,
         'filters' => [
             'selected' => $selected,
             'options' => [

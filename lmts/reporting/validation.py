@@ -5,6 +5,39 @@ from typing import Any
 from .projector import REPORT_FORMAT, REPORT_VERSION
 
 
+_VARIANCE_SAMPLE_KEYS = frozenset({'outcome', 'observed_at'})
+
+
+def _validate_variance_samples(record: dict[str, Any]) -> None:
+    evidence = record.get('evidence')
+    if not isinstance(evidence, dict) or 'variance_samples' not in evidence:
+        return
+    samples = evidence['variance_samples']
+    if not isinstance(samples, list):
+        raise ValueError('LMTS variance_samples evidence must be an array')
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, dict):
+            raise ValueError(f'LMTS variance sample {index} must be an object')
+        extras = sorted(set(sample) - _VARIANCE_SAMPLE_KEYS)
+        if extras:
+            raise ValueError(
+                f'LMTS variance sample {index} contains non-lightweight field(s): '
+                + ', '.join(extras)
+            )
+        outcome = str(sample.get('outcome') or '').strip()
+        if outcome not in {'pass', 'fail'}:
+            raise ValueError(
+                f'LMTS variance sample {index} outcome must be pass or fail'
+            )
+        observed_at = sample.get('observed_at')
+        if observed_at is not None and (
+            not isinstance(observed_at, str) or not observed_at.strip()
+        ):
+            raise ValueError(
+                f'LMTS variance sample {index} observed_at must be a timestamp string or null'
+            )
+
+
 def validate_publishable_report(report: dict[str, Any]) -> str:
     report_meta = report.get('report')
     if (
@@ -33,5 +66,12 @@ def validate_publishable_report(report: dict[str, Any]) -> str:
             raise ValueError(
                 f'LMTS report contains non-publishable outcome: {result or "missing"}'
             )
+        if 'passed' in outcome:
+            passed = outcome.get('passed')
+            if not isinstance(passed, bool):
+                raise ValueError('LMTS report outcome.passed must be boolean when present')
+            if passed is not (result == 'pass'):
+                raise ValueError('LMTS report outcome.result and outcome.passed disagree')
+        _validate_variance_samples(record)
 
     return report_id

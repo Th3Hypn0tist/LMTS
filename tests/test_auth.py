@@ -7,6 +7,7 @@ import pytest
 
 from lmts.services.auth import (
     IAM_BASE_URL,
+    IAM_DOMAIN,
     AuthService,
     AuthenticationError,
     IAMHTTPClient,
@@ -67,7 +68,7 @@ def test_login_uses_iam_http_contract_and_stores_only_token(tmp_path: Path) -> N
     assert calls == [(
         'POST',
         IAM_BASE_URL + '/api/login.php',
-        {'username': 'origin', 'password': 'secret-password'},
+        {'username': 'origin', 'password': 'secret-password', 'domain': IAM_DOMAIN},
         None,
     )]
     raw = (tmp_path / 'auth-session.json').read_text(encoding='utf-8')
@@ -92,7 +93,7 @@ def test_current_identity_restores_session_through_me(tmp_path: Path) -> None:
     assert identity == _identity()
     assert calls == [(
         'GET',
-        IAM_BASE_URL + '/api/me.php',
+        IAM_BASE_URL + f'/api/me.php?domain={IAM_DOMAIN}',
         None,
         'opaque-token',
     )]
@@ -110,21 +111,6 @@ def test_unauthorized_me_clears_local_token(tmp_path: Path) -> None:
         auth.current_identity()
 
     assert not (tmp_path / 'auth-session.json').exists()
-
-
-def test_register_propagates_locked_invite_error(tmp_path: Path) -> None:
-    def transport(method, url, payload, token):
-        assert method == 'POST'
-        assert url == IAM_BASE_URL + '/api/register.php'
-        raise AuthenticationError('Invite code not valid.', status=400)
-
-    auth = AuthService(
-        IAMHTTPClient(transport=transport),
-        token_store=IAMTokenStore(tmp_path / 'auth-session.json'),
-    )
-
-    with pytest.raises(AuthenticationError, match=r'^Invite code not valid\.$'):
-        auth.register('wrong', 'tester', 'tester-password')
 
 
 def test_logout_revokes_remote_session_and_deletes_local_token(tmp_path: Path) -> None:
@@ -169,3 +155,18 @@ def test_token_store_rejects_wrong_endpoint(tmp_path: Path) -> None:
 
     with pytest.raises(AuthenticationError, match='another IAM endpoint'):
         IAMTokenStore(path).load()
+
+
+def test_lmts_iam_domain_is_canonical_and_not_configurable() -> None:
+    assert IAM_DOMAIN == 'lmts'
+    client = IAMHTTPClient()
+    assert not hasattr(client, 'domain')
+
+
+def test_lmts_auth_service_has_no_registration_boundary(tmp_path: Path) -> None:
+    auth = AuthService(
+        IAMHTTPClient(transport=lambda method, url, payload, token: _success_payload()),
+        token_store=IAMTokenStore(tmp_path / 'auth-session.json'),
+    )
+    assert not hasattr(auth, 'register')
+    assert not hasattr(auth.client, 'register')

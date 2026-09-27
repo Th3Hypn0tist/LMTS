@@ -371,6 +371,55 @@ function lmts_projection_project_system_profile(PDO $pdo, string $systemId, arra
     }
 }
 
+function lmts_projection_ensure_hardware_configuration(
+    PDO $pdo,
+    string $fingerprint,
+    array $identity,
+    array $profile,
+): string {
+    $identityJson = lmts_projection_json($identity);
+    $calculated = hash('sha256', $identityJson);
+    if (!hash_equals($fingerprint, $calculated)) {
+        throw new RuntimeException('system_context fingerprint does not match canonical hardware identity');
+    }
+
+    $configurationId = 'cfg_' . substr($fingerprint, 0, 40);
+    $label = 'Configuration ' . substr($fingerprint, 0, 12);
+    $stmt = $pdo->prepare(
+        'INSERT INTO LMTS_hardware_configurations (
+            configuration_id, fingerprint, label, identity_json, profile_json
+         ) VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            label = VALUES(label),
+            identity_json = VALUES(identity_json),
+            profile_json = VALUES(profile_json),
+            updated_at = CURRENT_TIMESTAMP(6)'
+    );
+    $stmt->execute([
+        $configurationId,
+        $fingerprint,
+        $label,
+        $identityJson,
+        lmts_projection_json($profile),
+    ]);
+
+    $check = $pdo->prepare(
+        'SELECT configuration_id, identity_json
+         FROM LMTS_hardware_configurations
+         WHERE fingerprint = ?
+         LIMIT 1'
+    );
+    $check->execute([$fingerprint]);
+    $row = $check->fetch();
+    if (!is_array($row)
+        || !hash_equals((string)$row['configuration_id'], $configurationId)
+        || !hash_equals((string)$row['identity_json'], $identityJson)) {
+        throw new RuntimeException('canonical hardware configuration conflict: ' . $fingerprint);
+    }
+    return $configurationId;
+}
+
+
 function lmts_projection_ensure_system_identity(
     PDO $pdo,
     string $userId,
@@ -379,9 +428,10 @@ function lmts_projection_ensure_system_identity(
 ): void {
     $fingerprint = trim((string)($context['fingerprint'] ?? ''));
     $schemaVersion = $context['schema_version'] ?? null;
+    $identity = $context['identity'] ?? null;
     $profile = $context['profile'] ?? null;
 
-    if ($fingerprint === '' || !is_int($schemaVersion) || !is_array($profile)) {
+    if ($fingerprint === '' || !is_int($schemaVersion) || !is_array($identity) || !is_array($profile)) {
         throw new RuntimeException("system_context for $systemId has invalid canonical identity");
     }
 
@@ -389,6 +439,13 @@ function lmts_projection_ensure_system_identity(
     if (!hash_equals($expectedId, $systemId)) {
         throw new RuntimeException("system_id $systemId does not match report system_context fingerprint");
     }
+
+    $configurationId = lmts_projection_ensure_hardware_configuration(
+        $pdo,
+        $fingerprint,
+        $identity,
+        $profile,
+    );
 
     $check = $pdo->prepare(
         'SELECT user_id
@@ -406,14 +463,15 @@ function lmts_projection_ensure_system_identity(
     if ($existingUser === false) {
         $insert = $pdo->prepare(
             'INSERT INTO LMTS_systems (
-                system_id, user_id, label, system_class, probe_version, last_probed_at
-             ) VALUES (?, ?, ?, ?, ?, ?)'
+                system_id, user_id, label, system_class, configuration_id, probe_version, last_probed_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)'
         );
         $insert->execute([
             $systemId,
             $userId,
             $label,
             'local',
+            $configurationId,
             $probeVersion,
             $profiledAt,
         ]);
@@ -427,21 +485,23 @@ function lmts_projection_ensure_system_identity(
     if ($profiledAt === null) {
         $update = $pdo->prepare(
             'UPDATE LMTS_systems
-             SET probe_version = ?
+             SET configuration_id = ?,
+                 probe_version = ?
              WHERE system_id = ?'
         );
-        $update->execute([$probeVersion, $systemId]);
+        $update->execute([$configurationId, $probeVersion, $systemId]);
     } else {
         $update = $pdo->prepare(
             'UPDATE LMTS_systems
-             SET probe_version = ?,
+             SET configuration_id = ?,
+                 probe_version = ?,
                  last_probed_at = CASE
                      WHEN last_probed_at IS NULL OR last_probed_at < ? THEN ?
                      ELSE last_probed_at
                  END
              WHERE system_id = ?'
         );
-        $update->execute([$probeVersion, $profiledAt, $profiledAt, $systemId]);
+        $update->execute([$configurationId, $probeVersion, $profiledAt, $profiledAt, $systemId]);
     }
 }
 

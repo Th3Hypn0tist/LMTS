@@ -10,6 +10,7 @@ class NavigationActions(TUIActions):
         self.state.active_tab = tab_id
         self.host.title = f'AIGM LMTS - {tab.label}'
         self.host.scroll = 0
+        self.persist_ui_state()
         self.set_message('')
 
     def back(self, _stdscr) -> None:

@@ -105,6 +105,28 @@ class ModelExecutor:
             )
         return response
 
+    def warm_up(self, prompt: str = "Reply exactly OK") -> NormalizedResponse:
+        warm_up = getattr(self.provider, "warm_up", None)
+        if callable(warm_up):
+            response = warm_up(self.model, prompt)
+        else:
+            response = self.provider.generate(self.model, prompt)
+        if not response.text.strip():
+            raise RuntimeError(f"model warm-up returned an empty response: {self.id}")
+        return response
+
+    def unload(self) -> None:
+        unload = getattr(self.provider, "unload", None)
+        if not callable(unload):
+            raise NotImplementedError(f"provider does not support model unload: {self.model.provider_ref}")
+        unload(self.model)
+
+    def is_loaded(self) -> bool:
+        is_loaded = getattr(self.provider, "is_loaded", None)
+        if not callable(is_loaded):
+            raise NotImplementedError(f"provider does not expose model loaded state: {self.model.provider_ref}")
+        return bool(is_loaded(self.model))
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeExecutor:

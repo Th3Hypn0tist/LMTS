@@ -78,9 +78,9 @@ try {
         $uploadId = trim((string)($_GET['id'] ?? ''));
         if ($uploadId === '') lmts_upload_fail(400, 'upload id is required');
 
-        $dir = null;
+        $dir = lmts_upload_dir($config, $uploadId);
         try {
-            [$dir, $meta, $rawReport] = lmts_upload_assemble($config, $uploadId);
+            [, $meta, $rawReport] = lmts_upload_assemble($config, $uploadId);
 
             $document = json_decode($rawReport, false, 512, JSON_THROW_ON_ERROR);
             if (!($document instanceof stdClass)) {

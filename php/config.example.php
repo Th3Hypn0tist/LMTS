@@ -6,4 +6,8 @@ return [
     'user' => 'lmts',
     'password' => 'CHANGE_ME',
     'publish_key' => 'CHANGE_ME',
+
+    // Optional. Must be a private directory outside the public web root.
+    // When omitted, LMTS uses sys_get_temp_dir()/lmts-report-upload.
+    'upload_staging_dir' => '/var/tmp/lmts-report-upload',
 ];

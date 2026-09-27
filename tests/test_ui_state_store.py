@@ -28,7 +28,7 @@ def test_ui_state_is_scoped_and_round_trips_without_secrets(tmp_path) -> None:
 
 def test_ui_state_rejects_session_and_publish_secrets(tmp_path) -> None:
     path = tmp_path / 'ui-state.json'
-    for field in ('token', 'password', 'publish_key', 'session_secret'):
+    for field in ('token', 'password', 'publish_key', 'session_secret', 'bearer', 'api_key', 'credential'):
         try:
             save_ui_scope('local', {field: 'nope'}, path)
         except ValueError as exc:

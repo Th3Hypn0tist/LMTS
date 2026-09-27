@@ -48,7 +48,7 @@ class ModelDownloaderPage:
         installed = [model.model_ref for model in self._installed_cache]
         queue_lines = self.queue.lines(self.module_id)
         return (
-            "Model Downloader",
+            "Model Explorer",
             "",
             f"Module    : {module}",
             f"Status    : {self._status or '-'}",

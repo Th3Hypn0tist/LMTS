@@ -20,6 +20,10 @@ def _report() -> dict:
             'type': 'lmts.run',
             'id': 'run-1',
         },
+        'records': [{
+            'id': 'run-1',
+            'outcome': {'result': 'pass', 'passed': True},
+        }],
     }
 
 

@@ -15,154 +15,12 @@ CREATE TABLE IF NOT EXISTS LMTS_schema_version (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===========================================================================
--- USER / RESPONSIBILITY
--- Tier-4 is anonymous Reader state and has no IAM_users row.
--- Registered tiers: 3, 2, 1, 1337.
+-- IAM IDENTITY BOUNDARY
+-- IAM owns users, credentials, registration, invites, sessions and management
+-- tiers. LMTS stores IAM user IDs only as opaque provenance/ownership refs.
+-- No IAM_* table or IAM authorization logic is defined by this schema.
+-- Canonical IAM domain context used by the LMTS client: "lmts".
 -- ===========================================================================
-
-CREATE TABLE IF NOT EXISTS IAM_users (
-    user_id          VARCHAR(128) NOT NULL,
-    username         VARCHAR(128) NOT NULL,
-    display_name     VARCHAR(255) NULL,
-    organization     VARCHAR(255) NULL,
-    tier             SMALLINT UNSIGNED NOT NULL DEFAULT 3,
-    status           VARCHAR(32) NOT NULL DEFAULT 'active',
-    verified         BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (user_id),
-    UNIQUE KEY uq_users_username (username),
-    CONSTRAINT chk_users_tier CHECK (tier IN (1,2,3,1337))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS IAM_user_accounts (
-    user_id          VARCHAR(128) NOT NULL,
-    password_hash    VARCHAR(255) NOT NULL,
-    email            VARCHAR(320) NULL,
-    account_status   VARCHAR(32) NOT NULL DEFAULT 'active',
-    created_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (user_id),
-    UNIQUE KEY uq_user_accounts_email (email),
-    CONSTRAINT fk_user_accounts_user
-        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS IAM_invites (
-    invite_id            VARCHAR(128) NOT NULL,
-    owner_user_id        VARCHAR(128) NOT NULL,
-    token_hash           VARCHAR(255) NOT NULL,
-    created_at           DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    expires_at           DATETIME(6) NULL,
-    status               VARCHAR(32) NOT NULL DEFAULT 'active',
-    claimed_by_user_id   VARCHAR(128) NULL,
-    claimed_at           DATETIME(6) NULL,
-    PRIMARY KEY (invite_id),
-    UNIQUE KEY uq_invites_token_hash (token_hash),
-    KEY idx_invites_owner (owner_user_id),
-    KEY idx_invites_claimed_by (claimed_by_user_id),
-    CONSTRAINT fk_invites_owner
-        FOREIGN KEY (owner_user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_invites_claimed_by
-        FOREIGN KEY (claimed_by_user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS IAM_tier_progression_requests (
-    progression_id                   VARCHAR(128) NOT NULL,
-    user_id                          VARCHAR(128) NOT NULL,
-    current_tier                     SMALLINT UNSIGNED NOT NULL,
-    requested_tier                   SMALLINT UNSIGNED NOT NULL,
-    eligibility_status               VARCHAR(32) NOT NULL DEFAULT 'pending',
-    eligibility_evidence_json        LONGTEXT NULL,
-    approval_required_from_user_id   VARCHAR(128) NULL,
-    status                           VARCHAR(32) NOT NULL DEFAULT 'pending',
-    created_at                       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    resolved_at                      DATETIME(6) NULL,
-    PRIMARY KEY (progression_id),
-    KEY idx_tier_progression_user (user_id),
-    KEY idx_tier_progression_approver (approval_required_from_user_id),
-    CONSTRAINT fk_tier_progression_user
-        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_tier_progression_approver
-        FOREIGN KEY (approval_required_from_user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT chk_tier_progression_current CHECK (current_tier IN (1,2,3,1337)),
-    CONSTRAINT chk_tier_progression_requested CHECK (requested_tier IN (1,2,3,1337)),
-    CONSTRAINT chk_tier_progression_evidence CHECK (
-        eligibility_evidence_json IS NULL OR JSON_VALID(eligibility_evidence_json)
-    )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS IAM_user_tier_history (
-    history_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    user_id              VARCHAR(128) NOT NULL,
-    from_tier            SMALLINT UNSIGNED NOT NULL,
-    to_tier              SMALLINT UNSIGNED NOT NULL,
-    eligible_at          DATETIME(6) NULL,
-    approved_by_user_id  VARCHAR(128) NULL,
-    approved_at          DATETIME(6) NULL,
-    rule_version         VARCHAR(128) NULL,
-    reason_json          LONGTEXT NULL,
-    created_at           DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (history_id),
-    KEY idx_user_tier_history_user (user_id, created_at),
-    CONSTRAINT fk_user_tier_history_user
-        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_user_tier_history_approver
-        FOREIGN KEY (approved_by_user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT chk_user_tier_history_from CHECK (from_tier IN (1,2,3,1337)),
-    CONSTRAINT chk_user_tier_history_to CHECK (to_tier IN (1,2,3,1337)),
-    CONSTRAINT chk_user_tier_history_reason CHECK (
-        reason_json IS NULL OR JSON_VALID(reason_json)
-    )
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS IAM_sessions (
-    session_id       VARCHAR(128) NOT NULL,
-    user_id          VARCHAR(128) NOT NULL,
-    token_hash       CHAR(64) NOT NULL,
-    created_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    expires_at       DATETIME(6) NOT NULL,
-    last_seen_at     DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    revoked_at       DATETIME(6) NULL,
-    PRIMARY KEY (session_id),
-    UNIQUE KEY uq_IAM_sessions_token_hash (token_hash),
-    KEY idx_IAM_sessions_user (user_id, created_at),
-    KEY idx_IAM_sessions_expiry (expires_at),
-    CONSTRAINT fk_IAM_sessions_user
-        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS IAM_abuse_events (
-    event_id          VARCHAR(128) NOT NULL,
-    ip_hash           CHAR(64) NOT NULL,
-    identifier_hash   CHAR(64) NULL,
-    action            VARCHAR(32) NOT NULL,
-    outcome           VARCHAR(32) NOT NULL,
-    created_at        DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (event_id),
-    KEY idx_IAM_abuse_ip_action_time (ip_hash, action, created_at),
-    KEY idx_IAM_abuse_identifier_action_time (identifier_hash, action, created_at),
-    KEY idx_IAM_abuse_created (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS IAM_ip_blocks (
-    ip_hash           CHAR(64) NOT NULL,
-    reason            VARCHAR(128) NOT NULL,
-    source            VARCHAR(32) NOT NULL,
-    created_at        DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    expires_at        DATETIME(6) NULL,
-    PRIMARY KEY (ip_hash),
-    KEY idx_IAM_ip_blocks_expiry (expires_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 
 -- ===========================================================================
 -- CANONICAL HARDWARE
@@ -236,9 +94,6 @@ CREATE TABLE IF NOT EXISTS LMTS_systems (
     PRIMARY KEY (system_id),
     KEY idx_systems_user (user_id),
     KEY idx_systems_device (canonical_device_ref),
-    CONSTRAINT fk_systems_user
-        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_systems_device
         FOREIGN KEY (canonical_device_ref) REFERENCES LMTS_hardware_nodes(hardware_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
@@ -310,9 +165,6 @@ CREATE TABLE IF NOT EXISTS LMTS_compute_profiles (
     PRIMARY KEY (compute_profile_id),
     UNIQUE KEY uq_compute_profiles_name (user_id, system_id, name),
     KEY idx_compute_profiles_system (system_id),
-    CONSTRAINT fk_compute_profiles_user
-        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_compute_profiles_system
         FOREIGN KEY (system_id) REFERENCES LMTS_systems(system_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
@@ -419,16 +271,13 @@ CREATE TABLE IF NOT EXISTS LMTS_compositions (
     PRIMARY KEY (composition_id),
     KEY idx_compositions_user (user_id),
     KEY idx_compositions_fingerprint (fingerprint),
-    CONSTRAINT fk_compositions_user
-        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_compositions_definition CHECK (JSON_VALID(definition_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 -- ===========================================================================
 -- CANONICAL TEST DEFINITIONS
--- Tier-1337 governs test content and semantics.
+-- IAM management tiers have no LMTS application semantics.
 -- Parameter Sweep is a test kind, not a separate storage model.
 -- ===========================================================================
 
@@ -461,12 +310,6 @@ CREATE TABLE IF NOT EXISTS LMTS_test_versions (
     KEY idx_test_versions_kind_status (kind, status),
     CONSTRAINT fk_test_versions_definition
         FOREIGN KEY (test_definition_id) REFERENCES LMTS_test_definitions(test_definition_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_test_versions_creator
-        FOREIGN KEY (created_by_user_id) REFERENCES IAM_users(user_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_test_versions_publisher
-        FOREIGN KEY (published_by_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT chk_test_versions_definition CHECK (JSON_VALID(definition_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -578,9 +421,6 @@ CREATE TABLE IF NOT EXISTS LMTS_report_submissions (
     KEY idx_report_submissions_submitter (submitter_user_id),
     CONSTRAINT fk_report_submissions_report
         FOREIGN KEY (report_id) REFERENCES LMTS_reports(report_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_report_submissions_submitter
-        FOREIGN KEY (submitter_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -620,9 +460,6 @@ CREATE TABLE IF NOT EXISTS LMTS_report_record_index (
     KEY idx_report_record_outcome (outcome),
     CONSTRAINT fk_report_record_report
         FOREIGN KEY (report_id) REFERENCES LMTS_reports(report_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_report_record_tester
-        FOREIGN KEY (tester_user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_report_record_model
         FOREIGN KEY (model_node_id) REFERENCES LMTS_model_nodes(model_node_id)
@@ -666,9 +503,6 @@ CREATE TABLE IF NOT EXISTS LMTS_telemetry_values (
     CONSTRAINT fk_telemetry_record
         FOREIGN KEY (report_id, record_id)
         REFERENCES LMTS_report_record_index(report_id, record_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    CONSTRAINT fk_telemetry_user
-        FOREIGN KEY (user_id) REFERENCES IAM_users(user_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_telemetry_system
         FOREIGN KEY (system_id) REFERENCES LMTS_systems(system_id)

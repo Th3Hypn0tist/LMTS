@@ -185,6 +185,10 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
         for key in ('run_id', 'executor_id', 'executor_kind', 'test_ref', 'status', 'passed', 'metrics'):
             if key not in run:
                 raise ValueError(f"run {run.get('run_id')!r} missing required field: {key}")
+        outcome = _outcome(run)
+        if outcome['result'] not in {'pass', 'fail'}:
+            continue
+
         run_id = str(run['run_id'])
         target_id = str(run['executor_id'])
         resolved_test_ref = str(run['test_ref'])
@@ -214,7 +218,6 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
         if isinstance(score, dict) and isinstance(score.get('percent'), (int, float)):
             metrics['score_percent'] = {'value': float(score['percent']), 'unit': 'percent'}
 
-        outcome = _outcome(run)
         outcomes[str(outcome['result'])] += 1
         record: dict[str, Any] = {
             'id': run_id,

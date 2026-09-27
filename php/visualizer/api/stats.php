@@ -4,7 +4,7 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
-$config = require dirname(__DIR__, 2) . '/config.php';
+$config = require dirname(__DIR__, 2) . '/lmts-report/config.php';
 
 function stats_fail(int $status, string $message): never {
     http_response_code($status);

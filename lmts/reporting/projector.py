@@ -178,6 +178,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     test_entities: dict[str, Any] = {}
     metric_definitions = _standard_metric_definitions()
     records: list[dict[str, Any]] = []
+    publishable_runs: list[dict[str, Any]] = []
     outcomes = {'pass': 0, 'fail': 0, 'error': 0, 'cancelled': 0, 'unknown': 0}
 
     for run in runs:
@@ -189,6 +190,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
         outcome = _outcome(run)
         if outcome['result'] not in {'pass', 'fail'}:
             continue
+        publishable_runs.append(run)
 
         run_id = str(run['run_id'])
         target_id = str(run['executor_id'])
@@ -248,7 +250,7 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(created_at, str) or not created_at:
         raise ValueError('matrix must contain completed_at or started_at')
 
-    system_profiles = _system_profiles([run for run in runs if isinstance(run, dict)])
+    system_profiles = _system_profiles(publishable_runs)
 
     return {
         'format': REPORT_FORMAT,
@@ -262,8 +264,8 @@ def project_matrix_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
                 'status': matrix.get('status'),
                 'started_at': matrix.get('started_at'),
                 'completed_at': matrix.get('completed_at'),
-                'target_ids': list(matrix.get('target_ids') or []),
-                'test_refs': list(matrix.get('test_refs') or []),
+                'target_ids': sorted(target_entities),
+                'test_refs': sorted(test_entities),
             },
         },
         'source': {

@@ -43,42 +43,6 @@ class UserActions(TUIActions):
         self.controller.user_service.clear()
         self.set_message(f'authenticated: {identity.username}')
 
-    def register(self, _stdscr=None) -> None:
-        if not self._confirm_replace_session():
-            return
-        invite = single_line(self.host, self.stdscr, 'Invite code')
-        if invite is None:
-            return
-        username = single_line(self.host, self.stdscr, 'Username')
-        if username is None:
-            return
-        email = single_line(self.host, self.stdscr, 'Email (optional)', allow_empty=True)
-        if email is None:
-            return
-        password = secret_line(self.stdscr, 'Password')
-        if password is None:
-            return
-        repeat = secret_line(self.stdscr, 'Repeat password')
-        if repeat is None:
-            return
-        if password != repeat:
-            self.set_message('Passwords do not match.')
-            return
-        try:
-            identity = self.controller.auth_service.register(
-                invite,
-                username,
-                password,
-                email=email or None,
-            )
-        except (AuthenticationError, RuntimeError, ValueError) as exc:
-            message = str(exc)
-            self.set_message(message)
-            self.host.text_viewer(self.stdscr, 'Registration failed', (message,))
-            return
-        self.controller.user_service.clear()
-        self.set_message(f'registered and authenticated: {identity.username}')
-
     def logout(self, _stdscr=None) -> None:
         try:
             self.controller.auth_service.logout()

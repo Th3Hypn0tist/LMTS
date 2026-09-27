@@ -708,6 +708,7 @@ function lmts_projection_insert_variance_samples(
     string $recordId,
     array $record,
     array $test,
+    string $targetKind,
 ): void {
     $coordinates = isset($record['coordinates']) && is_array($record['coordinates'])
         ? $record['coordinates']
@@ -719,20 +720,7 @@ function lmts_projection_insert_variance_samples(
     $systemId = trim((string)($provenance['system_id'] ?? ''));
     if ($targetRef === '' || $systemId === '') return;
 
-    $entities = $record['_projection_entities'] ?? null;
-    $targetKind = '';
-    if (is_array($entities)) {
-        $targetEntity = isset($entities[$targetRef]) && is_array($entities[$targetRef])
-            ? $entities[$targetRef]
-            : [];
-        $targetProps = isset($targetEntity['properties']) && is_array($targetEntity['properties'])
-            ? $targetEntity['properties']
-            : [];
-        $targetKind = trim((string)($targetProps['kind'] ?? ''));
-    }
-    if ($targetKind === '') {
-        $targetKind = trim((string)($record['_projection_target_kind'] ?? ''));
-    }
+    $targetKind = trim($targetKind);
     if ($targetKind === '') return;
 
     $configuration = $pdo->prepare(
@@ -1001,8 +989,14 @@ function lmts_project_report(PDO $pdo, array $report): void {
         ]);
 
         if ($test !== null) {
-            $record['_projection_target_kind'] = $targetKind;
-            lmts_projection_insert_variance_samples($pdo, $reportId, $recordId, $record, $test);
+            lmts_projection_insert_variance_samples(
+                $pdo,
+                $reportId,
+                $recordId,
+                $record,
+                $test,
+                $targetKind,
+            );
             lmts_projection_record_telemetry($pdo, $reportId, $record, $test);
         }
     }

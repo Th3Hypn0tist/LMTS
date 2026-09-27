@@ -23,6 +23,7 @@ class BenchmarkActions(TUIActions):
             return
         message = self.controller.state.message
         self.navigation.open_tab(tab_id)
+        self.persist_ui_state()
         self.set_message(message)
 
     def set_suite_repeats(self, _stdscr) -> None:
@@ -39,6 +40,7 @@ class BenchmarkActions(TUIActions):
         if value is None:
             return
         self.controller.state.suite_repeats = value
+        self.persist_ui_state()
         self.set_message(f'suite repeats: {value}')
 
     def select_targets(self, _stdscr) -> None:
@@ -60,6 +62,7 @@ class BenchmarkActions(TUIActions):
         )
         if chosen is not None:
             self.controller.select_targets(chosen)
+            self.persist_ui_state()
             self.set_message(f'selected {len(chosen)} target(s)')
 
     @staticmethod
@@ -88,6 +91,7 @@ class BenchmarkActions(TUIActions):
         )
         if chosen is not None:
             self.controller.select_tests(chosen)
+            self.persist_ui_state()
             self.set_message(f'selected {len(chosen)} configured test(s)')
 
     def collect_parameter(self, parameter: TestParameter) -> object | None:
@@ -134,6 +138,8 @@ class BenchmarkActions(TUIActions):
             next_instance_id(self.controller, definition),
             params,
         )
+        if configured is not None:
+            self.persist_ui_state()
         self.set_message(f'added: {configured.ref}' if configured is not None else self.controller.state.message)
 
     def remove_test(self, _stdscr) -> None:
@@ -144,7 +150,8 @@ class BenchmarkActions(TUIActions):
             [f'[{self._taxonomy_label(test)}] {test_ref(test)}' for test in tests],
         )
         if chosen is not None:
-            self.controller.remove_test(getattr(tests[chosen], 'instance_id', ''))
+            if self.controller.remove_test(getattr(tests[chosen], 'instance_id', '')):
+                self.persist_ui_state()
             self.set_message(self.controller.state.message)
 
     def run_deep_suite(self, _stdscr) -> None:
@@ -239,6 +246,7 @@ class BenchmarkActions(TUIActions):
             suites.append(suite)
         self.state.settings_service.save_custom_suites(suites)
         self.controller.state.suite_level = 'custom'
+        self.persist_ui_state()
         self.set_message(f'custom suite saved: {name}')
 
     def load_custom_suite(self, _stdscr) -> None:
@@ -268,6 +276,7 @@ class BenchmarkActions(TUIActions):
             self.set_message(f'cannot load custom suite: {exc}')
             return
         if self.controller.replace_with_custom_suite(configured, repeats=suite.repeats):
+            self.persist_ui_state()
             self.set_message(f'custom suite loaded: {suite.name}')
         else:
             self.set_message(self.controller.state.message)

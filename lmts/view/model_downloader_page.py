@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import shutil
+
 from lmts.core.model_downloader import ModelDownloadQueue, ModelDownloaderRegistry
+from lmts.core.model_explorer import assess_candidate_fit
+from lmts.tools.ollama_catalog import OllamaCatalogScraper
 from lmts.tools.ollama_downloader import OllamaModelDownloader
+from lmts.tools.profile import load_system_profile
 
 
 def default_model_downloader_registry() -> ModelDownloaderRegistry:
@@ -16,6 +21,7 @@ class ModelDownloaderPage:
         self.module_id = downloaders[0].id if downloaders else None
         self._installed_cache = []
         self._status = ""
+        self._catalog = OllamaCatalogScraper()
         self.refresh()
 
     @property
@@ -50,6 +56,8 @@ class ModelDownloaderPage:
         return (
             "Model Explorer",
             "",
+            "discover -> fit -> pull -> qualify -> keep/delete",
+            "",
             f"Module    : {module}",
             f"Status    : {self._status or '-'}",
             f"Installed : {len(installed)}",
@@ -77,6 +85,94 @@ class ModelDownloaderPage:
         self.module_id = downloaders[chosen].id
         self.refresh()
         host.message = self._status
+
+    @staticmethod
+    def _disk_free_bytes(downloader) -> int | None:
+        storage_path = getattr(downloader, 'storage_path', None)
+        if not callable(storage_path):
+            return None
+        probe = storage_path().expanduser()
+        while not probe.exists() and probe.parent != probe:
+            probe = probe.parent
+        try:
+            return shutil.disk_usage(probe).free
+        except OSError:
+            return None
+
+    def explore_catalog(self, host, stdscr) -> None:
+        downloader = self.downloader
+        if downloader is None:
+            host.message = 'select a downloader module'
+            return
+        if downloader.id != 'ollama':
+            host.message = f'catalog discovery not implemented for module: {downloader.id}'
+            return
+        try:
+            families = self._catalog.list_families()
+        except Exception as exc:
+            host.message = f'catalog discovery failed: {exc}'
+            return
+        if not families:
+            host.message = 'Ollama catalogue returned no model families'
+            return
+        family_index = host.choose(stdscr, 'Ollama model family', list(families), 0)
+        if family_index is None:
+            return
+        family = families[family_index]
+        try:
+            candidates = self._catalog.list_tags(family)
+        except Exception as exc:
+            host.message = f'catalog tag discovery failed: {exc}'
+            return
+        if not candidates:
+            host.message = f'no tags found for {family}'
+            return
+
+        profile_payload = load_system_profile()
+        profile = (
+            profile_payload.get('profile')
+            if isinstance(profile_payload, dict) and isinstance(profile_payload.get('profile'), dict)
+            else {}
+        )
+        free_disk = self._disk_free_bytes(downloader)
+        assessments = [
+            assess_candidate_fit(candidate, profile, free_disk_bytes=free_disk)
+            for candidate in candidates
+        ]
+        options = []
+        for candidate, assessment in zip(candidates, assessments):
+            size = (
+                f'{candidate.size_bytes / (1000 ** 3):.1f} GB'
+                if isinstance(candidate.size_bytes, int)
+                else '? GB'
+            )
+            options.append(f'{assessment.status.upper():9} {size:>9}  {candidate.model_ref}')
+        chosen = host.choose_many(
+            stdscr,
+            f'Model Explorer: {family}',
+            options,
+            set(),
+            include_all=False,
+        )
+        if chosen is None:
+            return
+        blocked = [
+            candidates[index].model_ref
+            for index in chosen
+            if assessments[index].status == 'too_large'
+        ]
+        if blocked:
+            host.message = 'blocked by hardware/disk fit: ' + ', '.join(blocked)
+            return
+        refs = [candidates[index].model_ref for index in sorted(chosen)]
+        if not refs:
+            return
+        try:
+            items = self.queue.enqueue_many(downloader.id, refs)
+        except (KeyError, ValueError, RuntimeError) as exc:
+            host.message = f'cannot queue catalog candidates: {exc}'
+            return
+        host.message = f'queued {len(items)} catalog candidate(s)'
 
     def enqueue(self, host, stdscr) -> None:
         downloader = self.downloader

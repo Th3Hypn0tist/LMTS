@@ -19,7 +19,9 @@ class ProfileService:
 def test_run_provenance_does_not_require_local_database() -> None:
     profile = ProfileService({
         'fingerprint': 'machine-fingerprint',
-        'schema_version': 6,
+        'schema_version': 7,
+        'identity': {'cpu': {'model_name': 'Test CPU'}},
+        'profile': {'cpu': {'model_name': 'Test CPU'}},
     })
     service = SystemService(None, profile)
 
@@ -33,7 +35,9 @@ def test_run_provenance_does_not_require_local_database() -> None:
 def test_local_persistence_still_requires_repository() -> None:
     profile = ProfileService({
         'fingerprint': 'machine-fingerprint',
-        'schema_version': 6,
+        'schema_version': 7,
+        'identity': {'cpu': {'model_name': 'Test CPU'}},
+        'profile': {'cpu': {'model_name': 'Test CPU'}},
     })
     service = SystemService(None, profile)
 

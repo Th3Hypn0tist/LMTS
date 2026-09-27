@@ -130,6 +130,9 @@ class LMTSViewController:
     def remove_test(self, instance_id: str) -> bool:
         return self.matrix_view.remove_test(instance_id)
 
+    def replace_with_custom_suite(self, tests: list[ConfiguredTest], *, repeats: int = 1) -> bool:
+        return self.matrix_view.replace_with_custom(tests, repeats=repeats)
+
     def select_targets(self, indices: set[int]) -> None:
         self.matrix_view.select_targets(indices)
 

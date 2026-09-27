@@ -22,10 +22,9 @@ class UserPage:
             'Identity',
             f"  Username   : {snapshot.username or 'anonymous'}",
             f"  User ID    : {snapshot.user_id or '-'}",
-            f"  Tier       : {snapshot.tier} {snapshot.tier_label}",
+            f"  IAM tier   : {snapshot.tier}",
             f"  Status     : {snapshot.status}",
             f"  Verified   : {self._yes_no(snapshot.verified)}",
-            f"  Can invite : {self._yes_no(snapshot.can_invite)}",
         ]
         if snapshot.identity_error:
             lines.extend(['', f'IAM identity error: {snapshot.identity_error}'])

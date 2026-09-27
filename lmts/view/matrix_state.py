@@ -65,6 +65,35 @@ class MatrixViewState:
         self.state.message = f'added configured test: {configured.ref}'
         return configured
 
+    def restore_configuration(
+        self,
+        tests: list[ConfiguredTest],
+        *,
+        suite_level: str,
+        suite_repeats: int,
+        selected_test_refs: set[str],
+    ) -> None:
+        if self.state.running:
+            raise RuntimeError('cannot restore matrix while test matrix is running')
+        if isinstance(suite_repeats, bool) or not isinstance(suite_repeats, int) or not 1 <= suite_repeats <= 100:
+            raise ValueError('suite repeats must be an integer between 1 and 100')
+        matrix = TestMatrix()
+        identities: set[tuple[str, str]] = set()
+        for test in tests:
+            identity = (test.type_ref, repr(sorted(test.params.items())))
+            if identity in identities:
+                raise ValueError(f'duplicate configured test in persisted UI state: {test.ref}')
+            identities.add(identity)
+            matrix.add(test)
+        self.matrix = matrix
+        self.state.suite_level = suite_level
+        self.state.suite_repeats = suite_repeats
+        self.sync()
+        available = {test_ref(test) for test in self.state.tests}
+        restored = selected_test_refs & available
+        self.state.selected_test_refs = restored if restored else set(available)
+        self.clear_live_matrix()
+
     def replace_with_custom(
         self,
         tests: list[ConfiguredTest],

@@ -83,7 +83,6 @@ def test_saved_profile_contains_empty_reference_contract(tmp_path: Path) -> None
             "memory_type": None,
             "ecc": None,
             "speed_mt_s": None,
-            "configured_speed_mt_s": None,
             "form_factor": None,
             "modules": [],
         },
@@ -326,6 +325,68 @@ def test_system_fingerprint_ignores_module_slot_location() -> None:
     second = SystemProfile(
         cpu=dict(first.cpu),
         memory={"total_bytes": 32 * 1024 ** 3, "modules": [{**module, "slot": "DIMM_B2"}]},
+    )
+
+    assert system_fingerprint(first) == system_fingerprint(second)
+
+
+def test_system_fingerprint_ignores_configured_memory_speed() -> None:
+    base = SystemProfile(
+        cpu={"architecture": "x86_64", "model_name": "Test CPU", "logical_cores": 8},
+        memory={
+            "total_bytes": 64 * 1024 ** 3,
+            "memory_type": "DDR5",
+            "ecc": False,
+            "speed_mt_s": 5600,
+            "configured_speed_mt_s": 5200,
+            "form_factor": "DIMM",
+            "modules": [{
+                "capacity_bytes": 64 * 1024 ** 3,
+                "memory_type": "DDR5",
+                "ecc": False,
+                "speed_mt_s": 5600,
+                "configured_speed_mt_s": 5200,
+                "form_factor": "DIMM",
+                "manufacturer": "Example",
+                "part_number": "EXAMPLE",
+                "rank": 2,
+            }],
+        },
+    )
+    changed = SystemProfile(
+        cpu=dict(base.cpu),
+        memory={
+            **base.memory,
+            "configured_speed_mt_s": 4800,
+            "modules": [{**base.memory["modules"][0], "configured_speed_mt_s": 4800}],
+        },
+    )
+
+    assert system_fingerprint(base) == system_fingerprint(changed)
+
+
+def test_system_fingerprint_ignores_current_gpu_ecc_mode() -> None:
+    first = SystemProfile(
+        cpu={"architecture": "x86_64", "model_name": "Test CPU", "logical_cores": 8},
+        memory={"total_bytes": 16 * 1024 ** 3},
+        gpu=[GPUProfile(
+            vendor="NVIDIA",
+            model="Test GPU",
+            vram_bytes=24 * 1024 ** 3,
+            memory_type="GDDR6X",
+            ecc=False,
+        )],
+    )
+    second = SystemProfile(
+        cpu=dict(first.cpu),
+        memory=dict(first.memory),
+        gpu=[GPUProfile(
+            vendor="NVIDIA",
+            model="Test GPU",
+            vram_bytes=24 * 1024 ** 3,
+            memory_type="GDDR6X",
+            ecc=True,
+        )],
     )
 
     assert system_fingerprint(first) == system_fingerprint(second)

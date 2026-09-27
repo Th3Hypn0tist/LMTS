@@ -486,7 +486,7 @@ def scan_system_profile() -> SystemProfile:
     )
 
 
-def system_fingerprint(profile: SystemProfile) -> str:
+def system_identity(profile: SystemProfile) -> dict[str, object]:
     data = profile.to_dict()
     cpu = data.get("cpu") if isinstance(data.get("cpu"), dict) else {}
     memory = data.get("memory") if isinstance(data.get("memory"), dict) else {}
@@ -510,7 +510,7 @@ def system_fingerprint(profile: SystemProfile) -> str:
         )
         for item in npu if isinstance(item, dict)
     )
-    identity = {
+    return {
         "cpu": {
             "architecture": cpu.get("architecture"), "model_name": cpu.get("model_name"), "model_names": cpu.get("model_names"),
             "vendor_id": cpu.get("vendor_id"), "cpu_family": cpu.get("cpu_family"), "model": cpu.get("model"),
@@ -543,7 +543,10 @@ def system_fingerprint(profile: SystemProfile) -> str:
         "gpu": gpu_identity,
         "npu": npu_identity,
     }
-    canonical = json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def system_fingerprint(profile: SystemProfile) -> str:
+    canonical = json.dumps(system_identity(profile), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -575,6 +578,7 @@ def save_system_profile(profile: SystemProfile, path: Path = DEFAULT_PROFILE_PAT
         "schema_version": PROFILE_SCHEMA_VERSION,
         "profiled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "fingerprint": fingerprint,
+        "identity": system_identity(profile),
         "profile": profile.to_dict(),
         "reference_benchmarks": references,
     }
@@ -595,9 +599,13 @@ def load_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object] 
     if not validate_reference_benchmarks(payload.get("reference_benchmarks")):
         return None
     fingerprint = payload.get("fingerprint")
-    if not isinstance(fingerprint, str) or not fingerprint:
+    identity = payload.get("identity")
+    if not isinstance(fingerprint, str) or not fingerprint or not isinstance(identity, dict):
         return None
-    if fingerprint != system_fingerprint(scan_system_profile()):
+    scanned = scan_system_profile()
+    if fingerprint != system_fingerprint(scanned):
+        return None
+    if identity != system_identity(scanned):
         return None
     return payload
 
@@ -641,6 +649,7 @@ def ensure_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object
     return load_system_profile(path) or {
         "schema_version": PROFILE_SCHEMA_VERSION,
         "fingerprint": system_fingerprint(profile),
+        "identity": system_identity(profile),
         "profile": profile.to_dict(),
         "reference_benchmarks": empty_reference_benchmarks(),
     }

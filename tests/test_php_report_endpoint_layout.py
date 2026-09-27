@@ -47,3 +47,11 @@ def test_projection_projects_system_profile_hardware_and_memory() -> None:
         text.index('function lmts_projection_ensure_system(PDO $pdo, array $record): void'):
         text.index('function lmts_projection_assert_compute_profile')
     ].split('lmts_projection_project_system_profile', 1)[0]
+
+
+
+def test_projection_guards_numeric_record_index_metrics() -> None:
+    text = Path('php/storage/lib/report_projection.php').read_text(encoding='utf-8')
+    assert 'function lmts_projection_numeric_metric_value' in text
+    assert "lmts_projection_numeric_metric_value($record, 'ttft')" in text
+    assert "lmts_projection_numeric_metric_value($record, 'score_percent')" in text

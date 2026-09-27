@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .run import utc_now
 from .store import RunStore, safe_component
+from .variance_store import VarianceStore
 
 
 EXPORT_SCHEMA_VERSION = 1
@@ -81,6 +82,7 @@ def build_matrix_bundle(matrix_data: dict, *, results_root: Path) -> dict:
         raise ValueError('canonical matrix cells must be a list')
 
     store = RunStore(results_root)
+    variance_store = VarianceStore(results_root)
     runs: list[dict] = []
     for cell in cells:
         if not isinstance(cell, dict):
@@ -94,6 +96,9 @@ def build_matrix_bundle(matrix_data: dict, *, results_root: Path) -> dict:
             raise FileNotFoundError(f'canonical run result missing: {result_path}')
         run_data = store.load(result_path)
         _validate_cell_run(cell, run_data, run_id)
+        variance_samples = variance_store.samples_for_run(run_id)
+        if variance_samples:
+            run_data['variance_samples'] = variance_samples
         runs.append(run_data)
 
     return {

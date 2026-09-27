@@ -94,3 +94,49 @@ def test_matrix_report_excludes_error_cancelled_and_unknown_runs() -> None:
         'cancelled': 0,
         'unknown': 0,
     }
+
+
+def test_filtered_runs_do_not_leak_into_report_metadata() -> None:
+    bundle = {
+        'schema_version': 1,
+        'export_type': 'lmts.matrix_bundle',
+        'exported_at': '2026-09-13T12:00:00+00:00',
+        'matrix': {
+            'matrix_id': 'matrix-filtered-metadata',
+            'started_at': '2026-09-13T11:59:00+00:00',
+            'completed_at': '2026-09-13T12:00:00+00:00',
+            'target_ids': ['model-pass', 'model-error'],
+            'test_refs': ['core.pass@1.0.0', 'core.error@1.0.0'],
+        },
+        'runs': [
+            {
+                'run_id': 'pass-1',
+                'executor_id': 'model-pass',
+                'executor_kind': 'model',
+                'test_ref': 'core.pass@1.0.0',
+                'status': 'completed',
+                'passed': True,
+                'metrics': {},
+                'system_context': {'fingerprint': 'pass-context'},
+            },
+            {
+                'run_id': 'error-1',
+                'executor_id': 'model-error',
+                'executor_kind': 'model',
+                'test_ref': 'core.error@1.0.0',
+                'status': 'failed',
+                'passed': False,
+                'metrics': {},
+                'error': {'type': 'RuntimeError', 'message': 'boom'},
+                'system_context': {'fingerprint': 'error-context'},
+            },
+        ],
+    }
+
+    report = project_matrix_bundle(bundle)
+
+    assert report['report']['benchmark']['target_ids'] == ['model-pass']
+    assert report['report']['benchmark']['test_refs'] == ['core.pass@1.0.0']
+    assert list(report['entities']['target']) == ['model-pass']
+    assert list(report['entities']['test']) == ['core.pass@1.0.0']
+    assert report['summary']['system_profiles'] == [{'fingerprint': 'pass-context'}]

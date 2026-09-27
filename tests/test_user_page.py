@@ -11,10 +11,8 @@ def test_user_page_projects_canonical_identity_and_activity() -> None:
         user_id='0',
         username='origin',
         tier=1337,
-        tier_label='Test-content authority',
         status='active',
         verified=True,
-        can_invite=True,
         activity={
             'reports': 7,
             'submissions': 2,
@@ -41,7 +39,7 @@ def test_user_page_projects_canonical_identity_and_activity() -> None:
 
     assert '  Username   : origin' in lines
     assert '  User ID    : 0' in lines
-    assert '  Tier       : 1337 Test-content authority' in lines
+    assert '  IAM tier   : 1337' in lines
     assert '  Reports            : 7' in lines
     assert '  PASS               : 5' in lines
     assert '  ERROR              : 1' in lines

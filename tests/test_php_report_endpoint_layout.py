@@ -31,3 +31,15 @@ def test_upload_endpoint_reuses_contract_store_and_projection() -> None:
     assert "__DIR__ . '/storage/contracts/' . LMTS_REPORT_CONTRACT_FILE" in text
     assert 'lmts_store_report($pdo, $report)' in text
     assert 'lmts_project_report($pdo, $report)' in text
+
+
+def test_projection_projects_system_profile_hardware_and_memory() -> None:
+    text = Path('php/storage/lib/report_projection.php').read_text(encoding='utf-8')
+    assert 'LMTS_hardware_nodes' in text
+    assert 'LMTS_system_resources' in text
+    assert 'LMTS_system_memory_pools' in text
+    assert "lmts_projection_project_system_profile($pdo, $systemId, $profile)" in text
+    assert "return;" not in text[
+        text.index('function lmts_projection_ensure_system(PDO $pdo, array $record): void'):
+        text.index('function lmts_projection_assert_compute_profile')
+    ].split('lmts_projection_project_system_profile', 1)[0]

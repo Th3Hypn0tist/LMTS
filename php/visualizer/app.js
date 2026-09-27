@@ -30,9 +30,78 @@ function testLabel(record) {
   return text(record.test_version_id, 'unresolved');
 }
 
-function outcomeLabel(value) {
+function outcomeLabel(value, suffix = '') {
   const label = text(value, 'unknown').toLowerCase();
-  return h('span', { className: 'result result-' + label, text: label.toUpperCase() });
+  return h('span', { className: 'result result-' + label, text: label.toUpperCase() + suffix });
+}
+
+function matrixOutcome(cell) {
+  const states = ['pass', 'fail', 'error', 'cancelled', 'unknown'].filter(key => Number(cell?.[key] ?? 0) > 0);
+  return states.length === 1 ? states[0] : (states.length > 1 ? 'mixed' : 'unknown');
+}
+
+function matrixLink(cell) {
+  const params = new URLSearchParams(location.search);
+  params.set('target_kind', text(cell.target_kind, 'unknown'));
+  if (cell.target_ref) params.set('target_id', cell.target_ref);
+  else params.delete('target_id');
+  if (cell.test_version_id) params.set('test_version_id', cell.test_version_id);
+  return '?' + params.toString();
+}
+
+function benchmarkMatrix(cells) {
+  const targets = new Map();
+  const tests = new Map();
+  const index = new Map();
+
+  for (const cell of cells ?? []) {
+    const targetKey = text(cell.target_kind, 'unknown') + '\u0000' + text(cell.target_ref, '');
+    const testKey = text(cell.test_version_id, 'unresolved');
+    if (!targets.has(targetKey)) targets.set(targetKey, cell.target_label || cell.target_ref || cell.target_kind || 'Unresolved target');
+    if (!tests.has(testKey)) tests.set(testKey, cell.test_label || cell.test_version_id || 'Unresolved test');
+    index.set(targetKey + '\u0001' + testKey, cell);
+  }
+
+  const targetEntries = [...targets.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }));
+  const testEntries = [...tests.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }));
+  const table = h('table', { className: 'matrix' });
+  const head = h('tr', {}, [h('th', { text: 'Target / model' })]);
+  for (const [, label] of testEntries) head.append(h('th', { text: label }));
+  table.append(h('thead', {}, [head]));
+
+  const body = h('tbody');
+  for (const [targetKey, targetLabel] of targetEntries) {
+    const row = h('tr', {}, [h('th', { className: 'row-label', text: targetLabel })]);
+    for (const [testKey] of testEntries) {
+      const cell = index.get(targetKey + '\u0001' + testKey);
+      if (!cell) {
+        row.append(h('td', { className: 'matrix-empty', text: '—' }));
+        continue;
+      }
+      const outcome = matrixOutcome(cell);
+      const runs = Number(cell.runs ?? 0);
+      row.append(h('td', {}, [
+        h('a', {
+          className: 'matrix-cell matrix-cell-' + outcome,
+          href: matrixLink(cell),
+          title: [
+            'runs ' + runs,
+            'pass ' + number(cell.pass, 0),
+            'fail ' + number(cell.fail, 0),
+            'error ' + number(cell.error, 0),
+            'cancelled ' + number(cell.cancelled, 0),
+            'unknown ' + number(cell.unknown, 0),
+          ].join(' · '),
+        }, [
+          outcomeLabel(outcome),
+          h('span', { className: 'matrix-runs', text: runs === 1 ? '1 run' : runs + ' runs' }),
+        ]),
+      ]));
+    }
+    body.append(row);
+  }
+  table.append(body);
+  return h('div', { className: 'scroll' }, [table]);
 }
 
 function summaryCard(label, value) {
@@ -238,19 +307,23 @@ function render(payload) {
     throw new Error('Unsupported LMTS statistics payload');
   }
   const summary = payload.summary ?? {};
+  const matrix = payload.matrix ?? [];
   const records = payload.records ?? [];
   const series = numericSeries(payload.telemetry);
 
   const blocks = [
     h('header', { className: 'header' }, [
-      h('div', { className: 'eyebrow', text: 'LMTS CANONICAL STATISTICS' }),
-      h('h1', { text: 'Results & Telemetry' }),
-      h('div', { className: 'meta', text: 'Canonical SQL projections · raw telemetry · no implicit aggregation' }),
+      h('div', { className: 'eyebrow', text: 'LMTS BENCHMARK STATISTICS' }),
+      h('h1', { text: 'Benchmark overview' }),
+      h('div', { className: 'meta', text: 'Queryable SQL projections over immutable LMTS report evidence' }),
     ]),
     renderFilters(payload.filters),
     h('div', { className: 'summary' }, [
       summaryCard('Reports', summary.reports),
       summaryCard('Result records', summary.result_records),
+      summaryCard('Tests', summary.tests),
+      summaryCard('Targets', summary.targets),
+      summaryCard('Systems', summary.systems),
       summaryCard('Pass', summary.pass),
       summaryCard('Fail', summary.fail),
       summaryCard('Error', summary.error),
@@ -260,7 +333,20 @@ function render(payload) {
     ]),
     h('section', { className: 'panel' }, [
       h('div', { className: 'section-title' }, [
-        h('h2', { text: 'Results' }),
+        h('div', {}, [
+          h('h2', { text: 'Results matrix' }),
+          h('div', { className: 'subtle', text: 'Targets × test versions. Mixed means the filtered scope contains more than one outcome state.' }),
+        ]),
+        h('span', { className: 'subtle', text: String(matrix.length) + ' populated cells' }),
+      ]),
+      matrix.length ? benchmarkMatrix(matrix) : h('p', { className: 'empty', text: 'No matrix cells match this view.' }),
+    ]),
+    h('section', { className: 'panel' }, [
+      h('div', { className: 'section-title' }, [
+        h('div', {}, [
+          h('h2', { text: 'Result records' }),
+          h('div', { className: 'subtle', text: 'Record-level drill-down. Report links open immutable canonical evidence.' }),
+        ]),
         h('span', { className: 'subtle', text: String(records.length) + ' rows in this view' }),
       ]),
       records.length ? resultsTable(records) : h('p', { className: 'empty', text: 'No projected result records match this view.' }),

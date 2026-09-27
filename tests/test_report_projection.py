@@ -110,12 +110,33 @@ def test_projection_writes_test_record_and_telemetry(monkeypatch) -> None:
     assert 'INSERT INTO LMTS_test_versions' in query
     assert 'INSERT INTO LMTS_test_version_telemetry_types' in query
     assert 'INSERT INTO LMTS_report_record_index' in query
+    assert 'target_ref, target_label' in query
+    assert 'ON DUPLICATE KEY UPDATE' in query
+    assert '6f6c6c616d612d6c6f63616c3a6d6f64656c' in query
     assert 'INSERT INTO LMTS_telemetry_values' in query
     assert 'input_tokens' in query
     assert 'gpu_memory_used_mib' in query
     assert 'usr_test' not in query
     assert '7573725f74657374' in query
     assert query.strip().endswith('COMMIT')
+
+
+def test_projection_backfills_observed_target_identity_on_replay(monkeypatch) -> None:
+    report = _report()
+    report['entities']['target']['ollama-local:model']['label'] = 'ollama-local:model'
+    captured = {}
+
+    def fake_run(mysql, query):
+        captured['query'] = query
+        return ''
+
+    monkeypatch.setattr(projection, '_run', fake_run)
+    projection.rebuild_report_projection(_mysql(), report)
+
+    query = captured['query']
+    assert 'target_ref = VALUES(target_ref)' in query
+    assert 'target_label = VALUES(target_label)' in query
+    assert '6f6c6c616d612d6c6f63616c3a6d6f64656c' in query
 
 
 def test_projection_without_provenance_indexes_result_but_not_telemetry(monkeypatch) -> None:

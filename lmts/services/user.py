@@ -31,7 +31,7 @@ EMPTY_ACTIVITY = {
 class UserDashboardSnapshot:
     user_id: str | None
     username: str | None
-    tier: int
+    tier: int | None
     status: str
     verified: bool | None
     activity: dict[str, int] | None
@@ -52,7 +52,7 @@ class UserService:
         return UserDashboardSnapshot(
             user_id=None,
             username=None,
-            tier=4,
+            tier=None,
             status='anonymous',
             verified=None,
             activity=None,

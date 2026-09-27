@@ -214,6 +214,7 @@ Memory Device
     assert len(memory["modules"]) == 2
     assert memory["modules"][0]["slot"] == "DIMM_A1"
     assert memory["modules"][0]["capacity_bytes"] == 32 * 1024 ** 3
+    assert memory["modules"][0]["memory_type_raw"] == "DDR5"
     assert memory["modules"][0]["source"] == "smbios"
 
 
@@ -390,3 +391,25 @@ def test_system_fingerprint_ignores_current_gpu_ecc_mode() -> None:
     )
 
     assert system_fingerprint(first) == system_fingerprint(second)
+
+
+def test_unknown_smbios_memory_type_stays_noncanonical_but_raw_is_preserved() -> None:
+    dmidecode = """Memory Device
+	Size: 16 GB
+	Form Factor: DIMM
+	Locator: DIMM_A1
+	Type: FutureRAM-9000
+	Speed: 9000 MT/s
+	Configured Memory Speed: 9000 MT/s
+"""
+    with (
+        patch("lmts.tools.profile.platform.system", return_value="Linux"),
+        patch("lmts.tools.profile.shutil.which", return_value="/usr/sbin/dmidecode"),
+        patch("lmts.tools.profile._optional_command", return_value=dmidecode),
+        patch("lmts.tools.profile._memory_total_bytes", return_value=16 * 1024 ** 3),
+    ):
+        memory = _system_memory_profile()
+
+    assert memory["memory_type"] is None
+    assert memory["modules"][0]["memory_type"] is None
+    assert memory["modules"][0]["memory_type_raw"] == "FutureRAM-9000"

@@ -57,7 +57,12 @@ class SystemRepository:
             raise ValueError('system label must not be empty')
         probe_version = f'profile-v{int(profile_schema_version)}'
         identity_json = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
-        profile_json = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        hardware_profile = {
+            key: profile[key]
+            for key in ('cpu', 'memory', 'gpu', 'npu')
+            if key in profile
+        }
+        profile_json = json.dumps(hardware_profile, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         configuration_label = f'Configuration {fingerprint[:12]}'
         query = f"""
 INSERT INTO LMTS_hardware_configurations (

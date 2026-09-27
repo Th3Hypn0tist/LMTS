@@ -14,6 +14,7 @@ from lmts.core.registry import ProviderRegistry
 from lmts.core.run import utc_now
 from lmts.core.runner import TestRunner
 from lmts.core.store import RunStore
+from lmts.core.variance_store import VarianceStore
 from lmts.tests.base import TestModule, test_ref
 
 
@@ -78,7 +79,10 @@ class EvaluationService:
         progress: ProgressCallback | None = None,
         on_run_completed: RunCompletedCallback | None = None,
         provenance: dict[str, object] | None = None,
+        suite_repeats: int = 1,
     ) -> EvaluationOutcome:
+        if isinstance(suite_repeats, bool) or not isinstance(suite_repeats, int) or not 1 <= suite_repeats <= 100:
+            raise ValueError('suite_repeats must be an integer between 1 and 100')
         runner = TestRunner(
             self.providers,
             RunStore(self.results_root),
@@ -89,6 +93,7 @@ class EvaluationService:
         benchmark_runner = BenchmarkRunner(runner)
         benchmark_store = BenchmarkStore(self.results_root)
         matrix_store = MatrixRunStore(self.results_root)
+        variance_store = VarianceStore(self.results_root)
         matrix_id = uuid.uuid4().hex
         matrix_started_at = utc_now()
         matrix_cells: list[MatrixCell] = []
@@ -97,6 +102,7 @@ class EvaluationService:
         run_errors: list[dict[str, object]] = []
         publish_errors: list[dict[str, str]] = []
         passed = failed = errors = cancelled = completed = 0
+        anchor_runs: dict[tuple[str, str], object] = {}
 
         ready_targets: list[TestExecutor] = []
         for target in targets:
@@ -151,6 +157,8 @@ class EvaluationService:
                             result_path=str(event.result_path),
                         )
                     )
+                anchor_runs[(run.executor_id, run.test_ref)] = run
+
                 if run.status == 'cancelled':
                     cancelled += 1
                 elif run.status != 'completed':
@@ -169,7 +177,12 @@ class EvaluationService:
                 elif run.passed is False:
                     failed += 1
 
-                if on_run_completed is not None and run.status != 'cancelled':
+                if (
+                    suite_repeats == 1
+                    and on_run_completed is not None
+                    and run.status == 'completed'
+                    and isinstance(run.passed, bool)
+                ):
                     try:
                         on_run_completed(run.to_dict())
                     except Exception as exc:
@@ -191,6 +204,68 @@ class EvaluationService:
                 path = benchmark_store.append(batch)
                 batch_ids.append(batch.batch_id)
                 batch_paths.append(str(path))
+
+        if suite_repeats > 1 and not control.cancelled:
+            for repeat_index in range(1, suite_repeats):
+                if control.cancelled:
+                    break
+                for test in tests:
+                    if control.cancelled:
+                        break
+                    resolved_test_ref = test_ref(test)
+                    for target in ready_targets:
+                        if control.cancelled:
+                            break
+                        anchor = anchor_runs.get((target.id, resolved_test_ref))
+                        if anchor is None or getattr(anchor, 'status', None) != 'completed':
+                            continue
+                        if not isinstance(getattr(anchor, 'passed', None), bool):
+                            continue
+                        observation = runner.run_variance_executor(
+                            test,
+                            target,
+                            self.workspace_root / f'variance-{matrix_id}-{repeat_index}',
+                            control=control,
+                        )
+                        if observation.cancelled:
+                            cancelled += 1
+                            break
+                        if observation.error is not None:
+                            errors += 1
+                            run_errors.append({
+                                'phase': 'variance',
+                                'target_id': target.id,
+                                'target_kind': target.kind,
+                                'test_ref': resolved_test_ref,
+                                'run_id': getattr(anchor, 'run_id', None),
+                                'result_path': None,
+                                'error': observation.error,
+                            })
+                            continue
+                        if isinstance(observation.passed, bool):
+                            variance_store.append(
+                                str(getattr(anchor, 'run_id')),
+                                observation.passed,
+                                observed_at=observation.observed_at,
+                            )
+
+        if suite_repeats > 1 and on_run_completed is not None and not control.cancelled:
+            for anchor in anchor_runs.values():
+                if getattr(anchor, 'status', None) != 'completed' or not isinstance(getattr(anchor, 'passed', None), bool):
+                    continue
+                payload = anchor.to_dict()
+                samples = variance_store.samples_for_run(str(getattr(anchor, 'run_id')))
+                if samples:
+                    payload['variance_samples'] = samples
+                try:
+                    on_run_completed(payload)
+                except Exception as exc:
+                    publish_errors.append({
+                        'run_id': str(getattr(anchor, 'run_id')),
+                        'target_id': str(getattr(anchor, 'executor_id')),
+                        'test_ref': str(getattr(anchor, 'test_ref')),
+                        'error': f'{type(exc).__name__}: {exc}',
+                    })
 
         status = 'cancelled' if control.cancelled else 'completed'
         record = MatrixRunRecord(

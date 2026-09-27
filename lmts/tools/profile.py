@@ -498,7 +498,6 @@ def system_identity(profile: SystemProfile) -> dict[str, object]:
             str(item.get("model") or ""),
             item.get("vram_bytes"),
             item.get("memory_type"),
-            item.get("ecc"),
         )
         for item in gpu if isinstance(item, dict)
     )
@@ -522,7 +521,6 @@ def system_identity(profile: SystemProfile) -> dict[str, object]:
             "memory_type": memory.get("memory_type"),
             "ecc": memory.get("ecc"),
             "speed_mt_s": memory.get("speed_mt_s"),
-            "configured_speed_mt_s": memory.get("configured_speed_mt_s"),
             "form_factor": memory.get("form_factor"),
             "modules": sorted(
                 (
@@ -530,7 +528,6 @@ def system_identity(profile: SystemProfile) -> dict[str, object]:
                     module.get("memory_type"),
                     module.get("ecc"),
                     module.get("speed_mt_s"),
-                    module.get("configured_speed_mt_s"),
                     module.get("form_factor"),
                     str(module.get("manufacturer") or ""),
                     str(module.get("part_number") or ""),

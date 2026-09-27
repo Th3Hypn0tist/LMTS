@@ -24,6 +24,22 @@ class BenchmarkActions(TUIActions):
         self.navigation.open_tab(tab_id)
         self.set_message(message)
 
+    def set_suite_repeats(self, _stdscr) -> None:
+        if self.controller.state.running:
+            self.set_message('test matrix is running')
+            return
+        value = self.host.input_integer(
+            self.stdscr,
+            'Whole-suite repeats',
+            default=self.controller.state.suite_repeats,
+            minimum=1,
+            maximum=100,
+        )
+        if value is None:
+            return
+        self.controller.state.suite_repeats = value
+        self.set_message(f'suite repeats: {value}')
+
     def select_targets(self, _stdscr) -> None:
         if self.controller.state.running:
             self.set_message('test matrix is running')
@@ -165,13 +181,23 @@ class BenchmarkActions(TUIActions):
         if self.controller.state.running:
             self.set_message('test matrix is running')
             return
-        options = ['Quick suite', 'Moderate suite', 'Deep suite', 'Select tests', 'Add test', 'Remove test', 'CW Bench']
+        options = ['Quick suite', 'Moderate suite', 'Deep suite', 'Suite repeats', 'Select tests', 'Add test', 'Remove test', 'CW Bench']
         levels = ('quick', 'moderate', 'deep')
 
         def preview(index: int) -> tuple[str, ...]:
             if index < 3:
                 return self.suite_preview(levels[index])
             if index == 3:
+                full_runs = len(self.controller.state.tests) * len(self.controller.state.selected_targets)
+                return (
+                    f'Whole-suite repeats: {self.controller.state.suite_repeats}',
+                    '',
+                    'First suite pass stores full benchmark evidence.',
+                    'Additional suite passes store PASS/FAIL variance observations only.',
+                    f'Current full cells: {full_runs}',
+                    f'Total executions: {full_runs * self.controller.state.suite_repeats}',
+                )
+            if index == 4:
                 selected = [
                     test for test in self.controller.state.tests
                     if test_ref(test) in self.controller.state.selected_test_refs
@@ -180,9 +206,9 @@ class BenchmarkActions(TUIActions):
                 for test in selected:
                     lines.append(f'  [{self._taxonomy_label(test)}] {test_ref(test)}')
                 return tuple(lines)
-            if index == 4:
-                return ('Add one configured test instance from the test type registry.',)
             if index == 5:
+                return ('Add one configured test instance from the test type registry.',)
+            if index == 6:
                 return ('Remove one configured test instance from the current suite.',)
             return (
                 'CW Bench',
@@ -204,10 +230,12 @@ class BenchmarkActions(TUIActions):
         if chosen < 3:
             self.select_suite(levels[chosen])
         elif chosen == 3:
-            self.select_tests(self.stdscr)
+            self.set_suite_repeats(self.stdscr)
         elif chosen == 4:
-            self.add_test(self.stdscr)
+            self.select_tests(self.stdscr)
         elif chosen == 5:
+            self.add_test(self.stdscr)
+        elif chosen == 6:
             self.remove_test(self.stdscr)
         else:
             self.navigation.open_tab('cw_bench')
@@ -231,20 +259,23 @@ class BenchmarkActions(TUIActions):
                     'Selected tests -> selected targets', '',
                     f'Tests   : {selected_tests}',
                     f'Targets : {selected_targets}',
-                    f'Runs    : {selected_tests * selected_targets}',
+                    f'Full runs  : {selected_tests * selected_targets}',
+                    f'Executions : {selected_tests * selected_targets * self.controller.state.suite_repeats}',
                 )
             if index == 1:
                 return (
                     'All configured tests -> selected targets', '',
                     f'Tests   : {all_tests}',
                     f'Targets : {selected_targets}',
-                    f'Runs    : {all_tests * selected_targets}',
+                    f'Full runs  : {all_tests * selected_targets}',
+                    f'Executions : {all_tests * selected_targets * self.controller.state.suite_repeats}',
                 )
             return (
                 'All configured tests -> all model targets', '',
                 f'Tests   : {all_tests}',
                 f'Models  : {model_targets}',
-                f'Runs    : {all_tests * model_targets}',
+                f'Full runs  : {all_tests * model_targets}',
+                f'Executions : {all_tests * model_targets * self.controller.state.suite_repeats}',
                 '',
                 'Bots and compositions are not included.',
             )

@@ -464,8 +464,8 @@ CREATE TABLE IF NOT EXISTS LMTS_report_record_index (
     completed_at                DATETIME(6) NULL,
     duration_ms                 DECIMAL(20,6) NULL,
     ttft_ms                     DECIMAL(20,6) NULL,
-    outcome                     VARCHAR(32) NULL,
-    passed                      BOOLEAN NULL,
+    outcome                     VARCHAR(8) NOT NULL,
+    passed                      BOOLEAN NOT NULL,
     score_percent               DECIMAL(12,6) NULL,
     runtime_configuration_json  LONGTEXT NULL,
     PRIMARY KEY (report_id, record_id),
@@ -486,6 +486,11 @@ CREATE TABLE IF NOT EXISTS LMTS_report_record_index (
     CONSTRAINT fk_report_record_test
         FOREIGN KEY (test_version_id) REFERENCES LMTS_test_versions(test_version_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT chk_report_record_outcome CHECK (outcome IN ('pass','fail')),
+    CONSTRAINT chk_report_record_passed CHECK (
+        (outcome = 'pass' AND passed = TRUE)
+        OR (outcome = 'fail' AND passed = FALSE)
+    ),
     CONSTRAINT chk_report_record_runtime_config CHECK (
         runtime_configuration_json IS NULL OR JSON_VALID(runtime_configuration_json)
     )

@@ -190,3 +190,27 @@ def test_php_contract_validator_rejects_empty_benchmark_evidence(tmp_path: Path)
 
     assert result.returncode != 0
     assert 'contains no publishable PASS/FAIL evidence' in result.stderr
+
+
+def test_php_contract_validator_rejects_inconsistent_passed_flag(tmp_path: Path) -> None:
+    report = copy.deepcopy(project_matrix_bundle(_bundle()))
+    report['records'][0]['outcome']['passed'] = False
+
+    result = _validator_process(tmp_path, report)
+
+    assert result.returncode != 0
+    assert 'result and passed disagree' in result.stderr
+
+
+def test_php_contract_validator_rejects_heavy_variance_samples(tmp_path: Path) -> None:
+    report = copy.deepcopy(project_matrix_bundle(_bundle()))
+    report['records'][0]['evidence']['variance_samples'] = [{
+        'outcome': 'pass',
+        'observed_at': '2026-09-14T09:59:12+00:00',
+        'telemetry': {'gpu': 1},
+    }]
+
+    result = _validator_process(tmp_path, report)
+
+    assert result.returncode != 0
+    assert 'contains non-lightweight field(s): telemetry' in result.stderr

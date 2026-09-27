@@ -93,3 +93,10 @@ def test_help_only_contains_hidden_global_controls() -> None:
     assert "'q q q    Quit'" in help_block
     assert "'Tabs'" not in help_block
     assert "'Page actions'" not in help_block
+
+
+def test_startup_has_login_and_local_but_no_registration() -> None:
+    app = APP.read_text(encoding='utf-8')
+    assert "['Login', 'Local']" in app
+    assert "'Register'" not in app
+    assert 'user.register' not in app

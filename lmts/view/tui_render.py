@@ -262,7 +262,7 @@ class TUIRenderer:
         if tab == 'stats':
             return self.stats_lines()
         if tab == 'downloader':
-            return ('Model Explorer', '', 'Use the Actions row to select a downloader module and model operation.')
+            return self.state.model_explorer_page.lines()
         if tab == 'settings':
             return self.settings_lines()
         raise ValueError(f'unknown TUI tab: {tab}')

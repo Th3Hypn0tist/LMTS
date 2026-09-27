@@ -57,6 +57,9 @@ class SystemRepository:
             raise ValueError('system label must not be empty')
         probe_version = f'profile-v{int(profile_schema_version)}'
         identity_json = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        calculated_fingerprint = hashlib.sha256(identity_json.encode('utf-8')).hexdigest()
+        if calculated_fingerprint != fingerprint:
+            raise ValueError('hardware configuration fingerprint does not match canonical identity')
         hardware_profile = {
             key: profile[key]
             for key in ('cpu', 'memory', 'gpu', 'npu')

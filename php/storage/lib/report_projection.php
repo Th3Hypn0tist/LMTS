@@ -167,6 +167,8 @@ function lmts_projection_hardware_spec(string $category, array $probe): ?array {
             'vendor' => $probe['vendor'] ?? null,
             'model' => $probe['model'] ?? null,
             'vram_bytes' => $probe['vram_bytes'] ?? null,
+            'memory_type' => $probe['memory_type'] ?? null,
+            'ecc' => array_key_exists('ecc', $probe) ? $probe['ecc'] : null,
         ];
         $required = ['vendor', 'model', 'vram_bytes'];
         $label = trim((string)($probe['model'] ?? ''))

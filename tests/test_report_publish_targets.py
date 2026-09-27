@@ -75,3 +75,41 @@ def test_mysql_report_writer_uses_insert_only(monkeypatch) -> None:
     assert 'INSERT INTO reports' in report_insert
     assert 'UPDATE' not in report_insert.upper()
     assert 'DELETE' not in report_insert.upper()
+
+
+def test_publish_rejects_inconsistent_passed_flag() -> None:
+    report = _report()
+    report['records'][0]['outcome']['passed'] = False
+
+    try:
+        report_publish.publish_report(
+            report,
+            ReportProfile(name='direct-db', kind='mysql', endpoint='', publish_key=''),
+            mysql=_mysql(),
+        )
+    except ValueError as exc:
+        assert 'outcome.result and outcome.passed disagree' in str(exc)
+    else:
+        raise AssertionError('expected inconsistent PASS/FAIL evidence to be rejected')
+
+
+def test_publish_rejects_heavy_variance_samples() -> None:
+    report = _report()
+    report['records'][0]['evidence'] = {
+        'variance_samples': [{
+            'outcome': 'pass',
+            'observed_at': '2026-09-18T10:00:01+00:00',
+            'telemetry': {'gpu': 1},
+        }],
+    }
+
+    try:
+        report_publish.publish_report(
+            report,
+            ReportProfile(name='direct-db', kind='mysql', endpoint='', publish_key=''),
+            mysql=_mysql(),
+        )
+    except ValueError as exc:
+        assert 'contains non-lightweight field(s): telemetry' in str(exc)
+    else:
+        raise AssertionError('expected heavy variance evidence to be rejected')

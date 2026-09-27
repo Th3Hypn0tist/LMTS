@@ -47,6 +47,16 @@ function stats_scope(): array {
         }
     }
 
+    $configurationId = stats_param('configuration_id');
+    if ($configurationId !== null) {
+        $conditions[] = 'rri.system_id IN (
+            SELECT system_id
+            FROM LMTS_systems
+            WHERE configuration_id = ?
+        )';
+        $params[] = $configurationId;
+    }
+
     $outcome = stats_param('outcome');
     if ($outcome === 'unknown') {
         $conditions[] = "(rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled'))";
@@ -124,6 +134,7 @@ try {
                 ELSE CONCAT(rri.target_kind, ':', rri.target_ref)
             END) AS targets,
             COUNT(DISTINCT rri.system_id) AS systems,
+            COUNT(DISTINCT s.configuration_id) AS configurations,
             COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
             COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
             COALESCE(SUM(CASE WHEN rri.outcome = 'error' THEN 1 ELSE 0 END), 0) AS error,
@@ -133,6 +144,7 @@ try {
                 THEN 1 ELSE 0 END), 0) AS unknown
          FROM LMTS_report_record_index rri
          JOIN LMTS_reports r ON r.report_id = rri.report_id
+         LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
          $where",
         $params,
     )->fetch() ?: [];
@@ -166,6 +178,9 @@ try {
         tv.version AS test_version,
         rri.system_id,
         s.label AS system_label,
+        s.configuration_id,
+        hc.label AS configuration_label,
+        hc.fingerprint AS configuration_fingerprint,
         rri.compute_profile_id,
         DATE_FORMAT(rri.started_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS started_at,
         DATE_FORMAT(rri.completed_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS completed_at,
@@ -196,6 +211,7 @@ try {
      LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
      LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
      LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
+     LEFT JOIN LMTS_hardware_configurations hc ON hc.configuration_id = s.configuration_id
      $where
      ORDER BY COALESCE(rri.started_at, r.created_at) DESC, rri.report_id, rri.record_id
      LIMIT $limit";
@@ -272,11 +288,25 @@ try {
     )->fetchAll();
 
     $systems = $pdo->query(
-        "SELECT DISTINCT rri.system_id, COALESCE(s.label, rri.system_id) AS label
+        "SELECT DISTINCT
+            rri.system_id,
+            COALESCE(s.label, rri.system_id) AS label,
+            s.configuration_id
          FROM LMTS_report_record_index rri
          LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
          WHERE rri.system_id IS NOT NULL
          ORDER BY label, rri.system_id"
+    )->fetchAll();
+
+    $configurations = $pdo->query(
+        "SELECT DISTINCT
+            hc.configuration_id,
+            hc.label,
+            hc.fingerprint
+         FROM LMTS_report_record_index rri
+         JOIN LMTS_systems s ON s.system_id = rri.system_id
+         JOIN LMTS_hardware_configurations hc ON hc.configuration_id = s.configuration_id
+         ORDER BY hc.label, hc.configuration_id"
     )->fetchAll();
 
     $tests = $pdo->query(
@@ -322,6 +352,7 @@ try {
     $selected = [
         'user_id' => stats_param('user_id'),
         'system_id' => stats_param('system_id'),
+        'configuration_id' => stats_param('configuration_id'),
         'test_version_id' => stats_param('test_version_id'),
         'outcome' => stats_param('outcome'),
         'report_id' => stats_param('report_id'),
@@ -342,6 +373,7 @@ try {
             'tests' => (int)($summary['tests'] ?? 0),
             'targets' => (int)($summary['targets'] ?? 0),
             'systems' => (int)($summary['systems'] ?? 0),
+            'configurations' => (int)($summary['configurations'] ?? 0),
             'pass' => (int)($summary['pass'] ?? 0),
             'fail' => (int)($summary['fail'] ?? 0),
             'error' => (int)($summary['error'] ?? 0),
@@ -357,6 +389,7 @@ try {
             'options' => [
                 'users' => $users,
                 'systems' => $systems,
+                'configurations' => $configurations,
                 'targets' => $targets,
                 'tests' => $tests,
                 'outcomes' => $outcomes,

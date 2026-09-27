@@ -3,6 +3,7 @@ from __future__ import annotations
 import traceback
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from lmts.lib.workspace import Workspace

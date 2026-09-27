@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import shutil
+import threading
 
 from lmts.core.model_downloader import ModelDownloadQueue, ModelDownloaderRegistry
-from lmts.core.model_explorer import assess_candidate_fit
+from lmts.core.control import RunControl
+from lmts.core.model_explorer import DEFAULT_EXPLORER_REPEATS, DEFAULT_VARIANCE_THRESHOLD, assess_candidate_fit
 from lmts.tools.ollama_catalog import OllamaCatalogScraper
 from lmts.tools.ollama_downloader import OllamaModelDownloader
+from lmts.services.model_explorer import ModelExplorerService
 from lmts.tools.profile import load_system_profile
 
 
@@ -14,14 +17,20 @@ def default_model_downloader_registry() -> ModelDownloaderRegistry:
 
 
 class ModelDownloaderPage:
-    def __init__(self, registry: ModelDownloaderRegistry | None = None) -> None:
+    def __init__(self, registry: ModelDownloaderRegistry | None = None, *, controller=None) -> None:
         self.registry = registry if registry is not None else default_model_downloader_registry()
+        self.controller = controller
         self.queue = ModelDownloadQueue(self.registry)
         downloaders = self.registry.downloaders()
         self.module_id = downloaders[0].id if downloaders else None
         self._installed_cache = []
         self._status = ""
         self._catalog = OllamaCatalogScraper()
+        self.variance_threshold = DEFAULT_VARIANCE_THRESHOLD
+        self._explorer_thread: threading.Thread | None = None
+        self._explorer_control: RunControl | None = None
+        self._explorer_status = 'idle'
+        self._explorer_results: list[str] = []
         self.refresh()
 
     @property
@@ -61,6 +70,11 @@ class ModelDownloaderPage:
             f"Module    : {module}",
             f"Status    : {self._status or '-'}",
             f"Installed : {len(installed)}",
+            f"Explorer  : {self._explorer_status}",
+            f"Qualify   : {DEFAULT_EXPLORER_REPEATS}x / variance <= {self.variance_threshold:g}",
+            "",
+            "Explorer results",
+            *(f"  {line}" for line in self._explorer_results[-12:]),
             "",
             "Installed models",
             *(f"  {model_ref}" for model_ref in installed),
@@ -99,10 +113,116 @@ class ModelDownloaderPage:
         except OSError:
             return None
 
+    def set_variance_threshold(self, host, stdscr) -> None:
+        raw = host.input_multiline(
+            stdscr,
+            'Model Explorer variance threshold',
+            initial=str(self.variance_threshold),
+        )
+        if raw is None:
+            return
+        try:
+            value = float(raw.strip())
+        except ValueError:
+            host.message = 'variance threshold must be a number'
+            return
+        if not 0.0 <= value <= 0.25:
+            host.message = 'variance threshold must be between 0 and 0.25'
+            return
+        self.variance_threshold = value
+        host.message = f'Model Explorer variance threshold: {value:g}'
+
+    def _resolve_executor(self, candidate):
+        if self.controller is None:
+            raise RuntimeError('Model Explorer controller is not configured')
+        targets = self.controller.target_service.discover()
+        for target in targets:
+            if target.kind != 'model':
+                continue
+            metadata = target.metadata
+            if (
+                str(metadata.get('provider_ref') or '') == 'ollama-local'
+                and str(metadata.get('model_ref') or '') == candidate.model_ref
+            ):
+                return target
+        for target in targets:
+            if target.kind == 'model' and str(target.metadata.get('model_ref') or '') == candidate.model_ref:
+                return target
+        raise RuntimeError(f'downloaded model was not discovered as a target: {candidate.model_ref}')
+
+    def _explorer_provenance(self) -> dict[str, object]:
+        if self.controller is None or self.controller.auth_service.local_mode:
+            return {}
+        identity = self.controller.auth_service.require_identity()
+        return self.controller.system_service.build_run_provenance(identity.user_id).to_dict()
+
+    def _run_candidates(self, candidates, downloader, profile, free_disk, tests) -> None:
+        if self.controller is None:
+            self._explorer_status = 'error: controller unavailable'
+            return
+        service = ModelExplorerService(
+            self.controller.evaluation_service,
+            results_root=self.controller.results_root,
+        )
+        control = RunControl()
+        self._explorer_control = control
+        self._explorer_results = []
+        try:
+            provenance = self._explorer_provenance()
+            for index, candidate in enumerate(candidates, start=1):
+                if control.cancelled:
+                    break
+                self._explorer_status = f'{index}/{len(candidates)} {candidate.model_ref}: pull/qualify'
+
+                def progress(event) -> None:
+                    percent = event.percent
+                    suffix = f' {percent:.1f}%' if percent is not None else ''
+                    self._explorer_status = (
+                        f'{index}/{len(candidates)} {candidate.model_ref}: {event.status}{suffix}'
+                    )
+
+                result = service.explore_one(
+                    candidate,
+                    downloader,
+                    self._resolve_executor,
+                    tests,
+                    profile,
+                    free_disk_bytes=free_disk,
+                    repeats=DEFAULT_EXPLORER_REPEATS,
+                    variance_threshold=self.variance_threshold,
+                    provenance=provenance,
+                    on_download_progress=progress,
+                    control=control,
+                )
+                if result.accepted:
+                    line = f'ACCEPT {candidate.model_ref}'
+                elif result.deleted:
+                    line = f'REJECT+DELETE {candidate.model_ref}'
+                else:
+                    line = f'SKIP {candidate.model_ref}'
+                if result.tests:
+                    worst_n = min(item.aggregate.sample_count for item in result.tests)
+                    max_variance = max(item.aggregate.variance for item in result.tests)
+                    line += f' / N>={worst_n} / variance={max_variance:.6f}'
+                if result.error:
+                    line += f' / {result.error}'
+                self._explorer_results.append(line)
+                self.refresh()
+        finally:
+            self._explorer_status = 'cancelled' if control.cancelled else 'idle'
+            self._explorer_control = None
+            self.refresh()
+
     def explore_catalog(self, host, stdscr) -> None:
         downloader = self.downloader
         if downloader is None:
             host.message = 'select a downloader module'
+            return
+        if self._explorer_thread is not None and self._explorer_thread.is_alive():
+            host.message = 'Model Explorer is already running'
+            return
+        if self.controller is None:
+            host.message = 'Model Explorer controller is not configured'
             return
         if downloader.id != 'ollama':
             host.message = f'catalog discovery not implemented for module: {downloader.id}'
@@ -164,15 +284,21 @@ class ModelDownloaderPage:
         if blocked:
             host.message = 'blocked by hardware/disk fit: ' + ', '.join(blocked)
             return
-        refs = [candidates[index].model_ref for index in sorted(chosen)]
-        if not refs:
+        selected = [candidates[index] for index in sorted(chosen)]
+        if not selected:
             return
-        try:
-            items = self.queue.enqueue_many(downloader.id, refs)
-        except (KeyError, ValueError, RuntimeError) as exc:
-            host.message = f'cannot queue catalog candidates: {exc}'
+        tests = list(self.controller.state.selected_tests)
+        if not tests:
+            host.message = 'select a qualification test suite first'
             return
-        host.message = f'queued {len(items)} catalog candidate(s)'
+        self._explorer_thread = threading.Thread(
+            target=self._run_candidates,
+            args=(selected, downloader, profile, free_disk, tests),
+            name='lmts-model-explorer',
+            daemon=True,
+        )
+        self._explorer_thread.start()
+        host.message = f'Model Explorer started: {len(selected)} candidate(s)'
 
     def enqueue(self, host, stdscr) -> None:
         downloader = self.downloader
@@ -205,6 +331,10 @@ class ModelDownloaderPage:
         host.message = "download queue viewed"
 
     def cancel(self, host, stdscr) -> None:
+        if self._explorer_control is not None:
+            self._explorer_control.request_cancel()
+            host.message = 'Model Explorer cancellation requested'
+            return
         items = [
             item for item in self.queue.items()
             if item.module_id == self.module_id and item.state in {"queued", "downloading"}

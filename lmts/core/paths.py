@@ -23,3 +23,6 @@ REPORT_PROFILES_PATH = lmts_path('report-profiles.json')
 SHORTCUT_SETTINGS_PATH = lmts_path('shortcuts.json')
 AUTH_SESSION_PATH = lmts_path('auth-session.json')
 AUTH_SESSION_SECRET_PATH = lmts_path('auth-session.secret')
+
+CUSTOM_SUITES_PATH = lmts_path('custom-suites.json')
+UI_STATE_PATH = lmts_path('ui-state.json')

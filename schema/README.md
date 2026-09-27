@@ -28,29 +28,19 @@ Manual annotations never change canonical identity.
 
 ### IAM-owned identity data
 
-The shared database contains IAM-owned `IAM_*` tables for canonical users, credentials, invites, tier lifecycle, sessions and abuse/IP-block state. LMTS references IAM user IDs and does not define a parallel user identity.
+IAM owns canonical users, credentials, registration, invites, sessions and management-tier resolution. LMTS references IAM user IDs and does not define a parallel user identity.
+
+LMTS uses the canonical IAM domain context `lmts`. The `claims.tier` value returned by IAM is an IAM user-management claim only. LMTS does not calculate, inherit or interpret IAM management tiers as application authorization.
 
 ### User-owned LMTS data
 
-Registered users own:
+Authenticated users may own LMTS-domain records such as:
 
 - Systems
 - Compute Profiles
 - Compositions
-- invite records they create
 
-Tier-4 is an anonymous Reader state and therefore has no `IAM_users` row.
-
-Registered tiers:
-
-- Tier-3 — Registered User
-- Tier-2 — Invite-capable
-- Tier-1 — Canonical Authority; may define/maintain canonical data
-- Tier-1337 — Test Authority; defines test content and semantics
-
-Higher authority carries higher accountable scope.
-
-Invite authority is not inherited merely by registration. Progression to Tier-2 is an explicit transition and may be approved by the inviter after eligibility is reached.
+LMTS registration and invite lifecycle are not part of the LMTS application boundary.
 
 ### System and Compute Profile
 

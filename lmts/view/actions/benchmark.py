@@ -17,6 +17,12 @@ class BenchmarkActions(TUIActions):
     def before_run_choice(self, choice: int) -> bool:
         return True
 
+    def _custom_suite_scope(self) -> str:
+        scope = self.state.ui_state_scope
+        if not isinstance(scope, str) or not scope.strip():
+            raise RuntimeError('custom suite persistence requires an active UI state scope')
+        return scope
+
     def select_suite(self, level: str, tab_id: str = 'benchmark') -> None:
         if not self.controller.set_suite_level(level):
             self.set_message(self.controller.state.message)
@@ -227,7 +233,7 @@ class BenchmarkActions(TUIActions):
                 for test in selected
             ),
         )
-        suites = list(self.state.settings_service.load_custom_suites(self.state.ui_state_scope or 'local'))
+        suites = list(self.state.settings_service.load_custom_suites(self._custom_suite_scope()))
         existing = next(
             (index for index, item in enumerate(suites) if item.name.casefold() == name.casefold()),
             None,
@@ -244,13 +250,13 @@ class BenchmarkActions(TUIActions):
             suites[existing] = suite
         else:
             suites.append(suite)
-        self.state.settings_service.save_custom_suites(self.state.ui_state_scope or 'local', suites)
+        self.state.settings_service.save_custom_suites(self._custom_suite_scope(), suites)
         self.controller.state.suite_level = 'custom'
         self.persist_ui_state()
         self.set_message(f'custom suite saved: {name}')
 
     def load_custom_suite(self, _stdscr) -> None:
-        suites = list(self.state.settings_service.load_custom_suites(self.state.ui_state_scope or 'local'))
+        suites = list(self.state.settings_service.load_custom_suites(self._custom_suite_scope()))
         if not suites:
             self.set_message('no custom suites saved')
             return
@@ -282,7 +288,7 @@ class BenchmarkActions(TUIActions):
             self.set_message(self.controller.state.message)
 
     def delete_custom_suite(self, _stdscr) -> None:
-        suites = list(self.state.settings_service.load_custom_suites(self.state.ui_state_scope or 'local'))
+        suites = list(self.state.settings_service.load_custom_suites(self._custom_suite_scope()))
         if not suites:
             self.set_message('no custom suites saved')
             return
@@ -304,7 +310,7 @@ class BenchmarkActions(TUIActions):
         if confirm != 1:
             return
         del suites[chosen]
-        self.state.settings_service.save_custom_suites(self.state.ui_state_scope or 'local', suites)
+        self.state.settings_service.save_custom_suites(self._custom_suite_scope(), suites)
         self.set_message(f'custom suite deleted: {suite.name}')
 
     def tests_dialog(self, _stdscr) -> None:
@@ -328,7 +334,7 @@ class BenchmarkActions(TUIActions):
                     f'Total executions: {full_runs * self.controller.state.suite_repeats}',
                 )
             if index == 4:
-                suites = self.state.settings_service.load_custom_suites(self.state.ui_state_scope or 'local')
+                suites = self.state.settings_service.load_custom_suites(self._custom_suite_scope())
                 if not suites:
                     return ('No custom suites saved.',)
                 lines = [f'{len(suites)} saved custom suite(s)', '']

@@ -598,6 +598,7 @@ def rebuild_report_projection(mysql: MySQLSettings, report: dict[str, Any]) -> N
                 tests[test_ref] = projected
 
     statements = ['START TRANSACTION']
+    projected_system_ids: set[str] = set()
 
     for test in tests.values():
         statements.append(f"""
@@ -649,6 +650,9 @@ INSERT IGNORE INTO LMTS_test_version_telemetry_types (
         provenance = record.get('provenance') if isinstance(record.get('provenance'), dict) else {}
         tester = str(provenance.get('tester_user_id') or '').strip() or None
         system_id = str(provenance.get('system_id') or '').strip() or None
+        if system_id is not None and system_id not in projected_system_ids:
+            statements.extend(_system_statements(record))
+            projected_system_ids.add(system_id)
         compute_profile_id = str(provenance.get('compute_profile_id') or '').strip() or None
         timing = record.get('timing') if isinstance(record.get('timing'), dict) else {}
         outcome = record.get('outcome') if isinstance(record.get('outcome'), dict) else {}

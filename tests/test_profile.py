@@ -65,6 +65,31 @@ def test_saved_profile_contains_empty_reference_contract(tmp_path: Path) -> None
 
     assert payload is not None
     assert payload["schema_version"] == PROFILE_SCHEMA_VERSION
+    assert payload["identity"] == {
+        "cpu": {
+            "architecture": "x86_64",
+            "model_name": "Test CPU",
+            "model_names": None,
+            "vendor_id": None,
+            "cpu_family": None,
+            "model": None,
+            "stepping": None,
+            "logical_cores": 8,
+            "physical_packages": None,
+            "physical_cores": None,
+        },
+        "memory": {
+            "total_bytes": 16 * 1024 ** 3,
+            "memory_type": None,
+            "ecc": None,
+            "speed_mt_s": None,
+            "configured_speed_mt_s": None,
+            "form_factor": None,
+            "modules": [],
+        },
+        "gpu": [],
+        "npu": [],
+    }
     references = payload["reference_benchmarks"]
     assert references["schema_version"] == REFERENCE_BENCHMARK_SCHEMA_VERSION
     assert references["cpu"] is None

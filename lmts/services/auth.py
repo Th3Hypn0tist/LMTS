@@ -12,6 +12,7 @@ from lmts.core.paths import AUTH_SESSION_PATH
 
 
 IAM_BASE_URL = 'https://aigm.fi/iam'
+IAM_DOMAIN = 'lmts'
 IAM_CONTRACT = 'iam.light'
 IAM_VERSION = '1.0'
 SESSION_SCHEMA_VERSION = 1
@@ -31,10 +32,6 @@ class UserIdentity:
     tier: int
     verified: bool
     status: str = 'active'
-
-
-def is_origin(user_id: str) -> bool:
-    return str(user_id) == '0'
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,30 +160,12 @@ class IAMHTTPClient:
         payload = self._request(
             'POST',
             '/api/login.php',
-            {'username': username, 'password': password},
+            {'username': username, 'password': password, 'domain': IAM_DOMAIN},
         )
         return self._session(payload)
 
-    def register(
-        self,
-        invite_code: str,
-        username: str,
-        password: str,
-        *,
-        email: str | None = None,
-    ) -> IAMSession:
-        request_payload: dict[str, object] = {
-            'invite_code': invite_code,
-            'username': username,
-            'password': password,
-        }
-        if email:
-            request_payload['email'] = email
-        payload = self._request('POST', '/api/register.php', request_payload)
-        return self._session(payload)
-
     def me(self, token: str) -> UserIdentity:
-        return self._identity(self._request('GET', '/api/me.php', token=token))
+        return self._identity(self._request('GET', f'/api/me.php?domain={IAM_DOMAIN}', token=token))
 
     def logout(self, token: str) -> None:
         self._request('POST', '/api/logout.php', token=token)
@@ -279,25 +258,6 @@ class AuthService:
 
     def login(self, username: str, password: str) -> UserIdentity:
         session = self.client.login(username.strip(), password)
-        self.token_store.save(session)
-        self._local_mode = False
-        self._current = session.identity
-        return session.identity
-
-    def register(
-        self,
-        raw_invite_token: str,
-        username: str,
-        password: str,
-        *,
-        email: str | None = None,
-    ) -> UserIdentity:
-        session = self.client.register(
-            raw_invite_token.strip(),
-            username.strip(),
-            password,
-            email=None if email is None else email.strip(),
-        )
         self.token_store.save(session)
         self._local_mode = False
         self._current = session.identity

@@ -4,13 +4,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lmts.core.paths import (
+    CUSTOM_SUITES_PATH,
     FTP_PROFILES_PATH,
     REPORT_PROFILES_PATH,
+    UI_STATE_PATH,
     RUNTIME_TARGETS_PATH,
     SETTINGS_PATH,
     SHORTCUT_SETTINGS_PATH,
     lmts_home,
 )
+from lmts.core.custom_suites import CustomSuite, load_custom_suites, save_custom_suites
 from lmts.core.runtime_targets import RuntimeTargetDefinition, load_runtime_targets, save_runtime_targets
 from lmts.core.settings import LMTSSettings, load_settings, save_settings
 from lmts.core.shortcut_settings import load_shortcut_overrides, save_shortcut_overrides
@@ -50,6 +53,8 @@ class SettingsService:
             SettingsStoreDescriptor('runtime_targets', self.root / RUNTIME_TARGETS_PATH.name),
             SettingsStoreDescriptor('ftp_profiles', self.root / FTP_PROFILES_PATH.name),
             SettingsStoreDescriptor('report_profiles', self.root / REPORT_PROFILES_PATH.name, contains_secret_values=True),
+            SettingsStoreDescriptor('custom_suites', self.root / CUSTOM_SUITES_PATH.name),
+            SettingsStoreDescriptor('ui_state', self.root / UI_STATE_PATH.name),
         )
         paths = [store.path for store in self._stores]
         if len(paths) != len(set(paths)):
@@ -80,6 +85,12 @@ class SettingsService:
 
     def load_report_profiles(self) -> ReportProfiles:
         return load_report_profiles(self.path('report_profiles'))
+
+    def load_custom_suites(self) -> tuple[CustomSuite, ...]:
+        return load_custom_suites(self.path('custom_suites'))
+
+    def save_custom_suites(self, suites: tuple[CustomSuite, ...] | list[CustomSuite]) -> Path:
+        return save_custom_suites(suites, self.path('custom_suites'))
 
     def load(self) -> SettingsSnapshot:
         return SettingsSnapshot(

@@ -17,6 +17,7 @@ from lmts.core.custom_suites import CustomSuite, load_custom_suites, save_custom
 from lmts.core.runtime_targets import RuntimeTargetDefinition, load_runtime_targets, save_runtime_targets
 from lmts.core.settings import LMTSSettings, load_settings, save_settings
 from lmts.core.shortcut_settings import load_shortcut_overrides, save_shortcut_overrides
+from lmts.core.ui_state_store import load_ui_scope, save_ui_scope
 from lmts.tools.ftp_profiles import FTPProfiles, load_ftp_profiles, save_ftp_profiles
 from lmts.tools.report_profiles import ReportProfiles, load_report_profiles, save_report_profiles
 
@@ -91,6 +92,12 @@ class SettingsService:
 
     def save_custom_suites(self, suites: tuple[CustomSuite, ...] | list[CustomSuite]) -> Path:
         return save_custom_suites(suites, self.path('custom_suites'))
+
+    def load_ui_scope(self, scope: str) -> dict[str, object]:
+        return load_ui_scope(scope, self.path('ui_state'))
+
+    def save_ui_scope(self, scope: str, state: dict[str, object]) -> Path:
+        return save_ui_scope(scope, state, self.path('ui_state'))
 
     def load(self) -> SettingsSnapshot:
         return SettingsSnapshot(

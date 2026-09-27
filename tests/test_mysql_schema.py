@@ -19,6 +19,8 @@ def test_schema_file_contains_canonical_database_tables() -> None:
     assert 'REFERENCES IAM_users' not in text
     assert 'IAM IDENTITY BOUNDARY' in text
     assert 'CREATE TABLE IF NOT EXISTS LMTS_reports' in text
+    assert 'CREATE TABLE IF NOT EXISTS LMTS_hardware_configurations' in text
+    assert 'configuration_id      VARCHAR(128) NOT NULL' in text
     assert "VALUES ('database_ssot', 1)" in text
 
 

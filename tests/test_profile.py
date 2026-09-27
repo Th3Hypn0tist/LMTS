@@ -7,6 +7,8 @@ from lmts.tools.profile import (
     GPUProfile,
     PROFILE_SCHEMA_VERSION,
     SystemProfile,
+    _nvidia_gpus,
+    _system_memory_profile,
     load_system_profile,
     save_reference_benchmark,
     save_system_profile,
@@ -122,6 +124,183 @@ def test_system_fingerprint_ignores_software_and_driver_state() -> None:
             "modalias": "pci:test",
         }],
         software={"os": "OtherOS", "os_release": "99", "python": "3.99"},
+    )
+
+    assert system_fingerprint(first) == system_fingerprint(second)
+
+
+
+def test_system_memory_profile_parses_smbios_without_guessing() -> None:
+    dmidecode = """# dmidecode 3.6
+Handle 0x003A, DMI type 16, 23 bytes
+Physical Memory Array
+	Location: System Board Or Motherboard
+	Use: System Memory
+	Error Correction Type: Single-bit ECC
+	Maximum Capacity: 128 GB
+	Number Of Devices: 2
+
+Handle 0x003B, DMI type 17, 92 bytes
+Memory Device
+	Array Handle: 0x003A
+	Total Width: 72 bits
+	Data Width: 64 bits
+	Size: 32 GB
+	Form Factor: DIMM
+	Locator: DIMM_A1
+	Bank Locator: BANK 0
+	Type: DDR5
+	Speed: 5600 MT/s
+	Manufacturer: Example
+	Part Number: EXAMPLE-32G
+	Rank: 2
+	Configured Memory Speed: 5200 MT/s
+
+Handle 0x003C, DMI type 17, 92 bytes
+Memory Device
+	Array Handle: 0x003A
+	Total Width: 72 bits
+	Data Width: 64 bits
+	Size: 32 GB
+	Form Factor: DIMM
+	Locator: DIMM_B1
+	Bank Locator: BANK 1
+	Type: DDR5
+	Speed: 5600 MT/s
+	Manufacturer: Example
+	Part Number: EXAMPLE-32G
+	Rank: 2
+	Configured Memory Speed: 5200 MT/s
+"""
+    with (
+        patch("lmts.tools.profile.platform.system", return_value="Linux"),
+        patch("lmts.tools.profile.shutil.which", return_value="/usr/sbin/dmidecode"),
+        patch("lmts.tools.profile._optional_command", return_value=dmidecode),
+        patch("lmts.tools.profile._memory_total_bytes", return_value=64 * 1024 ** 3),
+    ):
+        memory = _system_memory_profile()
+
+    assert memory["total_bytes"] == 64 * 1024 ** 3
+    assert memory["memory_type"] == "DDR5"
+    assert memory["ecc"] is True
+    assert memory["speed_mt_s"] == 5600
+    assert memory["configured_speed_mt_s"] == 5200
+    assert memory["form_factor"] == "DIMM"
+    assert memory["probe_sources"] == ["smbios"]
+    assert len(memory["modules"]) == 2
+    assert memory["modules"][0]["slot"] == "DIMM_A1"
+    assert memory["modules"][0]["capacity_bytes"] == 32 * 1024 ** 3
+    assert memory["modules"][0]["source"] == "smbios"
+
+
+def test_system_memory_profile_keeps_unknowns_when_smbios_is_unavailable() -> None:
+    with (
+        patch("lmts.tools.profile.platform.system", return_value="Linux"),
+        patch("lmts.tools.profile.shutil.which", return_value=None),
+        patch("lmts.tools.profile._memory_total_bytes", return_value=16 * 1024 ** 3),
+    ):
+        memory = _system_memory_profile()
+
+    assert memory == {
+        "total_bytes": 16 * 1024 ** 3,
+        "memory_type": None,
+        "ecc": None,
+        "speed_mt_s": None,
+        "configured_speed_mt_s": None,
+        "form_factor": "unknown",
+        "modules": [],
+        "probe_sources": [],
+    }
+
+
+def test_system_memory_profile_does_not_infer_form_factor_from_machine_type() -> None:
+    dmidecode = """Memory Device
+	Size: 16 GB
+	Form Factor: Unknown
+	Locator: ChannelA-DIMM0
+	Type: DDR5
+	Speed: 4800 MT/s
+	Configured Memory Speed: 4800 MT/s
+"""
+    with (
+        patch("lmts.tools.profile.platform.system", return_value="Linux"),
+        patch("lmts.tools.profile.shutil.which", return_value="/usr/sbin/dmidecode"),
+        patch("lmts.tools.profile._optional_command", return_value=dmidecode),
+        patch("lmts.tools.profile._memory_total_bytes", return_value=16 * 1024 ** 3),
+    ):
+        memory = _system_memory_profile()
+
+    assert memory["form_factor"] == "unknown"
+    assert memory["modules"][0]["form_factor"] == "unknown"
+    assert memory["ecc"] is None
+
+
+def test_nvidia_profile_keeps_memory_type_unknown_and_reads_ecc_mode() -> None:
+    def command_result(command, *, timeout=5):
+        joined = " ".join(command)
+        if "index,name,memory.total,driver_version" in joined:
+            return "0, NVIDIA Test GPU, 8192, 610.43.02\n"
+        if "index,ecc.mode.current" in joined:
+            return "0, Enabled\n"
+        return None
+
+    with (
+        patch("lmts.tools.profile.shutil.which", return_value="/usr/bin/nvidia-smi"),
+        patch("lmts.tools.profile._optional_command", side_effect=command_result),
+    ):
+        gpus = _nvidia_gpus()
+
+    assert len(gpus) == 1
+    assert gpus[0].memory_type is None
+    assert gpus[0].ecc is True
+    assert gpus[0].vram_bytes == 8192 * 1024 * 1024
+
+
+def test_system_fingerprint_distinguishes_reliably_known_memory_characteristics() -> None:
+    base = SystemProfile(
+        cpu={"architecture": "x86_64", "model_name": "Test CPU", "logical_cores": 8},
+        memory={
+            "total_bytes": 64 * 1024 ** 3,
+            "memory_type": "DDR5",
+            "ecc": False,
+            "speed_mt_s": 5600,
+            "configured_speed_mt_s": 5200,
+            "form_factor": "DIMM",
+            "modules": [],
+        },
+    )
+    ecc = SystemProfile(
+        cpu=dict(base.cpu),
+        memory={**base.memory, "ecc": True},
+    )
+    ddr4 = SystemProfile(
+        cpu=dict(base.cpu),
+        memory={**base.memory, "memory_type": "DDR4"},
+    )
+
+    assert system_fingerprint(base) != system_fingerprint(ecc)
+    assert system_fingerprint(base) != system_fingerprint(ddr4)
+
+
+def test_system_fingerprint_ignores_module_slot_location() -> None:
+    module = {
+        "capacity_bytes": 32 * 1024 ** 3,
+        "memory_type": "DDR5",
+        "ecc": True,
+        "speed_mt_s": 5600,
+        "configured_speed_mt_s": 5200,
+        "form_factor": "DIMM",
+        "manufacturer": "Example",
+        "part_number": "EXAMPLE-32G",
+        "rank": 2,
+    }
+    first = SystemProfile(
+        cpu={"architecture": "x86_64", "model_name": "Test CPU", "logical_cores": 8},
+        memory={"total_bytes": 32 * 1024 ** 3, "modules": [{**module, "slot": "DIMM_A1"}]},
+    )
+    second = SystemProfile(
+        cpu=dict(first.cpu),
+        memory={"total_bytes": 32 * 1024 ** 3, "modules": [{**module, "slot": "DIMM_B2"}]},
     )
 
     assert system_fingerprint(first) == system_fingerprint(second)

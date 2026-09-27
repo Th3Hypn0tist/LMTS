@@ -491,6 +491,38 @@ CREATE TABLE IF NOT EXISTS LMTS_report_record_index (
     )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS LMTS_variance_samples (
+    variance_sample_id    VARCHAR(128) NOT NULL,
+    target_kind           VARCHAR(32) NOT NULL,
+    target_ref            VARCHAR(255) NOT NULL,
+    target_identity_hash  CHAR(64) NOT NULL,
+    test_version_id       VARCHAR(128) NOT NULL,
+    configuration_id      VARCHAR(128) NOT NULL,
+    tester_user_id        VARCHAR(128) NULL,
+    outcome               VARCHAR(8) NOT NULL,
+    observed_at           DATETIME(6) NULL,
+    source_report_id      VARCHAR(128) NOT NULL,
+    source_record_id      VARCHAR(128) NOT NULL,
+    sample_ordinal        INT UNSIGNED NOT NULL,
+    created_at            DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (variance_sample_id),
+    UNIQUE KEY uq_variance_source_sample (source_report_id, source_record_id, sample_ordinal),
+    KEY idx_variance_cell (target_identity_hash, test_version_id, configuration_id),
+    KEY idx_variance_test_configuration (test_version_id, configuration_id),
+    KEY idx_variance_tester (tester_user_id),
+    CONSTRAINT fk_variance_test_version
+        FOREIGN KEY (test_version_id) REFERENCES LMTS_test_versions(test_version_id)
+        ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT fk_variance_configuration
+        FOREIGN KEY (configuration_id) REFERENCES LMTS_hardware_configurations(configuration_id)
+        ON UPDATE RESTRICT ON DELETE RESTRICT,
+    CONSTRAINT fk_variance_source_record
+        FOREIGN KEY (source_report_id, source_record_id)
+        REFERENCES LMTS_report_record_index(report_id, record_id)
+        ON UPDATE RESTRICT ON DELETE CASCADE,
+    CONSTRAINT chk_variance_outcome CHECK (outcome IN ('pass','fail'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS LMTS_telemetry_values (
     telemetry_value_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     report_id           VARCHAR(128) NOT NULL,

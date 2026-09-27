@@ -8,7 +8,7 @@ from .paths import UI_STATE_PATH
 
 
 UI_STATE_SCHEMA_VERSION = 1
-_FORBIDDEN_KEY_PARTS = ('token', 'password', 'secret', 'publish_key')
+_FORBIDDEN_KEY_PARTS = ('token', 'password', 'secret', 'publish_key', 'bearer', 'api_key', 'credential')
 
 
 def _validate_public_state(value: object, *, path: str = '$') -> None:

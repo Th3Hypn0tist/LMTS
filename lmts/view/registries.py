@@ -58,6 +58,7 @@ DEFAULT_SHORTCUTS = (
     ShortcutDefinition("cw.cancel", ("n",), "Cancel", "CW Bench", scope="cw_bench", order=150),
 
     ShortcutDefinition("downloader.module", ("m",), "Select module", "Model Explorer", scope="downloader", order=100),
+    ShortcutDefinition("downloader.catalog", ("e",), "Explore catalog", "Model Explorer", scope="downloader", order=105),
     ShortcutDefinition("downloader.download", ("d",), "Queue models", "Model Explorer", scope="downloader", order=110),
     ShortcutDefinition("downloader.delete", ("x",), "Delete model", "Model Explorer", scope="downloader", order=120),
     ShortcutDefinition("downloader.progress", ("p",), "Download progress", "Model Explorer", scope="downloader", order=130),

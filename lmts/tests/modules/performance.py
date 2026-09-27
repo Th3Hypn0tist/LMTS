@@ -33,6 +33,10 @@ class ColdWarmPerformanceTest:
         if self.warm_repeats < 1:
             raise ValueError("warm_repeats must be positive")
 
+        context.unload_model()
+        if context.is_model_loaded():
+            raise RuntimeError("cold/warm test requires a verified unloaded model")
+
         responses = [context.generate(self.prompt)]
         for _ in range(self.warm_repeats):
             responses.append(context.generate(self.prompt))
@@ -52,8 +56,9 @@ class ColdWarmPerformanceTest:
             if item.performance.prompt_tokens_per_second is not None
         ]
 
+        expected = "PERF_OK"
         return TestResult(
-            passed=None,
+            passed=all(item.text.strip() == expected for item in responses),
             metrics={
                 "cold": {
                     "total_ms": cold.timing.total_ms,
@@ -95,8 +100,9 @@ class RepeatVarianceTest:
             for item in responses
             if item.performance.generation_tokens_per_second is not None
         ]
+        expected = "VAR_OK"
         return TestResult(
-            passed=None,
+            passed=all(item.text.strip() == expected for item in responses),
             metrics={
                 "total_ms": _series(totals),
                 "ttft_ms": _series(ttfts),

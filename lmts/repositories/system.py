@@ -14,7 +14,15 @@ class SystemRecord:
     user_id: str
     label: str
     fingerprint: str
+    configuration_id: str
     profile_schema_version: int
+
+
+def hardware_configuration_id_for(fingerprint: str) -> str:
+    fp = str(fingerprint).strip()
+    if not fp:
+        raise ValueError('hardware configuration identity requires fingerprint')
+    return 'cfg_' + fp[:40]
 
 
 def system_id_for(user_id: str, fingerprint: str) -> str:
@@ -38,22 +46,43 @@ class SystemRepository:
         user_id: str,
         fingerprint: str,
         profile_schema_version: int,
+        identity: dict[str, object],
+        profile: dict[str, object],
         label: str | None = None,
     ) -> SystemRecord:
         system_id = system_id_for(user_id, fingerprint)
+        configuration_id = hardware_configuration_id_for(fingerprint)
         resolved_label = (label or f'System {fingerprint[:12]}').strip()
         if not resolved_label:
             raise ValueError('system label must not be empty')
         probe_version = f'profile-v{int(profile_schema_version)}'
+        identity_json = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        profile_json = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        configuration_label = f'Configuration {fingerprint[:12]}'
         query = f"""
+INSERT INTO LMTS_hardware_configurations (
+  configuration_id, fingerprint, label, identity_json, profile_json
+) VALUES (
+  {_hex_text(configuration_id)},
+  {_hex_text(fingerprint)},
+  {_hex_text(configuration_label)},
+  {_hex_text(identity_json)},
+  {_hex_text(profile_json)}
+)
+ON DUPLICATE KEY UPDATE
+  label = VALUES(label),
+  identity_json = VALUES(identity_json),
+  profile_json = VALUES(profile_json);
+
 INSERT INTO LMTS_systems (
-  system_id, user_id, label, system_class, probe_version, last_probed_at
+  system_id, user_id, label, system_class, configuration_id, probe_version, last_probed_at
 )
 SELECT
   {_hex_text(system_id)},
   {_hex_text(user_id)},
   {_hex_text(resolved_label)},
   'local',
+  {_hex_text(configuration_id)},
   {_hex_text(probe_version)},
   CURRENT_TIMESTAMP(6)
 WHERE NOT EXISTS (
@@ -62,7 +91,8 @@ WHERE NOT EXISTS (
 SELECT JSON_OBJECT(
   'system_id', system_id,
   'user_id', user_id,
-  'label', label
+  'label', label,
+  'configuration_id', configuration_id
 )
 FROM LMTS_systems
 WHERE system_id = {_hex_text(system_id)}
@@ -81,5 +111,6 @@ LIMIT 1
             user_id=str(payload['user_id']),
             label=str(payload['label']),
             fingerprint=fingerprint,
+            configuration_id=str(payload['configuration_id']),
             profile_schema_version=int(profile_schema_version),
         )

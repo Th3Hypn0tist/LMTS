@@ -702,6 +702,120 @@ function lmts_projection_insert_telemetry(
     ]);
 }
 
+function lmts_projection_insert_variance_samples(
+    PDO $pdo,
+    string $reportId,
+    string $recordId,
+    array $record,
+    array $test,
+): void {
+    $coordinates = isset($record['coordinates']) && is_array($record['coordinates'])
+        ? $record['coordinates']
+        : [];
+    $targetRef = trim((string)($coordinates['target'] ?? ''));
+    $provenance = isset($record['provenance']) && is_array($record['provenance'])
+        ? $record['provenance']
+        : [];
+    $systemId = trim((string)($provenance['system_id'] ?? ''));
+    if ($targetRef === '' || $systemId === '') return;
+
+    $entities = $record['_projection_entities'] ?? null;
+    $targetKind = '';
+    if (is_array($entities)) {
+        $targetEntity = isset($entities[$targetRef]) && is_array($entities[$targetRef])
+            ? $entities[$targetRef]
+            : [];
+        $targetProps = isset($targetEntity['properties']) && is_array($targetEntity['properties'])
+            ? $targetEntity['properties']
+            : [];
+        $targetKind = trim((string)($targetProps['kind'] ?? ''));
+    }
+    if ($targetKind === '') {
+        $targetKind = trim((string)($record['_projection_target_kind'] ?? ''));
+    }
+    if ($targetKind === '') return;
+
+    $configuration = $pdo->prepare(
+        'SELECT configuration_id
+         FROM LMTS_systems
+         WHERE system_id = ?
+         LIMIT 1'
+    );
+    $configuration->execute([$systemId]);
+    $configurationId = $configuration->fetchColumn();
+    if (!is_string($configurationId) || $configurationId === '') return;
+
+    $tester = trim((string)($provenance['tester_user_id'] ?? '')) ?: null;
+    $targetHash = hash('sha256', $targetKind . "\0" . $targetRef);
+    $timing = isset($record['timing']) && is_array($record['timing']) ? $record['timing'] : [];
+    $outcome = isset($record['outcome']) && is_array($record['outcome']) ? $record['outcome'] : [];
+    $fullOutcome = trim((string)($outcome['result'] ?? ''));
+    if (!in_array($fullOutcome, ['pass', 'fail'], true)) return;
+
+    $samples = [[
+        'outcome' => $fullOutcome,
+        'observed_at' => $timing['completed_at'] ?? null,
+    ]];
+    $evidence = isset($record['evidence']) && is_array($record['evidence']) ? $record['evidence'] : [];
+    $extra = isset($evidence['variance_samples']) && is_array($evidence['variance_samples'])
+        ? $evidence['variance_samples']
+        : [];
+    foreach ($extra as $sample) {
+        if (!is_array($sample)) {
+            throw new RuntimeException('variance sample must be an object');
+        }
+        $sampleOutcome = trim((string)($sample['outcome'] ?? ''));
+        if (!in_array($sampleOutcome, ['pass', 'fail'], true)) {
+            throw new RuntimeException('variance sample outcome must be pass or fail');
+        }
+        $samples[] = [
+            'outcome' => $sampleOutcome,
+            'observed_at' => $sample['observed_at'] ?? null,
+        ];
+    }
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO LMTS_variance_samples (
+            variance_sample_id, target_kind, target_ref, target_identity_hash,
+            test_version_id, configuration_id, tester_user_id, outcome,
+            observed_at, source_report_id, source_record_id, sample_ordinal
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            target_kind = VALUES(target_kind),
+            target_ref = VALUES(target_ref),
+            target_identity_hash = VALUES(target_identity_hash),
+            test_version_id = VALUES(test_version_id),
+            configuration_id = VALUES(configuration_id),
+            tester_user_id = VALUES(tester_user_id),
+            outcome = VALUES(outcome),
+            observed_at = VALUES(observed_at)'
+    );
+
+    foreach ($samples as $ordinal => $sample) {
+        $sampleId = lmts_projection_stable_id(
+            'var_',
+            $reportId,
+            $recordId,
+            (string)$ordinal,
+        );
+        $stmt->execute([
+            $sampleId,
+            $targetKind,
+            $targetRef,
+            $targetHash,
+            $test['test_version_id'],
+            $configurationId,
+            $tester,
+            $sample['outcome'],
+            lmts_projection_mysql_datetime($sample['observed_at'] ?? null),
+            $reportId,
+            $recordId,
+            (int)$ordinal,
+        ]);
+    }
+}
+
+
 function lmts_projection_record_telemetry(PDO $pdo, string $reportId, array $record, array $test): void {
     $provenance = isset($record['provenance']) && is_array($record['provenance']) ? $record['provenance'] : [];
     $userId = trim((string)($provenance['tester_user_id'] ?? ''));
@@ -887,6 +1001,8 @@ function lmts_project_report(PDO $pdo, array $report): void {
         ]);
 
         if ($test !== null) {
+            $record['_projection_target_kind'] = $targetKind;
+            lmts_projection_insert_variance_samples($pdo, $reportId, $recordId, $record, $test);
             lmts_projection_record_telemetry($pdo, $reportId, $record, $test);
         }
     }

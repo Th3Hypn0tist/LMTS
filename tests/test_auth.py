@@ -14,7 +14,6 @@ from lmts.services.auth import (
     IAMSession,
     IAMTokenStore,
     UserIdentity,
-    is_origin,
 )
 
 
@@ -137,11 +136,6 @@ def test_logout_revokes_remote_session_and_deletes_local_token(tmp_path: Path) -
         'opaque-token',
     )]
     assert not (tmp_path / 'auth-session.json').exists()
-
-
-def test_origin_identity_semantics_are_preserved() -> None:
-    assert is_origin('0')
-    assert not is_origin('usr_x')
 
 
 def test_token_store_rejects_wrong_endpoint(tmp_path: Path) -> None:

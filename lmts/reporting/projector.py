@@ -139,6 +139,7 @@ def _record_evidence(run: dict[str, Any]) -> dict[str, Any]:
         'workspace_trace',
         'system_context',
         'telemetry',
+        'variance_samples',
     ):
         if key in run:
             evidence[key] = run[key]

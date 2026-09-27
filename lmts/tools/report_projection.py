@@ -411,14 +411,16 @@ INSERT IGNORE INTO LMTS_test_version_telemetry_types (
         target_entity = targets.get(target_id) if isinstance(targets.get(target_id), dict) else {}
         target_props = target_entity.get('properties') if isinstance(target_entity.get('properties'), dict) else {}
         target_kind = str(target_props.get('kind') or '').strip() or 'unknown'
+        target_ref = target_id or None
+        target_label = str(target_entity.get('label') or '').strip() or target_ref
         evidence = record.get('evidence') if isinstance(record.get('evidence'), dict) else {}
         execution_metadata = evidence.get('execution_metadata') if isinstance(evidence.get('execution_metadata'), dict) else {}
         runtime_configuration = execution_metadata.get('runtime_configuration')
         runtime_json = None if runtime_configuration is None else _canonical_json(runtime_configuration)
         duration = _duration_ms(timing.get('started_at'), timing.get('completed_at'))
         statements.append(f"""
-INSERT IGNORE INTO LMTS_report_record_index (
-  report_id, record_id, tester_user_id, target_kind,
+INSERT INTO LMTS_report_record_index (
+  report_id, record_id, tester_user_id, target_kind, target_ref, target_label,
   test_version_id, system_id, compute_profile_id,
   started_at, completed_at, duration_ms, ttft_ms,
   outcome, passed, score_percent, runtime_configuration_json
@@ -427,6 +429,8 @@ INSERT IGNORE INTO LMTS_report_record_index (
   {_hex_text(record_id)},
   {_nullable_text(tester)},
   {_hex_text(target_kind)},
+  {_nullable_text(target_ref)},
+  {_nullable_text(target_label)},
   {_nullable_text(None if test is None else test.test_version_id)},
   {_nullable_text(system_id)},
   {_nullable_text(compute_profile_id)},
@@ -439,6 +443,21 @@ INSERT IGNORE INTO LMTS_report_record_index (
   {_sql_number(_metric_value(record, 'score_percent'))},
   {_nullable_text(runtime_json)}
 )
+ON DUPLICATE KEY UPDATE
+  target_kind = VALUES(target_kind),
+  target_ref = VALUES(target_ref),
+  target_label = VALUES(target_label),
+  test_version_id = VALUES(test_version_id),
+  system_id = VALUES(system_id),
+  compute_profile_id = VALUES(compute_profile_id),
+  started_at = VALUES(started_at),
+  completed_at = VALUES(completed_at),
+  duration_ms = VALUES(duration_ms),
+  ttft_ms = VALUES(ttft_ms),
+  outcome = VALUES(outcome),
+  passed = VALUES(passed),
+  score_percent = VALUES(score_percent),
+  runtime_configuration_json = VALUES(runtime_configuration_json)
 """.strip())
         if test is not None:
             statements.extend(_record_telemetry(report_id, record, test))

@@ -60,6 +60,20 @@ CREATE TABLE IF NOT EXISTS LMTS_hardware_nodes (
     CONSTRAINT chk_hardware_nodes_profile CHECK (JSON_VALID(profile_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS LMTS_hardware_configurations (
+    configuration_id   VARCHAR(128) NOT NULL,
+    fingerprint        CHAR(64) NOT NULL,
+    label              VARCHAR(255) NOT NULL,
+    identity_json      LONGTEXT NOT NULL,
+    profile_json       LONGTEXT NOT NULL,
+    created_at         DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at         DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (configuration_id),
+    UNIQUE KEY uq_hardware_configurations_fingerprint (fingerprint),
+    CONSTRAINT chk_hardware_configurations_identity CHECK (JSON_VALID(identity_json)),
+    CONSTRAINT chk_hardware_configurations_profile CHECK (JSON_VALID(profile_json))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS LMTS_hardware_aliases (
     alias_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     hardware_id       VARCHAR(128) NOT NULL,
@@ -86,6 +100,7 @@ CREATE TABLE IF NOT EXISTS LMTS_systems (
     user_id               VARCHAR(128) NOT NULL,
     label                 VARCHAR(255) NOT NULL,
     system_class          VARCHAR(64) NULL,
+    configuration_id      VARCHAR(128) NOT NULL,
     canonical_device_ref  VARCHAR(128) NULL,
     probe_version         VARCHAR(128) NULL,
     created_at            DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -93,7 +108,11 @@ CREATE TABLE IF NOT EXISTS LMTS_systems (
     updated_at            DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (system_id),
     KEY idx_systems_user (user_id),
+    KEY idx_systems_configuration (configuration_id),
     KEY idx_systems_device (canonical_device_ref),
+    CONSTRAINT fk_systems_configuration
+        FOREIGN KEY (configuration_id) REFERENCES LMTS_hardware_configurations(configuration_id)
+        ON UPDATE RESTRICT ON DELETE RESTRICT,
     CONSTRAINT fk_systems_device
         FOREIGN KEY (canonical_device_ref) REFERENCES LMTS_hardware_nodes(hardware_id)
         ON UPDATE RESTRICT ON DELETE RESTRICT

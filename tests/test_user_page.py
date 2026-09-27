@@ -39,7 +39,7 @@ def test_user_page_projects_canonical_identity_and_activity() -> None:
 
     assert '  Username   : origin' in lines
     assert '  User ID    : 0' in lines
-    assert '  IAM tier   : 1337' in lines
+    assert '  IAM mgmt tier: 1337' in lines
     assert '  Reports            : 7' in lines
     assert '  PASS               : 5' in lines
     assert '  ERROR              : 1' in lines

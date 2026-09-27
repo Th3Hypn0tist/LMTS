@@ -87,11 +87,15 @@ class SettingsService:
     def load_report_profiles(self) -> ReportProfiles:
         return load_report_profiles(self.path('report_profiles'))
 
-    def load_custom_suites(self) -> tuple[CustomSuite, ...]:
-        return load_custom_suites(self.path('custom_suites'))
+    def load_custom_suites(self, scope: str) -> tuple[CustomSuite, ...]:
+        return load_custom_suites(scope, self.path('custom_suites'))
 
-    def save_custom_suites(self, suites: tuple[CustomSuite, ...] | list[CustomSuite]) -> Path:
-        return save_custom_suites(suites, self.path('custom_suites'))
+    def save_custom_suites(
+        self,
+        scope: str,
+        suites: tuple[CustomSuite, ...] | list[CustomSuite],
+    ) -> Path:
+        return save_custom_suites(scope, suites, self.path('custom_suites'))
 
     def load_ui_scope(self, scope: str) -> dict[str, object]:
         return load_ui_scope(scope, self.path('ui_state'))

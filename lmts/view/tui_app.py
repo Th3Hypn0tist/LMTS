@@ -17,7 +17,7 @@ from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
 from .lmts_host import LMTSInteractiveHost
 from .projector import LMTSViewProjector
-from .registries import build_shortcut_registry
+from .registries import TAB_REGISTRY, build_shortcut_registry
 from .tui_render import TUIRenderer
 from .tui_state import TUIState
 
@@ -48,6 +48,53 @@ class TUIApplication:
             events=events,
         )
         self.renderer = TUIRenderer(self.state)
+
+    def _restore_ui_state(self, scope: str) -> None:
+        payload = self.state.settings_service.load_ui_scope(scope)
+        if not payload:
+            return
+
+        raw_tests = payload.get('configured_tests')
+        if not isinstance(raw_tests, list):
+            raise ValueError('persisted UI state configured_tests must be an array')
+        configured = []
+        for item in raw_tests:
+            if not isinstance(item, dict):
+                raise ValueError('persisted configured test must be an object')
+            params = item.get('params')
+            if not isinstance(params, dict):
+                raise ValueError('persisted configured test params must be an object')
+            type_ref = str(item.get('type_ref') or '').strip()
+            instance_id = str(item.get('instance_id') or '').strip()
+            configured.append(
+                self.state.controller.test_types.get(type_ref).configure(
+                    instance_id,
+                    params,
+                )
+            )
+
+        repeats = payload.get('suite_repeats', 1)
+        if isinstance(repeats, bool) or not isinstance(repeats, int):
+            raise ValueError('persisted suite_repeats must be an integer')
+        suite_level = str(payload.get('suite_level') or 'moderate').strip()
+        raw_selected_tests = payload.get('selected_test_refs')
+        if not isinstance(raw_selected_tests, list) or not all(isinstance(item, str) for item in raw_selected_tests):
+            raise ValueError('persisted selected_test_refs must be an array of strings')
+        self.state.controller.matrix_view.restore_configuration(
+            configured,
+            suite_level=suite_level,
+            suite_repeats=repeats,
+            selected_test_refs=set(raw_selected_tests),
+        )
+
+        raw_targets = payload.get('selected_target_ids')
+        if not isinstance(raw_targets, list) or not all(isinstance(item, str) for item in raw_targets):
+            raise ValueError('persisted selected_target_ids must be an array of strings')
+        self.state.controller.select_target_ids(set(raw_targets))
+
+        active_tab = str(payload.get('active_tab') or 'benchmark').strip()
+        TAB_REGISTRY.get(active_tab)
+        self.state.active_tab = active_tab
 
     def run(self) -> None:
         curses.wrapper(self._run_curses)
@@ -100,7 +147,16 @@ class TUIApplication:
         if controller.state.profile_required:
             self.state.active_tab = 'profile'
             ProfileActions(self.state, host, stdscr).profile_system(stdscr)
-        self.state.active_tab = 'benchmark'
+
+        if controller.auth_service.local_mode:
+            scope = 'local'
+        else:
+            identity = controller.auth_service.require_identity()
+            scope = f'user:{identity.user_id}'
+        self.state.ui_state_scope = scope
+        self._restore_ui_state(scope)
+        active_tab = TAB_REGISTRY.get(self.state.active_tab)
+        host.title = f'AIGM LMTS - {active_tab.label}'
         self.state.events.publish('ui.message', controller.state.message, source='tui_app')
 
         navigation = NavigationActions(self.state, host, stdscr)

@@ -21,7 +21,7 @@ from .reference_benchmark import (
 )
 
 DEFAULT_PROFILE_PATH = SYSTEM_PROFILE_PATH
-PROFILE_SCHEMA_VERSION = 6
+PROFILE_SCHEMA_VERSION = 7
 
 
 @dataclass(slots=True)
@@ -29,6 +29,8 @@ class GPUProfile:
     vendor: str | None = None
     model: str | None = None
     vram_bytes: int | None = None
+    memory_type: str | None = None
+    ecc: bool | None = None
     driver_version: str | None = None
 
 
@@ -59,6 +61,244 @@ def _memory_total_bytes() -> int | None:
             if line.startswith("MemTotal:"):
                 return int(line.split()[1]) * 1024
     return None
+
+
+def _optional_command(command: list[str], *, timeout: int = 5) -> str | None:
+    try:
+        return subprocess.check_output(
+            command,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _parse_dmidecode_sections(text: str, title: str) -> list[dict[str, str]]:
+    sections: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    active = False
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if line == title:
+            current = {}
+            sections.append(current)
+            active = True
+            continue
+        if not active or current is None:
+            continue
+        if line and not line[0].isspace():
+            active = False
+            current = None
+            continue
+        stripped = line.strip()
+        if not stripped or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        current[key.strip()] = value.strip()
+    return sections
+
+
+def _parse_capacity_bytes(value: str | None) -> int | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if normalized.casefold() in {"unknown", "no module installed", "not installed", "none"}:
+        return None
+    parts = normalized.split()
+    if len(parts) < 2:
+        return None
+    try:
+        amount = float(parts[0])
+    except ValueError:
+        return None
+    unit = parts[1].upper()
+    factors = {
+        "KB": 1024,
+        "MB": 1024 ** 2,
+        "GB": 1024 ** 3,
+        "TB": 1024 ** 4,
+    }
+    factor = factors.get(unit)
+    if factor is None:
+        return None
+    return int(amount * factor)
+
+
+def _parse_mt_s(value: str | None) -> int | None:
+    if not value:
+        return None
+    normalized = value.strip().upper()
+    if normalized in {"UNKNOWN", "NONE", "NOT SPECIFIED"}:
+        return None
+    parts = normalized.split()
+    if len(parts) < 2 or parts[1] not in {"MT/S", "MT/S."}:
+        return None
+    try:
+        return int(float(parts[0]))
+    except ValueError:
+        return None
+
+
+def _parse_width_bits(value: str | None) -> int | None:
+    if not value:
+        return None
+    parts = value.strip().split()
+    if len(parts) < 2 or parts[1].casefold() not in {"bit", "bits"}:
+        return None
+    try:
+        return int(parts[0])
+    except ValueError:
+        return None
+
+
+def _normalize_memory_type(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip().upper().replace(" ", "")
+    if normalized in {"", "UNKNOWN", "OTHER", "NOTSPECIFIED"}:
+        return None
+    aliases = {
+        "LPDDR": "LPDDR",
+        "LPDDR2": "LPDDR2",
+        "LPDDR3": "LPDDR3",
+        "LPDDR4": "LPDDR4",
+        "LPDDR4X": "LPDDR4X",
+        "LPDDR5": "LPDDR5",
+        "LPDDR5X": "LPDDR5X",
+        "DDR": "DDR",
+        "DDR2": "DDR2",
+        "DDR3": "DDR3",
+        "DDR4": "DDR4",
+        "DDR5": "DDR5",
+        "HBM": "HBM",
+        "HBM2": "HBM2",
+        "HBM2E": "HBM2E",
+        "HBM3": "HBM3",
+        "GDDR5": "GDDR5",
+        "GDDR5X": "GDDR5X",
+        "GDDR6": "GDDR6",
+        "GDDR6X": "GDDR6X",
+        "GDDR7": "GDDR7",
+    }
+    return aliases.get(normalized, value.strip())
+
+
+def _normalize_form_factor(value: str | None) -> str:
+    if not value:
+        return "unknown"
+    normalized = value.strip().casefold().replace("-", "").replace("_", "").replace(" ", "")
+    if normalized in {"", "unknown", "notspecified"}:
+        return "unknown"
+    if normalized in {"dimm", "fbdimm", "minidimm"}:
+        return "DIMM"
+    if normalized in {"sodimm", "smalloutlinedimm"}:
+        return "SODIMM"
+    if normalized in {"rowofchips", "chip"}:
+        return "soldered"
+    return "other"
+
+
+def _ecc_from_widths(total_width: str | None, data_width: str | None) -> bool | None:
+    total = _parse_width_bits(total_width)
+    data = _parse_width_bits(data_width)
+    if total is None or data is None or total < data:
+        return None
+    return total > data
+
+
+def _ecc_from_array(value: str | None) -> bool | None:
+    if not value:
+        return None
+    normalized = value.strip().casefold()
+    if normalized in {"unknown", "other", "not provided", "not specified"}:
+        return None
+    if normalized == "none":
+        return False
+    if "ecc" in normalized:
+        return True
+    return None
+
+
+def _parse_rank(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        return int(value.strip().split()[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _uniform_module_value(modules: list[dict[str, object]], key: str) -> object | None:
+    if not modules:
+        return None
+    values = [module.get(key) for module in modules]
+    if any(value is None or value == "unknown" for value in values):
+        return None
+    first = values[0]
+    return first if all(value == first for value in values[1:]) else None
+
+
+def _system_memory_profile() -> dict[str, object]:
+    profile: dict[str, object] = {
+        "total_bytes": _memory_total_bytes(),
+        "memory_type": None,
+        "ecc": None,
+        "speed_mt_s": None,
+        "configured_speed_mt_s": None,
+        "form_factor": "unknown",
+        "modules": [],
+        "probe_sources": [],
+    }
+    if platform.system().casefold() != "linux" or shutil.which("dmidecode") is None:
+        return profile
+
+    output = _optional_command(["dmidecode", "--type", "memory"], timeout=8)
+    if not output:
+        return profile
+
+    modules: list[dict[str, object]] = []
+    for device in _parse_dmidecode_sections(output, "Memory Device"):
+        capacity = _parse_capacity_bytes(device.get("Size"))
+        if capacity is None:
+            continue
+        module = {
+            "slot": device.get("Locator") or None,
+            "bank": device.get("Bank Locator") or None,
+            "capacity_bytes": capacity,
+            "memory_type": _normalize_memory_type(device.get("Type")),
+            "ecc": _ecc_from_widths(device.get("Total Width"), device.get("Data Width")),
+            "speed_mt_s": _parse_mt_s(device.get("Speed")),
+            "configured_speed_mt_s": _parse_mt_s(device.get("Configured Memory Speed")),
+            "manufacturer": None if (device.get("Manufacturer") or "").strip().casefold() in {"", "unknown", "not specified"} else device.get("Manufacturer"),
+            "part_number": None if (device.get("Part Number") or "").strip().casefold() in {"", "unknown", "not specified"} else device.get("Part Number"),
+            "rank": _parse_rank(device.get("Rank")),
+            "form_factor": _normalize_form_factor(device.get("Form Factor")),
+            "form_factor_raw": device.get("Form Factor") or None,
+            "source": "smbios",
+        }
+        modules.append(module)
+
+    arrays = _parse_dmidecode_sections(output, "Physical Memory Array")
+    array_ecc_values = [
+        _ecc_from_array(array.get("Error Correction Type"))
+        for array in arrays
+        if array.get("Error Correction Type")
+    ]
+    known_array_ecc = [value for value in array_ecc_values if value is not None]
+    array_ecc = known_array_ecc[0] if known_array_ecc and all(value == known_array_ecc[0] for value in known_array_ecc) else None
+
+    profile["modules"] = modules
+    profile["probe_sources"] = ["smbios"]
+    profile["memory_type"] = _uniform_module_value(modules, "memory_type")
+    profile["speed_mt_s"] = _uniform_module_value(modules, "speed_mt_s")
+    profile["configured_speed_mt_s"] = _uniform_module_value(modules, "configured_speed_mt_s")
+    form_factor = _uniform_module_value(modules, "form_factor")
+    profile["form_factor"] = form_factor if isinstance(form_factor, str) else "unknown"
+    module_ecc = _uniform_module_value(modules, "ecc")
+    profile["ecc"] = array_ecc if array_ecc is not None else module_ecc
+    return profile
 
 
 def _cpuinfo_blocks() -> list[dict[str, str]]:
@@ -131,27 +371,68 @@ def _cpu_profile() -> dict[str, object]:
     }
 
 
+def _nvidia_ecc_modes() -> dict[int, bool | None]:
+    output = _optional_command(
+        ["nvidia-smi", "--query-gpu=index,ecc.mode.current", "--format=csv,noheader,nounits"],
+        timeout=5,
+    )
+    if not output:
+        return {}
+    modes: dict[int, bool | None] = {}
+    for line in output.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != 2:
+            continue
+        try:
+            index = int(parts[0])
+        except ValueError:
+            continue
+        value = parts[1].casefold()
+        if value == "enabled":
+            modes[index] = True
+        elif value == "disabled":
+            modes[index] = False
+        else:
+            modes[index] = None
+    return modes
+
+
 def _nvidia_gpus() -> list[GPUProfile]:
     if shutil.which("nvidia-smi") is None:
         return []
-    command = ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"]
-    try:
-        output = subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL, timeout=5)
-    except (OSError, subprocess.SubprocessError):
+    output = _optional_command(
+        ["nvidia-smi", "--query-gpu=index,name,memory.total,driver_version", "--format=csv,noheader,nounits"],
+        timeout=5,
+    )
+    if not output:
         return []
+    ecc_modes = _nvidia_ecc_modes()
     gpus: list[GPUProfile] = []
     for line in output.splitlines():
         if not line.strip():
             continue
         parts = [part.strip() for part in line.split(",")]
-        if len(parts) != 3:
+        if len(parts) != 4:
             continue
-        name, memory_mib, driver = parts
+        index_raw, name, memory_mib, driver = parts
+        try:
+            index = int(index_raw)
+        except ValueError:
+            continue
         try:
             vram = int(memory_mib) * 1024 * 1024
         except ValueError:
             vram = None
-        gpus.append(GPUProfile(vendor="NVIDIA", model=name, vram_bytes=vram, driver_version=driver))
+        gpus.append(
+            GPUProfile(
+                vendor="NVIDIA",
+                model=name,
+                vram_bytes=vram,
+                memory_type=None,
+                ecc=ecc_modes.get(index),
+                driver_version=driver,
+            )
+        )
     return gpus
 
 
@@ -198,7 +479,7 @@ def _linux_accelerators(root: Path = Path("/sys/class/accel")) -> list[dict[str,
 def scan_system_profile() -> SystemProfile:
     return SystemProfile(
         cpu=_cpu_profile(),
-        memory={"total_bytes": _memory_total_bytes()},
+        memory=_system_memory_profile(),
         gpu=_nvidia_gpus(),
         npu=_linux_accelerators(),
         software={"os": platform.system() or None, "os_release": platform.release() or None, "python": platform.python_version()},
@@ -212,7 +493,13 @@ def system_fingerprint(profile: SystemProfile) -> str:
     gpu = data.get("gpu") if isinstance(data.get("gpu"), list) else []
     npu = data.get("npu") if isinstance(data.get("npu"), list) else []
     gpu_identity = sorted(
-        (str(item.get("vendor") or ""), str(item.get("model") or ""), item.get("vram_bytes"))
+        (
+            str(item.get("vendor") or ""),
+            str(item.get("model") or ""),
+            item.get("vram_bytes"),
+            item.get("memory_type"),
+            item.get("ecc"),
+        )
         for item in gpu if isinstance(item, dict)
     )
     npu_identity = sorted(
@@ -230,7 +517,29 @@ def system_fingerprint(profile: SystemProfile) -> str:
             "stepping": cpu.get("stepping"), "logical_cores": cpu.get("logical_cores"),
             "physical_packages": cpu.get("physical_packages"), "physical_cores": cpu.get("physical_cores"),
         },
-        "memory": {"total_bytes": memory.get("total_bytes")},
+        "memory": {
+            "total_bytes": memory.get("total_bytes"),
+            "memory_type": memory.get("memory_type"),
+            "ecc": memory.get("ecc"),
+            "speed_mt_s": memory.get("speed_mt_s"),
+            "configured_speed_mt_s": memory.get("configured_speed_mt_s"),
+            "form_factor": memory.get("form_factor"),
+            "modules": sorted(
+                (
+                    module.get("capacity_bytes"),
+                    module.get("memory_type"),
+                    module.get("ecc"),
+                    module.get("speed_mt_s"),
+                    module.get("configured_speed_mt_s"),
+                    module.get("form_factor"),
+                    str(module.get("manufacturer") or ""),
+                    str(module.get("part_number") or ""),
+                    module.get("rank"),
+                )
+                for module in memory.get("modules", [])
+                if isinstance(module, dict)
+            ),
+        },
         "gpu": gpu_identity,
         "npu": npu_identity,
     }

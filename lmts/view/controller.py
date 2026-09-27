@@ -202,6 +202,7 @@ class LMTSViewController:
                 progress=self.evaluation_view.progress,
                 on_run_completed=on_run_completed,
                 provenance=provenance,
+                suite_repeats=self.state.suite_repeats,
             )
             self.last_errors = list(outcome.run_errors)
             self.last_publish_errors = list(outcome.publish_errors)

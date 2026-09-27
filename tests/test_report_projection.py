@@ -152,6 +152,7 @@ def test_projection_writes_test_record_and_telemetry(monkeypatch) -> None:
     assert 'target_ref, target_label' in query
     assert 'ON DUPLICATE KEY UPDATE' in query
     assert '6f6c6c616d612d6c6f63616c3a6d6f64656c' in query
+    assert 'INSERT INTO LMTS_variance_samples' in query
     assert 'INSERT INTO LMTS_telemetry_values' in query
     assert 'input_tokens' in query
     assert 'gpu_memory_used_mib' in query
@@ -192,3 +193,27 @@ def test_projection_without_provenance_indexes_result_but_not_telemetry(monkeypa
 
     assert 'INSERT INTO LMTS_report_record_index' in captured['query']
     assert 'INSERT INTO LMTS_telemetry_values' not in captured['query']
+
+
+
+def test_projection_adds_lightweight_variance_samples_without_extra_telemetry(monkeypatch) -> None:
+    report = _report()
+    record = report['records'][0]
+    record['evidence']['variance_samples'] = [
+        {'outcome': 'pass', 'observed_at': '2026-09-19T12:00:02+00:00'},
+        {'outcome': 'fail', 'observed_at': '2026-09-19T12:00:03+00:00'},
+    ]
+    captured = {}
+
+    def fake_run(mysql, query):
+        captured['query'] = query
+        return ''
+
+    monkeypatch.setattr(projection, '_run', fake_run)
+    projection.rebuild_report_projection(_mysql(), report)
+
+    query = captured['query']
+    assert query.count('INSERT INTO LMTS_variance_samples') == 3
+    assert query.count('INSERT INTO LMTS_telemetry_values') > 0
+    assert "70617373" in query
+    assert "6661696c" in query

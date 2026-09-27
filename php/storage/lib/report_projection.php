@@ -730,12 +730,26 @@ function lmts_project_report(PDO $pdo, array $report): void {
     $targets = isset($entities['target']) && is_array($entities['target']) ? $entities['target'] : [];
     $insertRecord = $pdo->prepare(
         'INSERT INTO LMTS_report_record_index (
-            report_id, record_id, tester_user_id, target_kind,
+            report_id, record_id, tester_user_id, target_kind, target_ref, target_label,
             test_version_id, system_id, compute_profile_id,
             started_at, completed_at, duration_ms, ttft_ms,
             outcome, passed, score_percent, runtime_configuration_json
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE record_id = record_id'
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            target_kind = VALUES(target_kind),
+            target_ref = VALUES(target_ref),
+            target_label = VALUES(target_label),
+            test_version_id = VALUES(test_version_id),
+            system_id = VALUES(system_id),
+            compute_profile_id = VALUES(compute_profile_id),
+            started_at = VALUES(started_at),
+            completed_at = VALUES(completed_at),
+            duration_ms = VALUES(duration_ms),
+            ttft_ms = VALUES(ttft_ms),
+            outcome = VALUES(outcome),
+            passed = VALUES(passed),
+            score_percent = VALUES(score_percent),
+            runtime_configuration_json = VALUES(runtime_configuration_json)'
     );
 
     foreach ($records as $record) {
@@ -763,6 +777,8 @@ function lmts_project_report(PDO $pdo, array $report): void {
             ? $targetEntity['properties']
             : [];
         $targetKind = trim((string)($targetProps['kind'] ?? '')) ?: 'unknown';
+        $targetRef = $targetId !== '' ? $targetId : null;
+        $targetLabel = trim((string)($targetEntity['label'] ?? '')) ?: $targetRef;
 
         $evidence = isset($record['evidence']) && is_array($record['evidence']) ? $record['evidence'] : [];
         $executionMetadata = isset($evidence['execution_metadata']) && is_array($evidence['execution_metadata'])
@@ -776,6 +792,8 @@ function lmts_project_report(PDO $pdo, array $report): void {
             $recordId,
             $tester,
             $targetKind,
+            $targetRef,
+            $targetLabel,
             $test['test_version_id'] ?? null,
             $systemId,
             $computeProfileId,

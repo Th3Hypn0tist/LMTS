@@ -154,3 +154,39 @@ def test_php_contract_validator_keeps_open_world_fields(tmp_path: Path) -> None:
     result = _validator_process(tmp_path, report)
     assert result.returncode == 0, result.stderr
     assert result.stdout == 'OK'
+
+
+
+@pytest.mark.parametrize('result_name', ['error', 'cancelled', 'unknown'])
+def test_php_contract_validator_rejects_non_publishable_outcomes(
+    tmp_path: Path,
+    result_name: str,
+) -> None:
+    report = copy.deepcopy(project_matrix_bundle(_bundle()))
+    report['records'][0]['outcome']['result'] = result_name
+    report['records'][0]['outcome']['passed'] = False if result_name == 'error' else None
+    report['summary']['outcomes']['pass'] = 0
+    report['summary']['outcomes'][result_name] = 1
+
+    result = _validator_process(tmp_path, report)
+
+    assert result.returncode != 0
+    assert 'is not publishable benchmark evidence' in result.stderr
+
+
+def test_php_contract_validator_rejects_empty_benchmark_evidence(tmp_path: Path) -> None:
+    report = copy.deepcopy(project_matrix_bundle(_bundle()))
+    report['records'] = []
+    report['summary']['records'] = 0
+    report['summary']['outcomes'] = {
+        'pass': 0,
+        'fail': 0,
+        'error': 0,
+        'cancelled': 0,
+        'unknown': 0,
+    }
+
+    result = _validator_process(tmp_path, report)
+
+    assert result.returncode != 0
+    assert 'contains no publishable PASS/FAIL evidence' in result.stderr

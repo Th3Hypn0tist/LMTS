@@ -98,6 +98,35 @@ class EvaluationService:
         publish_errors: list[dict[str, str]] = []
         passed = failed = errors = cancelled = completed = 0
 
+        ready_targets: list[TestExecutor] = []
+        for target in targets:
+            if control.cancelled:
+                break
+            if target.kind != 'model':
+                ready_targets.append(target)
+                continue
+            warm_up = getattr(target, 'warm_up', None)
+            if not callable(warm_up):
+                ready_targets.append(target)
+                continue
+            try:
+                warm_up()
+                ready_targets.append(target)
+            except Exception as exc:
+                errors += 1
+                run_errors.append({
+                    'phase': 'warmup',
+                    'target_id': target.id,
+                    'target_kind': target.kind,
+                    'test_ref': None,
+                    'run_id': None,
+                    'result_path': None,
+                    'error': {
+                        'type': type(exc).__name__,
+                        'message': str(exc),
+                    },
+                })
+
         for test in tests:
             if control.cancelled:
                 break
@@ -153,7 +182,7 @@ class EvaluationService:
 
             batch = benchmark_runner.run(
                 test,
-                targets,
+                ready_targets,
                 self.workspace_root,
                 progress=on_progress,
                 control=control,

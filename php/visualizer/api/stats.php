@@ -58,9 +58,10 @@ function stats_scope(): array {
     }
 
     $outcome = stats_param('outcome');
-    if ($outcome === 'unknown') {
-        $conditions[] = "(rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled'))";
-    } elseif ($outcome !== null) {
+    if ($outcome !== null) {
+        if (!in_array($outcome, ['pass', 'fail'], true)) {
+            stats_fail(400, 'outcome must be pass or fail');
+        }
         $conditions[] = 'rri.outcome = ?';
         $params[] = $outcome;
     }
@@ -136,12 +137,7 @@ try {
             COUNT(DISTINCT rri.system_id) AS systems,
             COUNT(DISTINCT s.configuration_id) AS configurations,
             COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
-            COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
-            COALESCE(SUM(CASE WHEN rri.outcome = 'error' THEN 1 ELSE 0 END), 0) AS error,
-            COALESCE(SUM(CASE WHEN rri.outcome = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
-            COALESCE(SUM(CASE
-                WHEN rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled')
-                THEN 1 ELSE 0 END), 0) AS unknown
+            COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail
          FROM LMTS_report_record_index rri
          JOIN LMTS_reports r ON r.report_id = rri.report_id
          LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
@@ -228,11 +224,6 @@ try {
         COUNT(*) AS runs,
         COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
         COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
-        COALESCE(SUM(CASE WHEN rri.outcome = 'error' THEN 1 ELSE 0 END), 0) AS error,
-        COALESCE(SUM(CASE WHEN rri.outcome = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
-        COALESCE(SUM(CASE
-            WHEN rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled')
-            THEN 1 ELSE 0 END), 0) AS unknown,
         MAX(COALESCE(rri.started_at, r.created_at)) AS latest_at
      FROM LMTS_report_record_index rri
      JOIN LMTS_reports r ON r.report_id = rri.report_id
@@ -359,8 +350,9 @@ try {
     $outcomes = array_map(
         static fn(array $row): string => (string)$row['outcome'],
         $pdo->query(
-            "SELECT DISTINCT COALESCE(outcome, 'unknown') AS outcome
+            "SELECT DISTINCT outcome
              FROM LMTS_report_record_index
+             WHERE outcome IN ('pass','fail')
              ORDER BY outcome"
         )->fetchAll(),
     );
@@ -405,9 +397,6 @@ try {
             'configurations' => (int)($summary['configurations'] ?? 0),
             'pass' => (int)($summary['pass'] ?? 0),
             'fail' => (int)($summary['fail'] ?? 0),
-            'error' => (int)($summary['error'] ?? 0),
-            'cancelled' => (int)($summary['cancelled'] ?? 0),
-            'unknown' => (int)($summary['unknown'] ?? 0),
             'telemetry_values' => (int)$telemetryCount,
         ],
         'matrix' => $matrix,

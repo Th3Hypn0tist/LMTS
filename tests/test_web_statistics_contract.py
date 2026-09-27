@@ -25,6 +25,13 @@ class WebStatisticsContractTests(unittest.TestCase):
         self.assertIn('AS variance', STATS_PHP)
         self.assertIn("CASE WHEN grouped.pass_count > 0 THEN 'pass' ELSE 'fail' END AS status", STATS_PHP)
 
+    def test_statistics_surface_exposes_only_canonical_pass_fail_outcomes(self) -> None:
+        self.assertIn("outcome must be pass or fail", STATS_PHP)
+        self.assertNotIn("AS error", STATS_PHP)
+        self.assertNotIn("AS cancelled", STATS_PHP)
+        self.assertNotIn("AS unknown", STATS_PHP)
+        self.assertIn("WHERE outcome IN ('pass','fail')", STATS_PHP)
+
     def test_telemetry_is_not_implicitly_aggregated(self) -> None:
         self.assertNotIn('AVG(tv.value_number)', STATS_PHP)
         self.assertNotIn('SUM(tv.value_number)', STATS_PHP)

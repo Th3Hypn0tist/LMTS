@@ -143,6 +143,35 @@ class OllamaProvider:
             raw=dict(raw),
         )
 
+    def is_loaded(self, model: ModelDescriptor) -> bool:
+        payload = self._json("/api/ps", timeout=self.discovery_timeout)
+        for item in payload.get("models", []):
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("model") or "").strip()
+            if name == model.model_ref:
+                return True
+        return False
+
+    def unload(self, model: ModelDescriptor) -> None:
+        self._json(
+            "/api/generate",
+            {
+                "model": model.model_ref,
+                "prompt": "",
+                "stream": False,
+                "keep_alive": 0,
+            },
+            timeout=self.discovery_timeout,
+        )
+        deadline = time.monotonic() + min(5.0, max(1.0, self.discovery_timeout))
+        while time.monotonic() < deadline:
+            if not self.is_loaded(model):
+                return
+            time.sleep(0.1)
+        if self.is_loaded(model):
+            raise RuntimeError(f"Ollama model did not unload: {model.model_ref}")
+
     def generate(self, model: ModelDescriptor, prompt: str) -> NormalizedResponse:
         capabilities = self._model_capabilities(model.model_ref)
         payload = self._generation_payload(model, prompt, stream=False, capabilities=capabilities)

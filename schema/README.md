@@ -42,6 +42,14 @@ Authenticated users may own LMTS-domain records such as:
 
 LMTS registration and invite lifecycle are not part of the LMTS application boundary.
 
+### Hardware Configuration
+
+`Hardware Configuration` is the canonical machine-level hardware identity shared across users and physical System records.
+
+Its identity is the canonical profile fingerprint plus the canonical identity JSON used to produce that fingerprint. Runtime state, slot locations, serial numbers, drivers and other instance-varying values are excluded.
+
+A user-owned `System` references exactly one canonical Hardware Configuration. Two users with equivalent probed hardware therefore have separate System records but the same Hardware Configuration identity.
+
 ### System and Compute Profile
 
 `System` is the automatically probed physical/integrated system.

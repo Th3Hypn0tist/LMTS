@@ -262,7 +262,8 @@ class TUIRenderer:
         if tab == 'stats':
             return self.stats_lines()
         if tab == 'downloader':
-            return self.state.model_explorer_page.lines()
+            page = self.state.model_explorer_page
+            return page.lines() if page is not None else ('Model Explorer', '', 'unavailable')
         if tab == 'settings':
             return self.settings_lines()
         raise ValueError(f'unknown TUI tab: {tab}')

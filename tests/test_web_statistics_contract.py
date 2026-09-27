@@ -12,11 +12,18 @@ STORAGE_PHP = (PHP_ROOT / 'storage/report.php').read_text(encoding='utf-8')
 
 class WebStatisticsContractTests(unittest.TestCase):
     def test_statistics_api_reads_relational_projections(self) -> None:
-        self.assertIn('FROM report_record_index rri', STATS_PHP)
-        self.assertIn('FROM telemetry_values tv', STATS_PHP)
-        self.assertIn('JOIN telemetry_types tt', STATS_PHP)
+        self.assertIn('FROM LMTS_report_record_index rri', STATS_PHP)
+        self.assertIn('FROM LMTS_telemetry_values tv', STATS_PHP)
+        self.assertIn('JOIN LMTS_telemetry_types tt', STATS_PHP)
         self.assertNotIn("JSON_EXTRACT(report_json", STATS_PHP)
         self.assertNotIn("json_decode(report_json", STATS_PHP)
+
+    def test_variance_is_aggregated_from_pass_fail_samples(self) -> None:
+        self.assertIn('FROM LMTS_variance_samples vs', STATS_PHP)
+        self.assertIn('AS sample_count', STATS_PHP)
+        self.assertIn('AS pf_score', STATS_PHP)
+        self.assertIn('AS variance', STATS_PHP)
+        self.assertIn("CASE WHEN grouped.pass_count > 0 THEN 'pass' ELSE 'fail' END AS status", STATS_PHP)
 
     def test_telemetry_is_not_implicitly_aggregated(self) -> None:
         self.assertNotIn('AVG(tv.value_number)', STATS_PHP)

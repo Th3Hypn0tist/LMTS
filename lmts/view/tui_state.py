@@ -18,12 +18,12 @@ class TUIState:
     controller: LMTSViewController
     projector: LMTSViewProjector
     cw_bench_page: CWBenchPage
-    model_explorer_page: ModelDownloaderPage
     settings: LMTSSettings
     settings_service: SettingsService
     shortcut_overrides: dict[str, tuple[str, ...]]
     shortcuts: Any
     events: UIEventBus
+    model_explorer_page: ModelDownloaderPage | None = None
     active_tab: str = 'benchmark'
     ui_state_scope: str | None = None
     profile_console: list[str] = field(default_factory=list)

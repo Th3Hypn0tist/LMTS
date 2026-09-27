@@ -152,3 +152,22 @@ def test_runner_persists_user_and_system_provenance(tmp_path):
         "system_id": "sys_test",
         "compute_profile_id": None,
     }
+
+
+
+def test_variance_execution_returns_only_outcome_and_does_not_persist_run(tmp_path):
+    providers = ProviderRegistry([FakeProvider()])
+    model = providers.discover_models()[0]
+    results_root = tmp_path / "results"
+    runner = _runner(providers, results_root)
+
+    observation = runner.run_variance_executor(
+        TextGenerationTest(),
+        model,
+        tmp_path / "workspaces",
+    )
+
+    assert observation.passed is True
+    assert observation.error is None
+    assert observation.cancelled is False
+    assert RunStore(results_root).iter_run_paths() == []

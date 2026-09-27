@@ -28,6 +28,14 @@ def _default_system_context() -> dict[str, object]:
     return payload
 
 
+@dataclass(frozen=True, slots=True)
+class VarianceObservation:
+    passed: bool | None
+    observed_at: str
+    error: dict[str, str] | None = None
+    cancelled: bool = False
+
+
 class TestRunner:
     __test__ = False
 
@@ -68,6 +76,56 @@ class TestRunner:
             control=control,
             subject=subject,
         )
+
+    def run_variance_executor(
+        self,
+        test: TestModule,
+        executor: TestExecutor,
+        workspace_root: Path,
+        *,
+        control: RunControl | None = None,
+        subject: EvaluationSubject | None = None,
+    ) -> VarianceObservation:
+        evaluation_subject = subject or executor.subject
+        if evaluation_subject.kind != executor.kind:
+            raise ValueError("evaluation subject kind must match executor kind")
+
+        run_id = uuid.uuid4().hex
+        workspace = Workspace(workspace_root / run_id)
+        context = TestContext(
+            executor=executor,
+            workspace=workspace,
+            control=control,
+            response_sink=None,
+        )
+        try:
+            validate_requirements(
+                test.requirements,
+                executor.capabilities,
+                subject_kind=evaluation_subject.kind,
+            )
+            context.checkpoint()
+            result = test.run(context)
+            context.checkpoint()
+            return VarianceObservation(
+                passed=result.passed if isinstance(result.passed, bool) else None,
+                observed_at=utc_now(),
+            )
+        except RunCancelled:
+            return VarianceObservation(
+                passed=None,
+                observed_at=utc_now(),
+                cancelled=True,
+            )
+        except Exception as exc:
+            return VarianceObservation(
+                passed=None,
+                observed_at=utc_now(),
+                error={
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            )
 
     def run_executor(
         self,

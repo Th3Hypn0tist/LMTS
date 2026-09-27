@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from lmts.core.settings import MySQLSettings
+from lmts.reporting import validate_publishable_report
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +100,7 @@ def _mysql_datetime(value: str) -> str:
 
 
 def write_report(mysql: MySQLSettings, report: dict[str, Any], *, verify: bool = True) -> str:
+    validate_publishable_report(report)
     report_meta = report.get('report')
     source_meta = report.get('source')
     if not isinstance(report_meta, dict) or not isinstance(source_meta, dict):

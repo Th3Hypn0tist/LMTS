@@ -36,7 +36,7 @@ function outcomeLabel(value, suffix = '') {
 }
 
 function matrixOutcome(cell) {
-  const states = ['pass', 'fail', 'error', 'cancelled', 'unknown'].filter(key => Number(cell?.[key] ?? 0) > 0);
+  const states = ['pass', 'fail'].filter(key => Number(cell?.[key] ?? 0) > 0);
   return states.length === 1 ? states[0] : (states.length > 1 ? 'mixed' : 'unknown');
 }
 
@@ -88,9 +88,6 @@ function benchmarkMatrix(cells) {
             'runs ' + runs,
             'pass ' + number(cell.pass, 0),
             'fail ' + number(cell.fail, 0),
-            'error ' + number(cell.error, 0),
-            'cancelled ' + number(cell.cancelled, 0),
-            'unknown ' + number(cell.unknown, 0),
           ].join(' · '),
         }, [
           outcomeLabel(outcome),
@@ -326,9 +323,6 @@ function render(payload) {
       summaryCard('Systems', summary.systems),
       summaryCard('Pass', summary.pass),
       summaryCard('Fail', summary.fail),
-      summaryCard('Error', summary.error),
-      summaryCard('Cancelled', summary.cancelled),
-      summaryCard('Unknown', summary.unknown),
       summaryCard('Telemetry values', summary.telemetry_values),
     ]),
     h('section', { className: 'panel' }, [

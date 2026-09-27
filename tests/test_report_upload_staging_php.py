@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import shutil
 import subprocess
@@ -28,31 +27,26 @@ def _run_php(tmp_path: Path, code: str) -> subprocess.CompletedProcess[str]:
 def test_chunked_upload_staging_round_trip(tmp_path: Path) -> None:
     library = Path('php/storage/lib/report_upload.php').resolve()
     staging = tmp_path / 'staging'
-    body = (b'{"format":"lmts.report","payload":"' + b'x' * 700000 + b'"}')
-    chunk_size = 262144
-    chunks = [body[index:index + chunk_size] for index in range(0, len(body), chunk_size)]
-    metadata = {
-        'report_id': 'report-1',
-        'size_bytes': len(body),
-        'chunk_size': chunk_size,
-        'chunk_count': len(chunks),
-        'sha256': hashlib.sha256(body).hexdigest(),
-    }
-
-    chunk_literals = ','.join(
-        "'" + chunk.hex() + "'" for chunk in chunks
-    )
     code = f"""
 require {json.dumps(str(library))};
 $config = ['upload_staging_dir' => {json.dumps(str(staging))}];
-$init = lmts_upload_init($config, json_decode({json.dumps(json.dumps(metadata))}, true, 32, JSON_THROW_ON_ERROR));
+$body = '{{"format":"lmts.report","payload":"' . str_repeat('x', 700000) . '"}}';
+$chunkSize = 262144;
+$chunkCount = (int)ceil(strlen($body) / $chunkSize);
+$init = lmts_upload_init($config, [
+    'report_id' => 'report-1',
+    'size_bytes' => strlen($body),
+    'chunk_size' => $chunkSize,
+    'chunk_count' => $chunkCount,
+    'sha256' => hash('sha256', $body),
+]);
 $uploadId = $init['upload_id'];
-$chunks = [{chunk_literals}];
-foreach ($chunks as $index => $hex) {{
-    lmts_upload_put_chunk($config, $uploadId, $index, hex2bin($hex));
+for ($index = 0; $index < $chunkCount; $index++) {{
+    $chunk = substr($body, $index * $chunkSize, $chunkSize);
+    lmts_upload_put_chunk($config, $uploadId, $index, $chunk);
 }}
 [$dir, $meta, $assembled] = lmts_upload_assemble($config, $uploadId);
-if ($assembled !== hex2bin({json.dumps(body.hex())})) {{
+if ($assembled !== $body) {{
     fwrite(STDERR, 'assembled bytes differ');
     exit(2);
 }}

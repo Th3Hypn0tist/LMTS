@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import lmts.repositories.system as system_module
@@ -34,27 +35,31 @@ def test_system_id_is_stable_per_user_and_fingerprint() -> None:
 def test_ensure_system_upserts_user_owned_profile(monkeypatch) -> None:
     seen = {}
 
+    identity = {'cpu': {'model_name': 'Test CPU'}}
+    identity_json = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    fingerprint = hashlib.sha256(identity_json.encode('utf-8')).hexdigest()
+
     def fake_run(mysql, query):
         seen['query'] = query
         return json.dumps({
-            'system_id': system_id_for('usr_test', 'fingerprint'),
+            'system_id': system_id_for('usr_test', fingerprint),
             'user_id': 'usr_test',
-            'label': 'System fingerprint',
-            'configuration_id': hardware_configuration_id_for('fingerprint'),
+            'label': f'System {fingerprint[:12]}',
+            'configuration_id': hardware_configuration_id_for(fingerprint),
         }) + '\n'
 
     monkeypatch.setattr(system_module, '_run', fake_run)
     record = SystemRepository(_mysql()).ensure_system(
         user_id='usr_test',
-        fingerprint='fingerprint',
+        fingerprint=fingerprint,
         profile_schema_version=7,
-        identity={'cpu': {'model_name': 'Test CPU'}},
+        identity=identity,
         profile={'cpu': {'model_name': 'Test CPU'}},
     )
 
     assert record.user_id == 'usr_test'
-    assert record.fingerprint == 'fingerprint'
-    assert record.configuration_id == hardware_configuration_id_for('fingerprint')
+    assert record.fingerprint == fingerprint
+    assert record.configuration_id == hardware_configuration_id_for(fingerprint)
     assert 'INSERT INTO LMTS_hardware_configurations' in seen['query']
     assert 'configuration_id' in seen['query']
     assert 'ON DUPLICATE KEY UPDATE' in seen['query']

@@ -22,7 +22,7 @@ class UserPage:
             'Identity',
             f"  Username   : {snapshot.username or 'anonymous'}",
             f"  User ID    : {snapshot.user_id or '-'}",
-            f"  IAM tier   : {snapshot.tier}",
+            f"  IAM tier   : {snapshot.tier if snapshot.tier is not None else '-'}",
             f"  Status     : {snapshot.status}",
             f"  Verified   : {self._yes_no(snapshot.verified)}",
         ]

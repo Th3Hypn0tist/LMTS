@@ -59,6 +59,7 @@ DEFAULT_SHORTCUTS = (
 
     ShortcutDefinition("downloader.module", ("m",), "Select module", "Model Explorer", scope="downloader", order=100),
     ShortcutDefinition("downloader.catalog", ("e",), "Explore catalog", "Model Explorer", scope="downloader", order=105),
+    ShortcutDefinition("downloader.variance", ("v",), "Variance threshold", "Model Explorer", scope="downloader", order=107),
     ShortcutDefinition("downloader.download", ("d",), "Queue models", "Model Explorer", scope="downloader", order=110),
     ShortcutDefinition("downloader.delete", ("x",), "Delete model", "Model Explorer", scope="downloader", order=120),
     ShortcutDefinition("downloader.progress", ("p",), "Download progress", "Model Explorer", scope="downloader", order=130),

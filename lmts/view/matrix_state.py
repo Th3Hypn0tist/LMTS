@@ -50,6 +50,11 @@ class MatrixViewState:
             return None
         try:
             configured = self.test_types.get(type_ref).configure(instance_id, params)
+            for existing in self.matrix.tests():
+                if existing.type_ref == configured.type_ref and existing.params == configured.params:
+                    raise ValueError(
+                        f'identical configured test already exists: {existing.ref}'
+                    )
             self.matrix.add(configured)
         except (KeyError, ValueError) as exc:
             self.state.message = f'cannot add test: {exc}'
@@ -59,6 +64,36 @@ class MatrixViewState:
         self.clear_live_matrix()
         self.state.message = f'added configured test: {configured.ref}'
         return configured
+
+    def replace_with_custom(
+        self,
+        tests: list[ConfiguredTest],
+        *,
+        repeats: int = 1,
+    ) -> bool:
+        if self.state.running:
+            self.state.message = 'cannot change matrix while test matrix is running'
+            return False
+        if not tests:
+            self.state.message = 'custom suite must contain at least one configured test'
+            return False
+        matrix = TestMatrix()
+        identities: set[tuple[str, str]] = set()
+        for test in tests:
+            identity = (test.type_ref, repr(sorted(test.params.items())))
+            if identity in identities:
+                self.state.message = f'duplicate configured test in custom suite: {test.ref}'
+                return False
+            identities.add(identity)
+            matrix.add(test)
+        self.matrix = matrix
+        self.state.suite_level = 'custom'
+        self.state.suite_repeats = repeats
+        self.sync()
+        self.state.selected_test_refs = {test_ref(test) for test in self.state.tests}
+        self.clear_live_matrix()
+        self.state.message = f'custom suite loaded: {len(self.state.tests)} configured test(s)'
+        return True
 
     def remove_test(self, instance_id: str) -> bool:
         if self.state.running:

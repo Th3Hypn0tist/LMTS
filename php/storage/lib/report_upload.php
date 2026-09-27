@@ -11,7 +11,7 @@ const LMTS_UPLOAD_TTL_SECONDS = 900;
 function lmts_upload_base_dir(array $config): string {
     $configured = trim((string)($config['upload_staging_dir'] ?? ''));
     if ($configured !== '') return rtrim($configured, DIRECTORY_SEPARATOR);
-    return __DIR__ . '/../../private_uploads';
+    return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'lmts-report-upload';
 }
 
 function lmts_upload_require_dir(string $path): void {

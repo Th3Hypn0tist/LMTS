@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
+from pathlib import Path
 from urllib import error, request
 
 from lmts.core.model_downloader import (
@@ -31,6 +33,12 @@ class OllamaModelDownloader:
     @property
     def label(self) -> str:
         return "Ollama"
+
+    def storage_path(self) -> Path:
+        configured = os.environ.get('OLLAMA_MODELS', '').strip()
+        if configured:
+            return Path(configured).expanduser()
+        return Path.home() / '.ollama' / 'models'
 
     def _open(self, req: request.Request, *, timeout: float | None = None):
         return request.urlopen(req, timeout=self.request_timeout if timeout is None else timeout)

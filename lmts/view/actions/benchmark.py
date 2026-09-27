@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from lmts.core.custom_suites import CustomSuite, CustomSuiteTest
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import test_matrix_for_level
 from lmts.tests.types import TestParameter
 
-from ..tui_common import next_instance_id
+from ..tui_common import next_instance_id, single_line
 from .base import TUIActions
 
 
@@ -177,11 +178,131 @@ class BenchmarkActions(TUIActions):
             lines.append(f'  {test_ref(test)}')
         return tuple(lines)
 
+    def custom_suites_dialog(self, _stdscr) -> None:
+        if self.controller.state.running:
+            self.set_message('test matrix is running')
+            return
+        options = ['Save current selection', 'Load custom suite', 'Delete custom suite']
+        chosen = self.host.choose(self.stdscr, 'Custom suites', options, 0)
+        if chosen is None:
+            return
+        if chosen == 0:
+            self.save_custom_suite(self.stdscr)
+        elif chosen == 1:
+            self.load_custom_suite(self.stdscr)
+        else:
+            self.delete_custom_suite(self.stdscr)
+
+    def save_custom_suite(self, _stdscr) -> None:
+        selected = [
+            test for test in self.controller.state.tests
+            if test_ref(test) in self.controller.state.selected_test_refs
+        ]
+        if not selected:
+            self.set_message('select at least one configured test before saving a custom suite')
+            return
+        name = single_line(self.host, self.stdscr, 'Custom suite name')
+        if name is None:
+            return
+        name = name.strip()
+        if not name:
+            self.set_message('custom suite name must not be empty')
+            return
+        suite = CustomSuite(
+            name=name,
+            repeats=self.controller.state.suite_repeats,
+            tests=tuple(
+                CustomSuiteTest(
+                    type_ref=test.type_ref,
+                    instance_id=test.instance_id,
+                    params=dict(test.params),
+                )
+                for test in selected
+            ),
+        )
+        suites = list(self.state.settings_service.load_custom_suites())
+        existing = next(
+            (index for index, item in enumerate(suites) if item.name.casefold() == name.casefold()),
+            None,
+        )
+        if existing is not None:
+            confirm = self.host.choose(
+                self.stdscr,
+                f'Overwrite custom suite {suites[existing].name}?',
+                ['No', 'Overwrite'],
+                0,
+            )
+            if confirm != 1:
+                return
+            suites[existing] = suite
+        else:
+            suites.append(suite)
+        self.state.settings_service.save_custom_suites(suites)
+        self.controller.state.suite_level = 'custom'
+        self.set_message(f'custom suite saved: {name}')
+
+    def load_custom_suite(self, _stdscr) -> None:
+        suites = list(self.state.settings_service.load_custom_suites())
+        if not suites:
+            self.set_message('no custom suites saved')
+            return
+        chosen = self.host.choose(
+            self.stdscr,
+            'Load custom suite',
+            [f'{suite.name}  ({len(suite.tests)} tests x {suite.repeats})' for suite in suites],
+            0,
+        )
+        if chosen is None:
+            return
+        suite = suites[chosen]
+        configured = []
+        try:
+            for item in suite.tests:
+                configured.append(
+                    self.controller.test_types.get(item.type_ref).configure(
+                        item.instance_id,
+                        item.params,
+                    )
+                )
+        except (KeyError, ValueError) as exc:
+            self.set_message(f'cannot load custom suite: {exc}')
+            return
+        if self.controller.replace_with_custom_suite(configured, repeats=suite.repeats):
+            self.set_message(f'custom suite loaded: {suite.name}')
+        else:
+            self.set_message(self.controller.state.message)
+
+    def delete_custom_suite(self, _stdscr) -> None:
+        suites = list(self.state.settings_service.load_custom_suites())
+        if not suites:
+            self.set_message('no custom suites saved')
+            return
+        chosen = self.host.choose(
+            self.stdscr,
+            'Delete custom suite',
+            [suite.name for suite in suites],
+            0,
+        )
+        if chosen is None:
+            return
+        suite = suites[chosen]
+        confirm = self.host.choose(
+            self.stdscr,
+            f'Delete custom suite {suite.name}?',
+            ['No', 'Delete'],
+            0,
+        )
+        if confirm != 1:
+            return
+        del suites[chosen]
+        self.state.settings_service.save_custom_suites(suites)
+        self.set_message(f'custom suite deleted: {suite.name}')
+
     def tests_dialog(self, _stdscr) -> None:
         if self.controller.state.running:
             self.set_message('test matrix is running')
             return
-        options = ['Quick suite', 'Moderate suite', 'Deep suite', 'Suite repeats', 'Select tests', 'Add test', 'Remove test', 'CW Bench']
+        options = ['Quick suite', 'Moderate suite', 'Deep suite', 'Suite repeats', 'Custom suites', 'Select tests', 'Add test', 'Remove test', 'CW Bench']
         levels = ('quick', 'moderate', 'deep')
 
         def preview(index: int) -> tuple[str, ...]:
@@ -198,6 +319,14 @@ class BenchmarkActions(TUIActions):
                     f'Total executions: {full_runs * self.controller.state.suite_repeats}',
                 )
             if index == 4:
+                suites = self.state.settings_service.load_custom_suites()
+                if not suites:
+                    return ('No custom suites saved.',)
+                lines = [f'{len(suites)} saved custom suite(s)', '']
+                for suite in suites:
+                    lines.append(f'  {suite.name}: {len(suite.tests)} tests x {suite.repeats}')
+                return tuple(lines)
+            if index == 5:
                 selected = [
                     test for test in self.controller.state.tests
                     if test_ref(test) in self.controller.state.selected_test_refs
@@ -206,9 +335,9 @@ class BenchmarkActions(TUIActions):
                 for test in selected:
                     lines.append(f'  [{self._taxonomy_label(test)}] {test_ref(test)}')
                 return tuple(lines)
-            if index == 5:
-                return ('Add one configured test instance from the test type registry.',)
             if index == 6:
+                return ('Add one configured test instance from the test type registry.',)
+            if index == 7:
                 return ('Remove one configured test instance from the current suite.',)
             return (
                 'CW Bench',
@@ -232,10 +361,12 @@ class BenchmarkActions(TUIActions):
         elif chosen == 3:
             self.set_suite_repeats(self.stdscr)
         elif chosen == 4:
-            self.select_tests(self.stdscr)
+            self.custom_suites_dialog(self.stdscr)
         elif chosen == 5:
-            self.add_test(self.stdscr)
+            self.select_tests(self.stdscr)
         elif chosen == 6:
+            self.add_test(self.stdscr)
+        elif chosen == 7:
             self.remove_test(self.stdscr)
         else:
             self.navigation.open_tab('cw_bench')

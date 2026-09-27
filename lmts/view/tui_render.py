@@ -101,15 +101,58 @@ class TUIRenderer:
         npu = profile.get('npu') if isinstance(profile.get('npu'), list) else []
         cpu_label = str(cpu.get('model_name') or '-')
         total_bytes = memory.get('total_bytes')
-        memory_label = f'{int(total_bytes) / (1024 ** 3):.2f} GiB' if isinstance(total_bytes, int) and total_bytes > 0 else '-'
-        gpu_labels = [str(item.get('model') or item.get('vendor') or '-') for item in gpu if isinstance(item, dict)]
+        memory_size = f'{int(total_bytes) / (1024 ** 3):.2f} GiB' if isinstance(total_bytes, int) and total_bytes > 0 else '-'
+        memory_type = str(memory.get('memory_type') or 'unknown')
+        memory_form = str(memory.get('form_factor') or 'unknown')
+        memory_speed = memory.get('configured_speed_mt_s') or memory.get('speed_mt_s')
+        memory_speed_label = f'{int(memory_speed)} MT/s' if isinstance(memory_speed, int) and memory_speed > 0 else 'unknown'
+        memory_ecc = memory.get('ecc')
+        memory_ecc_label = 'yes' if memory_ecc is True else 'no' if memory_ecc is False else 'unknown'
+        modules = memory.get('modules') if isinstance(memory.get('modules'), list) else []
+
+        gpu_labels: list[str] = []
+        for item in gpu:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get('model') or item.get('vendor') or '-')
+            vram = item.get('vram_bytes')
+            if isinstance(vram, int) and vram > 0:
+                label += f' / {vram / (1024 ** 3):.2f} GiB'
+            gpu_memory_type = str(item.get('memory_type') or 'unknown')
+            gpu_ecc = item.get('ecc')
+            gpu_ecc_label = 'yes' if gpu_ecc is True else 'no' if gpu_ecc is False else 'unknown'
+            label += f' / {gpu_memory_type} / ECC {gpu_ecc_label}'
+            gpu_labels.append(label)
+
         npu_labels = [str(item.get('model') or item.get('name') or item.get('vendor') or '-') for item in npu if isinstance(item, dict)]
         lines.extend([
             f'CPU : {cpu_label}',
-            f'MEM : {memory_label}',
+            f'MEM : {memory_size} / {memory_type} / {memory_speed_label} / {memory_form} / ECC {memory_ecc_label}',
             f"GPU : {', '.join(gpu_labels) if gpu_labels else '-'}",
             f"NPU : {', '.join(npu_labels) if npu_labels else '-'}",
         ])
+        if modules:
+            lines.append('Memory modules:')
+            for module in modules:
+                if not isinstance(module, dict):
+                    continue
+                module_capacity = module.get('capacity_bytes')
+                capacity_label = (
+                    f'{int(module_capacity) / (1024 ** 3):.2f} GiB'
+                    if isinstance(module_capacity, int) and module_capacity > 0
+                    else '-'
+                )
+                module_type = str(module.get('memory_type') or 'unknown')
+                module_form = str(module.get('form_factor') or 'unknown')
+                module_speed = module.get('configured_speed_mt_s') or module.get('speed_mt_s')
+                module_speed_label = f'{int(module_speed)} MT/s' if isinstance(module_speed, int) and module_speed > 0 else 'unknown'
+                module_ecc = module.get('ecc')
+                module_ecc_label = 'yes' if module_ecc is True else 'no' if module_ecc is False else 'unknown'
+                slot = str(module.get('slot') or '-')
+                lines.append(
+                    f'  {slot}: {capacity_label} / {module_type} / {module_speed_label} / '
+                    f'{module_form} / ECC {module_ecc_label}'
+                )
         references = payload.get('reference_benchmarks') if isinstance(payload.get('reference_benchmarks'), dict) else {}
         lines.extend(['', 'Reference performance:'])
         for label, domain in [('CPU', 'cpu'), ('MEM', 'memory'), ('GPU', 'gpu'), ('NPU', 'npu')]:

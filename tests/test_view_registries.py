@@ -75,6 +75,7 @@ def test_shortcuts_are_scoped_by_topic_area() -> None:
     assert {
         'downloader.module',
         'downloader.catalog',
+        'downloader.variance',
         'downloader.download',
         'downloader.delete',
         'downloader.progress',

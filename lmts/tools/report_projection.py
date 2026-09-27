@@ -333,6 +333,252 @@ def _record_telemetry(
     return statements
 
 
+
+def _has_identity_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict, tuple)):
+        return bool(value)
+    return True
+
+
+def _identity_resolution(identity: dict[str, object], required: tuple[str, ...]) -> str:
+    if all(_has_identity_value(identity.get(key)) for key in required):
+        return 'exact'
+    if any(_has_identity_value(value) for value in identity.values()):
+        return 'partial'
+    return 'unknown'
+
+
+def _hardware_spec(category: str, probe: dict[str, Any]) -> dict[str, str | None] | None:
+    if category == 'cpu':
+        identity: dict[str, object] = {
+            'architecture': probe.get('architecture'),
+            'vendor_id': probe.get('vendor_id'),
+            'model_name': probe.get('model_name'),
+        }
+        required = ('architecture', 'vendor_id', 'model_name')
+        label = str(probe.get('model_name') or '').strip() or 'Unknown CPU'
+        vendor = str(probe.get('vendor_id') or '').strip() or None
+    elif category == 'gpu':
+        identity = {
+            'vendor': probe.get('vendor'),
+            'model': probe.get('model'),
+            'vram_bytes': probe.get('vram_bytes'),
+            'memory_type': probe.get('memory_type'),
+            'ecc': probe.get('ecc') if 'ecc' in probe else None,
+        }
+        required = ('vendor', 'model', 'vram_bytes')
+        label = str(probe.get('model') or probe.get('vendor') or '').strip() or 'Unknown GPU'
+        vendor = str(probe.get('vendor') or '').strip() or None
+    elif category == 'npu':
+        identity = {
+            'class': probe.get('class'),
+            'vendor_id': probe.get('vendor_id'),
+            'device_id': probe.get('device_id'),
+            'subsystem_vendor_id': probe.get('subsystem_vendor_id'),
+            'subsystem_device_id': probe.get('subsystem_device_id'),
+            'modalias': probe.get('modalias'),
+        }
+        required = ('vendor_id', 'device_id')
+        label = str(probe.get('name') or '').strip()
+        if not label:
+            vendor_id = str(probe.get('vendor_id') or '').strip()
+            device_id = str(probe.get('device_id') or '').strip()
+            label = ':'.join(part for part in (vendor_id, device_id) if part) or 'Unknown NPU'
+        vendor = str(probe.get('vendor_id') or '').strip() or None
+    else:
+        raise ValueError(f'unsupported hardware category: {category}')
+
+    if not any(_has_identity_value(value) for value in identity.values()):
+        return None
+    identity_json = _canonical_json(identity)
+    digest = hashlib.sha256((category + '\0' + identity_json).encode('utf-8')).hexdigest()
+    return {
+        'hardware_id': 'hw_' + digest[:40],
+        'category': category,
+        'canonical_key': category + ':' + digest,
+        'label': label,
+        'vendor': vendor,
+        'resolution_type': _identity_resolution(identity, required),
+        'identity_json': identity_json,
+        'profile_json': _canonical_json(probe),
+    }
+
+
+def _hardware_statements(system_id: str, profile: dict[str, Any]) -> list[str]:
+    statements: list[str] = []
+
+    def add_resource(category: str, local_key: str, probe: dict[str, Any]) -> None:
+        hardware = _hardware_spec(category, probe)
+        if hardware is None:
+            return
+        statements.append(f"""
+INSERT INTO LMTS_hardware_nodes (
+  hardware_id, category, level, parent_id, canonical_key,
+  label, vendor, resolution_type, identity_json, profile_json
+) VALUES (
+  {_hex_text(str(hardware['hardware_id']))},
+  {_hex_text(str(hardware['category']))},
+  'component',
+  NULL,
+  {_hex_text(str(hardware['canonical_key']))},
+  {_hex_text(str(hardware['label']))},
+  {_nullable_text(None if hardware['vendor'] is None else str(hardware['vendor']))},
+  {_hex_text(str(hardware['resolution_type']))},
+  {_hex_text(str(hardware['identity_json']))},
+  {_hex_text(str(hardware['profile_json']))}
+)
+ON DUPLICATE KEY UPDATE
+  label = VALUES(label),
+  vendor = VALUES(vendor),
+  resolution_type = VALUES(resolution_type),
+  profile_json = VALUES(profile_json)
+""".strip())
+        resource_id = _stable_id('sysres_', system_id, local_key)
+        statements.append(f"""
+INSERT INTO LMTS_system_resources (
+  system_resource_id, system_id, local_key, resource_kind,
+  hardware_id, resolution_status, probe_data_json
+) VALUES (
+  {_hex_text(resource_id)},
+  {_hex_text(system_id)},
+  {_hex_text(local_key)},
+  {_hex_text(category)},
+  {_hex_text(str(hardware['hardware_id']))},
+  {_hex_text(str(hardware['resolution_type']))},
+  {_hex_text(_canonical_json(probe))}
+)
+ON DUPLICATE KEY UPDATE
+  hardware_id = VALUES(hardware_id),
+  resolution_status = VALUES(resolution_status),
+  probe_data_json = VALUES(probe_data_json),
+  updated_at = CURRENT_TIMESTAMP(6)
+""".strip())
+
+    cpu = profile.get('cpu')
+    if isinstance(cpu, dict) and cpu:
+        add_resource('cpu', 'cpu:0', cpu)
+
+    gpus = profile.get('gpu')
+    if isinstance(gpus, list):
+        for index, gpu in enumerate(gpus):
+            if isinstance(gpu, dict):
+                add_resource('gpu', f'gpu:{index}', gpu)
+
+    npus = profile.get('npu')
+    if isinstance(npus, list):
+        for index, npu in enumerate(npus):
+            if isinstance(npu, dict):
+                add_resource('npu', f'npu:{index}', npu)
+
+    memory = profile.get('memory')
+    if isinstance(memory, dict):
+        capacity = memory.get('total_bytes')
+        if isinstance(capacity, int) and not isinstance(capacity, bool) and capacity > 0:
+            pool_id = _stable_id('mempool_', system_id, 'system')
+            statements.append(f"""
+INSERT INTO LMTS_system_memory_pools (
+  memory_pool_id, system_id, pool_kind, capacity_bytes, properties_json
+) VALUES (
+  {_hex_text(pool_id)},
+  {_hex_text(system_id)},
+  'system',
+  {capacity},
+  {_hex_text(_canonical_json(memory))}
+)
+ON DUPLICATE KEY UPDATE
+  capacity_bytes = VALUES(capacity_bytes),
+  properties_json = VALUES(properties_json)
+""".strip())
+
+    return statements
+
+
+def _system_statements(record: dict[str, Any]) -> list[str]:
+    provenance = record.get('provenance') if isinstance(record.get('provenance'), dict) else {}
+    user_id = str(provenance.get('tester_user_id') or '').strip()
+    system_id = str(provenance.get('system_id') or '').strip()
+    if not user_id or not system_id:
+        return []
+
+    evidence = record.get('evidence') if isinstance(record.get('evidence'), dict) else {}
+    context = evidence.get('system_context') if isinstance(evidence.get('system_context'), dict) else None
+    if context is None:
+        raise ValueError(f'report references system {system_id} without system_context evidence')
+
+    fingerprint = str(context.get('fingerprint') or '').strip()
+    schema_version = context.get('schema_version')
+    identity = context.get('identity')
+    profile = context.get('profile')
+    if (
+        not fingerprint
+        or isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or not isinstance(identity, dict)
+        or not isinstance(profile, dict)
+    ):
+        raise ValueError(f'system_context for {system_id} has invalid canonical identity')
+
+    identity_json = _canonical_json(identity)
+    calculated = hashlib.sha256(identity_json.encode('utf-8')).hexdigest()
+    if calculated != fingerprint:
+        raise ValueError('system_context fingerprint does not match canonical hardware identity')
+    expected_id = _stable_id('sys_', user_id, fingerprint)
+    if expected_id != system_id:
+        raise ValueError(f'system_id {system_id} does not match report system_context fingerprint')
+
+    configuration_id = 'cfg_' + fingerprint[:40]
+    hardware_profile = {
+        key: profile[key]
+        for key in ('cpu', 'memory', 'gpu', 'npu')
+        if key in profile
+    }
+    profiled_at = context.get('profiled_at')
+    profiled_sql = _sql_datetime(profiled_at)
+    probe_version = f'profile-v{schema_version}'
+    statements = [f"""
+INSERT INTO LMTS_hardware_configurations (
+  configuration_id, fingerprint, label, identity_json, profile_json
+) VALUES (
+  {_hex_text(configuration_id)},
+  {_hex_text(fingerprint)},
+  {_hex_text('Configuration ' + fingerprint[:12])},
+  {_hex_text(identity_json)},
+  {_hex_text(_canonical_json(hardware_profile))}
+)
+ON DUPLICATE KEY UPDATE
+  label = VALUES(label),
+  identity_json = VALUES(identity_json),
+  profile_json = VALUES(profile_json),
+  updated_at = CURRENT_TIMESTAMP(6)
+""".strip(), f"""
+INSERT INTO LMTS_systems (
+  system_id, user_id, label, system_class, configuration_id, probe_version, last_probed_at
+) VALUES (
+  {_hex_text(system_id)},
+  {_hex_text(user_id)},
+  {_hex_text('System ' + fingerprint[:12])},
+  'local',
+  {_hex_text(configuration_id)},
+  {_hex_text(probe_version)},
+  {profiled_sql}
+)
+ON DUPLICATE KEY UPDATE
+  configuration_id = VALUES(configuration_id),
+  probe_version = VALUES(probe_version),
+  last_probed_at = CASE
+    WHEN VALUES(last_probed_at) IS NULL THEN last_probed_at
+    WHEN last_probed_at IS NULL OR last_probed_at < VALUES(last_probed_at) THEN VALUES(last_probed_at)
+    ELSE last_probed_at
+  END
+""".strip()]
+    statements.extend(_hardware_statements(system_id, profile))
+    return statements
+
+
 def rebuild_report_projection(mysql: MySQLSettings, report: dict[str, Any]) -> None:
     report_meta = report.get('report') if isinstance(report.get('report'), dict) else {}
     report_id = str(report_meta.get('id') or '').strip()

@@ -15,6 +15,28 @@ def _mysql() -> MySQLSettings:
 
 
 def _report() -> dict:
+    identity = {
+        'cpu': {
+            'architecture': 'x86_64',
+            'vendor_id': 'GenuineIntel',
+            'model_name': 'Test CPU',
+        },
+        'memory': {
+            'total_bytes': 16 * 1024 ** 3,
+            'memory_type': 'DDR5',
+            'ecc': False,
+            'speed_mt_s': 5600,
+            'configured_speed_mt_s': 5200,
+            'form_factor': 'DIMM',
+            'modules': [],
+        },
+        'gpu': [],
+        'npu': [],
+    }
+    fingerprint = projection.hashlib.sha256(
+        projection._canonical_json(identity).encode('utf-8')
+    ).hexdigest()
+    system_id = projection._stable_id('sys_', 'usr_test', fingerprint)
     telemetry_types = [
         'input_tokens', 'output_tokens', 'ttft', 'total_time', 'score_percent',
         'workspace_protocol_steps', 'output_file_count', 'exact_output_match',
@@ -53,7 +75,7 @@ def _report() -> dict:
             },
             'provenance': {
                 'tester_user_id': 'usr_test',
-                'system_id': 'sys_test',
+                'system_id': system_id,
                 'compute_profile_id': None,
             },
             'timing': {
@@ -65,6 +87,19 @@ def _report() -> dict:
                 'score_percent': {'value': 100.0, 'unit': 'percent'},
             },
             'evidence': {
+                'system_context': {
+                    'schema_version': 7,
+                    'profiled_at': '2026-09-19T11:59:00+00:00',
+                    'fingerprint': fingerprint,
+                    'identity': identity,
+                    'profile': {
+                        'cpu': identity['cpu'],
+                        'memory': identity['memory'],
+                        'gpu': [],
+                        'npu': [],
+                        'software': {'os': 'Linux'},
+                    },
+                },
                 'execution_metadata': {'runtime_configuration': {'temperature': 0}},
                 'responses': [{
                     'usage': {'input_tokens': 10, 'output_tokens': 4},
@@ -109,6 +144,10 @@ def test_projection_writes_test_record_and_telemetry(monkeypatch) -> None:
     assert 'INSERT INTO LMTS_test_definitions' in query
     assert 'INSERT INTO LMTS_test_versions' in query
     assert 'INSERT INTO LMTS_test_version_telemetry_types' in query
+    assert 'INSERT INTO LMTS_hardware_configurations' in query
+    assert 'INSERT INTO LMTS_systems' in query
+    assert 'INSERT INTO LMTS_hardware_nodes' in query
+    assert 'INSERT INTO LMTS_system_memory_pools' in query
     assert 'INSERT INTO LMTS_report_record_index' in query
     assert 'target_ref, target_label' in query
     assert 'ON DUPLICATE KEY UPDATE' in query

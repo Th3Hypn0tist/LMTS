@@ -26,7 +26,6 @@ def _report() -> dict:
             'memory_type': 'DDR5',
             'ecc': False,
             'speed_mt_s': 5600,
-            'configured_speed_mt_s': 5200,
             'form_factor': 'DIMM',
             'modules': [],
         },
@@ -94,7 +93,7 @@ def _report() -> dict:
                     'identity': identity,
                     'profile': {
                         'cpu': identity['cpu'],
-                        'memory': identity['memory'],
+                        'memory': {**identity['memory'], 'configured_speed_mt_s': 5200},
                         'gpu': [],
                         'npu': [],
                         'software': {'os': 'Linux'},

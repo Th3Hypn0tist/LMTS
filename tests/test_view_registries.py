@@ -82,6 +82,9 @@ def test_shortcuts_are_scoped_by_topic_area() -> None:
     } <= downloader_actions
     assert 'settings.user' in settings_actions
     assert 'settings.user' not in benchmark_actions
+    user_actions = {item.action for item in SHORTCUT_REGISTRY.definitions(('user',))}
+    assert 'user.login' in user_actions
+    assert 'user.register' not in user_actions
 
 
 def test_duplicate_shortcut_sequence_is_rejected_within_scope() -> None:

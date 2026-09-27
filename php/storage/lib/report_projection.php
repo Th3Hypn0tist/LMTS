@@ -127,6 +127,14 @@ function lmts_projection_metric_value(array $record, string $name): mixed {
     return is_array($metric) ? ($metric['value'] ?? null) : null;
 }
 
+function lmts_projection_numeric_metric_value(array $record, string $name): int|float|null {
+    $value = lmts_projection_metric_value($record, $name);
+    if (is_bool($value) || (!is_int($value) && !is_float($value))) {
+        return null;
+    }
+    return $value;
+}
+
 function lmts_projection_context_json(string $source, array $values = []): string {
     return lmts_projection_json(['source' => $source, ...$values]);
 }
@@ -862,12 +870,12 @@ function lmts_project_report(PDO $pdo, array $report): void {
             lmts_projection_mysql_datetime($timing['started_at'] ?? null),
             lmts_projection_mysql_datetime($timing['completed_at'] ?? null),
             lmts_projection_duration_ms($timing['started_at'] ?? null, $timing['completed_at'] ?? null),
-            lmts_projection_metric_value($record, 'ttft'),
+            lmts_projection_numeric_metric_value($record, 'ttft'),
             isset($outcome['result']) ? (string)$outcome['result'] : null,
             array_key_exists('passed', $outcome) && $outcome['passed'] !== null
                 ? ($outcome['passed'] ? 1 : 0)
                 : null,
-            lmts_projection_metric_value($record, 'score_percent'),
+            lmts_projection_numeric_metric_value($record, 'score_percent'),
             $runtimeJson,
         ]);
 

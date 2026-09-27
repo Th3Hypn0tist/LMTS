@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from lmts.core.custom_suites import configured_test_identity
 from lmts.tests.base import test_ref
 from lmts.tests.catalog import test_matrix_for_level
 from lmts.tests.types import ConfiguredTest, TestLevel, TestMatrix, TestTypeRegistry
@@ -78,9 +79,9 @@ class MatrixViewState:
         if isinstance(suite_repeats, bool) or not isinstance(suite_repeats, int) or not 1 <= suite_repeats <= 100:
             raise ValueError('suite repeats must be an integer between 1 and 100')
         matrix = TestMatrix()
-        identities: set[tuple[str, str]] = set()
+        identities: set[str] = set()
         for test in tests:
-            identity = (test.type_ref, repr(sorted(test.params.items())))
+            identity = configured_test_identity(test.type_ref, test.params)
             if identity in identities:
                 raise ValueError(f'duplicate configured test in persisted UI state: {test.ref}')
             identities.add(identity)
@@ -106,10 +107,13 @@ class MatrixViewState:
         if not tests:
             self.state.message = 'custom suite must contain at least one configured test'
             return False
+        if isinstance(repeats, bool) or not isinstance(repeats, int) or not 1 <= repeats <= 100:
+            self.state.message = 'custom suite repeats must be an integer between 1 and 100'
+            return False
         matrix = TestMatrix()
-        identities: set[tuple[str, str]] = set()
+        identities: set[str] = set()
         for test in tests:
-            identity = (test.type_ref, repr(sorted(test.params.items())))
+            identity = configured_test_identity(test.type_ref, test.params)
             if identity in identities:
                 self.state.message = f'duplicate configured test in custom suite: {test.ref}'
                 return False

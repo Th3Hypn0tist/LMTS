@@ -18,6 +18,10 @@ def _report(payload_size: int = 600000) -> dict:
             'created_at': '2026-09-27T06:00:00+00:00',
         },
         'source': {'type': 'lmts.test', 'id': 'source-1'},
+        'records': [{
+            'id': 'run-1',
+            'outcome': {'result': 'pass', 'passed': True},
+        }],
         'padding': 'x' * payload_size,
     }
 
@@ -126,3 +130,23 @@ def test_php_publish_aborts_after_chunk_failure(monkeypatch) -> None:
         raise AssertionError('expected chunk failure')
 
     assert actions == ['init', 'chunk', 'abort']
+
+
+
+def test_publish_rejects_non_benchmark_error_evidence(monkeypatch) -> None:
+    report = _report(payload_size=1000)
+    report['records'][0]['outcome'] = {'result': 'error', 'passed': False}
+
+    profile = ReportProfile(
+        name='public',
+        kind='php_api',
+        endpoint='https://aigm.fi/lmts-report/report.php',
+        publish_key='secret',
+    )
+
+    try:
+        report_publish.publish_report(report, profile, verify=False)
+    except ValueError as exc:
+        assert 'non-publishable outcome: error' in str(exc)
+    else:
+        raise AssertionError('expected non-publishable outcome rejection')

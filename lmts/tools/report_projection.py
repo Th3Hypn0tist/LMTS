@@ -579,6 +579,90 @@ ON DUPLICATE KEY UPDATE
     return statements
 
 
+
+def _variance_statements(
+    *,
+    report_id: str,
+    record: dict[str, Any],
+    test: TestProjection,
+    target_kind: str,
+    target_ref: str,
+) -> list[str]:
+    provenance = record.get('provenance') if isinstance(record.get('provenance'), dict) else {}
+    user_id = str(provenance.get('tester_user_id') or '').strip() or None
+    system_id = str(provenance.get('system_id') or '').strip()
+    if not system_id or not target_kind or not target_ref:
+        return []
+
+    evidence = record.get('evidence') if isinstance(record.get('evidence'), dict) else {}
+    context = evidence.get('system_context') if isinstance(evidence.get('system_context'), dict) else {}
+    fingerprint = str(context.get('fingerprint') or '').strip()
+    if not fingerprint:
+        return []
+    configuration_id = 'cfg_' + fingerprint[:40]
+
+    outcome = record.get('outcome') if isinstance(record.get('outcome'), dict) else {}
+    full_outcome = str(outcome.get('result') or '').strip()
+    if full_outcome not in {'pass', 'fail'}:
+        return []
+
+    timing = record.get('timing') if isinstance(record.get('timing'), dict) else {}
+    samples: list[dict[str, object]] = [{
+        'outcome': full_outcome,
+        'observed_at': timing.get('completed_at'),
+    }]
+    extras = evidence.get('variance_samples')
+    if extras is not None:
+        if not isinstance(extras, list):
+            raise ValueError('variance_samples evidence must be an array')
+        for sample in extras:
+            if not isinstance(sample, dict):
+                raise ValueError('variance sample must be an object')
+            sample_outcome = str(sample.get('outcome') or '').strip()
+            if sample_outcome not in {'pass', 'fail'}:
+                raise ValueError('variance sample outcome must be pass or fail')
+            samples.append({
+                'outcome': sample_outcome,
+                'observed_at': sample.get('observed_at'),
+            })
+
+    record_id = str(record.get('id') or '').strip()
+    target_hash = hashlib.sha256((target_kind + '\0' + target_ref).encode('utf-8')).hexdigest()
+    statements: list[str] = []
+    for ordinal, sample in enumerate(samples):
+        sample_id = _stable_id('var_', report_id, record_id, str(ordinal))
+        statements.append(f"""
+INSERT INTO LMTS_variance_samples (
+  variance_sample_id, target_kind, target_ref, target_identity_hash,
+  test_version_id, configuration_id, tester_user_id, outcome,
+  observed_at, source_report_id, source_record_id, sample_ordinal
+) VALUES (
+  {_hex_text(sample_id)},
+  {_hex_text(target_kind)},
+  {_hex_text(target_ref)},
+  {_hex_text(target_hash)},
+  {_hex_text(test.test_version_id)},
+  {_hex_text(configuration_id)},
+  {_nullable_text(user_id)},
+  {_hex_text(str(sample['outcome']))},
+  {_sql_datetime(sample.get('observed_at'))},
+  {_hex_text(report_id)},
+  {_hex_text(record_id)},
+  {ordinal}
+)
+ON DUPLICATE KEY UPDATE
+  target_kind = VALUES(target_kind),
+  target_ref = VALUES(target_ref),
+  target_identity_hash = VALUES(target_identity_hash),
+  test_version_id = VALUES(test_version_id),
+  configuration_id = VALUES(configuration_id),
+  tester_user_id = VALUES(tester_user_id),
+  outcome = VALUES(outcome),
+  observed_at = VALUES(observed_at)
+""".strip())
+    return statements
+
+
 def rebuild_report_projection(mysql: MySQLSettings, report: dict[str, Any]) -> None:
     report_meta = report.get('report') if isinstance(report.get('report'), dict) else {}
     report_id = str(report_meta.get('id') or '').strip()
@@ -710,6 +794,13 @@ ON DUPLICATE KEY UPDATE
   runtime_configuration_json = VALUES(runtime_configuration_json)
 """.strip())
         if test is not None:
+            statements.extend(_variance_statements(
+                report_id=report_id,
+                record=record,
+                test=test,
+                target_kind=target_kind,
+                target_ref=target_id,
+            ))
             statements.extend(_record_telemetry(report_id, record, test))
 
     statements.append('COMMIT')

@@ -131,33 +131,255 @@ function lmts_projection_context_json(string $source, array $values = []): strin
     return lmts_projection_json(['source' => $source, ...$values]);
 }
 
-function lmts_projection_ensure_system(PDO $pdo, array $record): void {
-    $provenance = isset($record['provenance']) && is_array($record['provenance']) ? $record['provenance'] : [];
-    $userId = trim((string)($provenance['tester_user_id'] ?? ''));
-    $systemId = trim((string)($provenance['system_id'] ?? ''));
-    if ($userId === '' || $systemId === '') return;
+function lmts_projection_has_identity_value(mixed $value): bool {
+    if ($value === null) return false;
+    if (is_string($value)) return trim($value) !== '';
+    if (is_array($value)) return $value !== [];
+    return true;
+}
 
-    $check = $pdo->prepare('SELECT user_id FROM LMTS_systems WHERE system_id = ? LIMIT 1');
-    $check->execute([$systemId]);
-    $existingUser = $check->fetchColumn();
-    if ($existingUser !== false) {
-        if (!hash_equals((string)$existingUser, $userId)) {
-            throw new RuntimeException("system $systemId is owned by a different user");
+function lmts_projection_identity_resolution(array $identity, array $requiredKeys): string {
+    $requiredPresent = 0;
+    foreach ($requiredKeys as $key) {
+        if (array_key_exists($key, $identity) && lmts_projection_has_identity_value($identity[$key])) {
+            $requiredPresent++;
         }
-        return;
+    }
+    if ($requiredPresent === count($requiredKeys)) return 'exact';
+    foreach ($identity as $value) {
+        if (lmts_projection_has_identity_value($value)) return 'partial';
+    }
+    return 'unknown';
+}
+
+function lmts_projection_hardware_spec(string $category, array $probe): ?array {
+    if ($category === 'cpu') {
+        $identity = [
+            'architecture' => $probe['architecture'] ?? null,
+            'vendor_id' => $probe['vendor_id'] ?? null,
+            'model_name' => $probe['model_name'] ?? null,
+        ];
+        $required = ['architecture', 'vendor_id', 'model_name'];
+        $label = trim((string)($probe['model_name'] ?? '')) ?: 'Unknown CPU';
+        $vendor = trim((string)($probe['vendor_id'] ?? '')) ?: null;
+    } elseif ($category === 'gpu') {
+        $identity = [
+            'vendor' => $probe['vendor'] ?? null,
+            'model' => $probe['model'] ?? null,
+            'vram_bytes' => $probe['vram_bytes'] ?? null,
+        ];
+        $required = ['vendor', 'model', 'vram_bytes'];
+        $label = trim((string)($probe['model'] ?? ''))
+            ?: (trim((string)($probe['vendor'] ?? '')) ?: 'Unknown GPU');
+        $vendor = trim((string)($probe['vendor'] ?? '')) ?: null;
+    } elseif ($category === 'npu') {
+        $identity = [
+            'class' => $probe['class'] ?? null,
+            'vendor_id' => $probe['vendor_id'] ?? null,
+            'device_id' => $probe['device_id'] ?? null,
+            'subsystem_vendor_id' => $probe['subsystem_vendor_id'] ?? null,
+            'subsystem_device_id' => $probe['subsystem_device_id'] ?? null,
+            'modalias' => $probe['modalias'] ?? null,
+        ];
+        $required = ['vendor_id', 'device_id'];
+        $label = trim((string)($probe['name'] ?? ''));
+        if ($label === '') {
+            $vendorId = trim((string)($probe['vendor_id'] ?? ''));
+            $deviceId = trim((string)($probe['device_id'] ?? ''));
+            $label = trim($vendorId . ($vendorId !== '' && $deviceId !== '' ? ':' : '') . $deviceId);
+        }
+        if ($label === '') $label = 'Unknown NPU';
+        $vendor = trim((string)($probe['vendor_id'] ?? '')) ?: null;
+    } else {
+        throw new InvalidArgumentException("unsupported hardware category: $category");
     }
 
-    $evidence = isset($record['evidence']) && is_array($record['evidence']) ? $record['evidence'] : [];
-    $context = isset($evidence['system_context']) && is_array($evidence['system_context'])
-        ? $evidence['system_context']
-        : null;
-    if ($context === null) {
-        throw new RuntimeException("report references unknown system $systemId without system_context evidence");
+    $hasIdentity = false;
+    foreach ($identity as $value) {
+        if (lmts_projection_has_identity_value($value)) {
+            $hasIdentity = true;
+            break;
+        }
+    }
+    if (!$hasIdentity) return null;
+
+    $identityJson = lmts_projection_json($identity);
+    $digest = hash('sha256', $category . "\0" . $identityJson);
+
+    return [
+        'hardware_id' => 'hw_' . substr($digest, 0, 40),
+        'category' => $category,
+        'canonical_key' => $category . ':' . $digest,
+        'label' => $label,
+        'vendor' => $vendor,
+        'resolution_type' => lmts_projection_identity_resolution($identity, $required),
+        'identity_json' => $identityJson,
+        'profile_json' => lmts_projection_json($probe),
+    ];
+}
+
+function lmts_projection_upsert_hardware(PDO $pdo, array $hardware): void {
+    $stmt = $pdo->prepare(
+        'INSERT INTO LMTS_hardware_nodes (
+            hardware_id, category, level, parent_id, canonical_key,
+            label, vendor, resolution_type, identity_json, profile_json
+         ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            label = VALUES(label),
+            vendor = VALUES(vendor),
+            resolution_type = VALUES(resolution_type),
+            profile_json = VALUES(profile_json)'
+    );
+    $stmt->execute([
+        $hardware['hardware_id'],
+        $hardware['category'],
+        'component',
+        $hardware['canonical_key'],
+        $hardware['label'],
+        $hardware['vendor'],
+        $hardware['resolution_type'],
+        $hardware['identity_json'],
+        $hardware['profile_json'],
+    ]);
+
+    $check = $pdo->prepare(
+        'SELECT hardware_id, identity_json
+         FROM LMTS_hardware_nodes
+         WHERE canonical_key = ?
+         LIMIT 1'
+    );
+    $check->execute([$hardware['canonical_key']]);
+    $row = $check->fetch();
+    if (!is_array($row)
+        || !hash_equals((string)$row['hardware_id'], (string)$hardware['hardware_id'])
+        || !hash_equals((string)$row['identity_json'], (string)$hardware['identity_json'])) {
+        throw new RuntimeException(
+            'canonical hardware identity conflict: ' . $hardware['canonical_key']
+        );
+    }
+}
+
+function lmts_projection_upsert_system_resource(
+    PDO $pdo,
+    string $systemId,
+    string $localKey,
+    string $resourceKind,
+    array $hardware,
+    array $probe,
+): void {
+    $resourceId = lmts_projection_stable_id('sysres_', $systemId, $localKey);
+    $stmt = $pdo->prepare(
+        'INSERT INTO LMTS_system_resources (
+            system_resource_id, system_id, local_key, resource_kind,
+            hardware_id, resolution_status, probe_data_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            hardware_id = VALUES(hardware_id),
+            resolution_status = VALUES(resolution_status),
+            probe_data_json = VALUES(probe_data_json),
+            updated_at = CURRENT_TIMESTAMP(6)'
+    );
+    $stmt->execute([
+        $resourceId,
+        $systemId,
+        $localKey,
+        $resourceKind,
+        $hardware['hardware_id'],
+        $hardware['resolution_type'],
+        lmts_projection_json($probe),
+    ]);
+}
+
+function lmts_projection_project_memory_pool(PDO $pdo, string $systemId, array $memory): void {
+    $capacity = $memory['total_bytes'] ?? null;
+    if (is_string($capacity) && ctype_digit($capacity)) $capacity = (int)$capacity;
+    if (!is_int($capacity) || $capacity <= 0) return;
+
+    $poolKind = 'system';
+    $poolId = lmts_projection_stable_id('mempool_', $systemId, $poolKind);
+    $stmt = $pdo->prepare(
+        'INSERT INTO LMTS_system_memory_pools (
+            memory_pool_id, system_id, pool_kind, capacity_bytes, properties_json
+         ) VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+            capacity_bytes = VALUES(capacity_bytes),
+            properties_json = VALUES(properties_json)'
+    );
+    $stmt->execute([
+        $poolId,
+        $systemId,
+        $poolKind,
+        $capacity,
+        lmts_projection_json($memory),
+    ]);
+}
+
+function lmts_projection_project_system_profile(PDO $pdo, string $systemId, array $profile): void {
+    $cpu = isset($profile['cpu']) && is_array($profile['cpu']) ? $profile['cpu'] : [];
+    if ($cpu !== []) {
+        $hardware = lmts_projection_hardware_spec('cpu', $cpu);
+        if ($hardware !== null) {
+            lmts_projection_upsert_hardware($pdo, $hardware);
+            lmts_projection_upsert_system_resource(
+                $pdo,
+                $systemId,
+                'cpu:0',
+                'cpu',
+                $hardware,
+                $cpu,
+            );
+        }
     }
 
+    $gpus = isset($profile['gpu']) && is_array($profile['gpu']) ? $profile['gpu'] : [];
+    foreach ($gpus as $index => $gpu) {
+        if (!is_array($gpu)) continue;
+        $hardware = lmts_projection_hardware_spec('gpu', $gpu);
+        if ($hardware === null) continue;
+        lmts_projection_upsert_hardware($pdo, $hardware);
+        lmts_projection_upsert_system_resource(
+            $pdo,
+            $systemId,
+            'gpu:' . (int)$index,
+            'gpu',
+            $hardware,
+            $gpu,
+        );
+    }
+
+    $npus = isset($profile['npu']) && is_array($profile['npu']) ? $profile['npu'] : [];
+    foreach ($npus as $index => $npu) {
+        if (!is_array($npu)) continue;
+        $hardware = lmts_projection_hardware_spec('npu', $npu);
+        if ($hardware === null) continue;
+        lmts_projection_upsert_hardware($pdo, $hardware);
+        lmts_projection_upsert_system_resource(
+            $pdo,
+            $systemId,
+            'npu:' . (int)$index,
+            'npu',
+            $hardware,
+            $npu,
+        );
+    }
+
+    $memory = isset($profile['memory']) && is_array($profile['memory']) ? $profile['memory'] : [];
+    if ($memory !== []) {
+        lmts_projection_project_memory_pool($pdo, $systemId, $memory);
+    }
+}
+
+function lmts_projection_ensure_system_identity(
+    PDO $pdo,
+    string $userId,
+    string $systemId,
+    array $context,
+): void {
     $fingerprint = trim((string)($context['fingerprint'] ?? ''));
     $schemaVersion = $context['schema_version'] ?? null;
-    if ($fingerprint === '' || !is_int($schemaVersion)) {
+    $profile = $context['profile'] ?? null;
+
+    if ($fingerprint === '' || !is_int($schemaVersion) || !is_array($profile)) {
         throw new RuntimeException("system_context for $systemId has invalid canonical identity");
     }
 
@@ -166,16 +388,89 @@ function lmts_projection_ensure_system(PDO $pdo, array $record): void {
         throw new RuntimeException("system_id $systemId does not match report system_context fingerprint");
     }
 
+    $check = $pdo->prepare(
+        'SELECT user_id
+         FROM LMTS_systems
+         WHERE system_id = ?
+         LIMIT 1'
+    );
+    $check->execute([$systemId]);
+    $existingUser = $check->fetchColumn();
+
     $label = 'System ' . substr($fingerprint, 0, 12);
     $probeVersion = 'profile-v' . $schemaVersion;
     $profiledAt = lmts_projection_mysql_datetime($context['profiled_at'] ?? null);
 
-    $insert = $pdo->prepare(
-        'INSERT INTO LMTS_systems (
-            system_id, user_id, label, system_class, probe_version, last_probed_at
-         ) VALUES (?, ?, ?, ?, ?, ?)'
-    );
-    $insert->execute([$systemId, $userId, $label, 'local', $probeVersion, $profiledAt]);
+    if ($existingUser === false) {
+        $insert = $pdo->prepare(
+            'INSERT INTO LMTS_systems (
+                system_id, user_id, label, system_class, probe_version, last_probed_at
+             ) VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $insert->execute([
+            $systemId,
+            $userId,
+            $label,
+            'local',
+            $probeVersion,
+            $profiledAt,
+        ]);
+        return;
+    }
+
+    if (!hash_equals((string)$existingUser, $userId)) {
+        throw new RuntimeException("system $systemId is owned by a different user");
+    }
+
+    if ($profiledAt === null) {
+        $update = $pdo->prepare(
+            'UPDATE LMTS_systems
+             SET probe_version = ?
+             WHERE system_id = ?'
+        );
+        $update->execute([$probeVersion, $systemId]);
+    } else {
+        $update = $pdo->prepare(
+            'UPDATE LMTS_systems
+             SET probe_version = ?,
+                 last_probed_at = CASE
+                     WHEN last_probed_at IS NULL OR last_probed_at < ? THEN ?
+                     ELSE last_probed_at
+                 END
+             WHERE system_id = ?'
+        );
+        $update->execute([$probeVersion, $profiledAt, $profiledAt, $systemId]);
+    }
+}
+
+function lmts_projection_ensure_system(PDO $pdo, array $record): void {
+    $provenance = isset($record['provenance']) && is_array($record['provenance'])
+        ? $record['provenance']
+        : [];
+    $userId = trim((string)($provenance['tester_user_id'] ?? ''));
+    $systemId = trim((string)($provenance['system_id'] ?? ''));
+    if ($userId === '' || $systemId === '') return;
+
+    $evidence = isset($record['evidence']) && is_array($record['evidence'])
+        ? $record['evidence']
+        : [];
+    $context = isset($evidence['system_context']) && is_array($evidence['system_context'])
+        ? $evidence['system_context']
+        : null;
+
+    if ($context === null) {
+        throw new RuntimeException(
+            "report references system $systemId without system_context evidence"
+        );
+    }
+
+    $profile = $context['profile'] ?? null;
+    if (!is_array($profile)) {
+        throw new RuntimeException("system_context for $systemId has no profile");
+    }
+
+    lmts_projection_ensure_system_identity($pdo, $userId, $systemId, $context);
+    lmts_projection_project_system_profile($pdo, $systemId, $profile);
 }
 
 function lmts_projection_assert_compute_profile(PDO $pdo, array $record): void {

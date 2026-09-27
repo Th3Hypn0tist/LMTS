@@ -281,6 +281,39 @@ function lmts_validate_report_semantics(stdClass $report): void {
                 "is not publishable benchmark evidence; expected 'pass' or 'fail'"
             );
         }
+        if (property_exists($record->outcome, 'passed')) {
+            if (!is_bool($record->outcome->passed)) {
+                lmts_contract_error($path . '.outcome.passed', 'must be boolean when present');
+            }
+            if ($record->outcome->passed !== ($result === 'pass')) {
+                lmts_contract_error($path . '.outcome', 'result and passed disagree');
+            }
+        }
+        if (isset($record->evidence->variance_samples)) {
+            if (!is_array($record->evidence->variance_samples)) {
+                lmts_contract_error($path . '.evidence.variance_samples', 'must be an array');
+            }
+            foreach ($record->evidence->variance_samples as $sampleIndex => $sample) {
+                $samplePath = $path . '.evidence.variance_samples[' . $sampleIndex . ']';
+                if (!($sample instanceof stdClass)) {
+                    lmts_contract_error($samplePath, 'must be an object');
+                }
+                $keys = array_keys(get_object_vars($sample));
+                $extra = array_values(array_diff($keys, ['outcome', 'observed_at']));
+                if ($extra !== []) {
+                    lmts_contract_error($samplePath, 'contains non-lightweight field(s): ' . implode(', ', $extra));
+                }
+                $sampleOutcome = $sample->outcome ?? null;
+                if (!is_string($sampleOutcome) || !in_array($sampleOutcome, ['pass', 'fail'], true)) {
+                    lmts_contract_error($samplePath . '.outcome', 'must be pass or fail');
+                }
+                if (property_exists($sample, 'observed_at')
+                    && $sample->observed_at !== null
+                    && (!is_string($sample->observed_at) || trim($sample->observed_at) === '')) {
+                    lmts_contract_error($samplePath . '.observed_at', 'must be a timestamp string or null');
+                }
+            }
+        }
         $computedOutcomes[$result] = ($computedOutcomes[$result] ?? 0) + 1;
     }
 

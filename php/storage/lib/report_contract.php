@@ -244,6 +244,10 @@ function lmts_validate_report_semantics(stdClass $report): void {
         }
     }
 
+    if (count($report->records) === 0) {
+        lmts_contract_error('$.records', 'contains no publishable PASS/FAIL evidence');
+    }
+
     $recordIds = [];
     $computedOutcomes = [];
     foreach ($report->records as $index => $record) {
@@ -271,6 +275,12 @@ function lmts_validate_report_semantics(stdClass $report): void {
         }
 
         $result = $record->outcome->result;
+        if (!in_array($result, ['pass', 'fail'], true)) {
+            lmts_contract_error(
+                $path . '.outcome.result',
+                "is not publishable benchmark evidence; expected 'pass' or 'fail'"
+            );
+        }
         $computedOutcomes[$result] = ($computedOutcomes[$result] ?? 0) + 1;
     }
 

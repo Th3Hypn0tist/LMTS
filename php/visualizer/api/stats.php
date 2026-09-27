@@ -58,13 +58,10 @@ function stats_scope(): array {
     $targetId = stats_param('target_id');
     $targetKind = stats_param('target_kind');
     if ($targetId !== null) {
-        if ($targetKind === 'model') {
-            $conditions[] = 'rri.model_node_id = ?';
-        } elseif ($targetKind === 'composition') {
-            $conditions[] = 'rri.composition_id = ?';
-        } else {
-            stats_fail(400, 'target_id requires target_kind model or composition');
+        if ($targetKind === null) {
+            stats_fail(400, 'target_id requires target_kind');
         }
+        $conditions[] = 'rri.target_ref = ?';
         $params[] = $targetId;
     }
 
@@ -121,6 +118,12 @@ try {
         "SELECT
             COUNT(DISTINCT rri.report_id) AS reports,
             COUNT(*) AS result_records,
+            COUNT(DISTINCT rri.test_version_id) AS tests,
+            COUNT(DISTINCT CASE
+                WHEN rri.target_ref IS NULL THEN NULL
+                ELSE CONCAT(rri.target_kind, ':', rri.target_ref)
+            END) AS targets,
+            COUNT(DISTINCT rri.system_id) AS systems,
             COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
             COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
             COALESCE(SUM(CASE WHEN rri.outcome = 'error' THEN 1 ELSE 0 END), 0) AS error,
@@ -151,14 +154,11 @@ try {
         DATE_FORMAT(r.created_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS report_created_at,
         rri.tester_user_id,
         rri.target_kind,
+        rri.target_ref,
+        rri.target_label,
         rri.model_node_id,
         rri.composition_id,
-        CASE
-            WHEN rri.model_node_id IS NOT NULL THEN rri.model_node_id
-            WHEN rri.composition_id IS NOT NULL THEN rri.composition_id
-            ELSE NULL
-        END AS target_id,
-        COALESCE(mn.label, c.name) AS target_label,
+        rri.target_ref AS target_id,
         rri.test_version_id,
         td.test_definition_id,
         td.namespace AS test_namespace,
@@ -193,8 +193,6 @@ try {
         ) AS output_tokens
      FROM LMTS_report_record_index rri
      JOIN LMTS_reports r ON r.report_id = rri.report_id
-     LEFT JOIN LMTS_model_nodes mn ON mn.model_node_id = rri.model_node_id
-     LEFT JOIN LMTS_compositions c ON c.composition_id = rri.composition_id
      LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
      LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
      LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
@@ -203,6 +201,31 @@ try {
      LIMIT $limit";
 
     $records = stats_query($pdo, $recordSql, $params)->fetchAll();
+
+    $matrixSql = "SELECT
+        rri.target_kind,
+        rri.target_ref,
+        COALESCE(MAX(rri.target_label), rri.target_ref, rri.target_kind) AS target_label,
+        rri.test_version_id,
+        CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
+               CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS test_label,
+        COUNT(*) AS runs,
+        COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
+        COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
+        COALESCE(SUM(CASE WHEN rri.outcome = 'error' THEN 1 ELSE 0 END), 0) AS error,
+        COALESCE(SUM(CASE WHEN rri.outcome = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
+        COALESCE(SUM(CASE
+            WHEN rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled')
+            THEN 1 ELSE 0 END), 0) AS unknown,
+        MAX(COALESCE(rri.started_at, r.created_at)) AS latest_at
+     FROM LMTS_report_record_index rri
+     JOIN LMTS_reports r ON r.report_id = rri.report_id
+     LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
+     LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
+     $where
+     GROUP BY rri.target_kind, rri.target_ref, rri.test_version_id, td.name, td.namespace, tv.version
+     ORDER BY target_label, test_label";
+    $matrix = stats_query($pdo, $matrixSql, $params)->fetchAll();
 
     $selectedSql = "SELECT rri.report_id, rri.record_id
         FROM LMTS_report_record_index rri
@@ -286,15 +309,9 @@ try {
     $targets = $pdo->query(
         "SELECT DISTINCT
             rri.target_kind,
-            CASE
-                WHEN rri.model_node_id IS NOT NULL THEN rri.model_node_id
-                WHEN rri.composition_id IS NOT NULL THEN rri.composition_id
-                ELSE NULL
-            END AS target_id,
-            COALESCE(mn.label, c.name, CONCAT(rri.target_kind, ' (unresolved)')) AS label
+            rri.target_ref AS target_id,
+            COALESCE(rri.target_label, rri.target_ref, CONCAT(rri.target_kind, ' (unresolved)')) AS label
          FROM LMTS_report_record_index rri
-         LEFT JOIN LMTS_model_nodes mn ON mn.model_node_id = rri.model_node_id
-         LEFT JOIN LMTS_compositions c ON c.composition_id = rri.composition_id
          ORDER BY label, rri.target_kind"
     )->fetchAll();
     foreach ($targets as &$target) {
@@ -322,6 +339,9 @@ try {
         'summary' => [
             'reports' => (int)($summary['reports'] ?? 0),
             'result_records' => (int)($summary['result_records'] ?? 0),
+            'tests' => (int)($summary['tests'] ?? 0),
+            'targets' => (int)($summary['targets'] ?? 0),
+            'systems' => (int)($summary['systems'] ?? 0),
             'pass' => (int)($summary['pass'] ?? 0),
             'fail' => (int)($summary['fail'] ?? 0),
             'error' => (int)($summary['error'] ?? 0),
@@ -329,6 +349,7 @@ try {
             'unknown' => (int)($summary['unknown'] ?? 0),
             'telemetry_values' => (int)$telemetryCount,
         ],
+        'matrix' => $matrix,
         'records' => $records,
         'telemetry' => $telemetry,
         'filters' => [

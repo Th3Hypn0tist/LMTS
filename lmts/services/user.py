@@ -4,16 +4,8 @@ from dataclasses import dataclass
 
 from lmts.repositories.user import UserRepository
 
-from .auth import AuthService, AuthenticationError, is_origin
+from .auth import AuthService, AuthenticationError
 
-
-TIER_LABELS = {
-    4: 'Reader',
-    3: 'Registered',
-    2: 'Invite-capable',
-    1: 'Canonical authority',
-    1337: 'Test-content authority',
-}
 
 EMPTY_ACTIVITY = {
     'reports': 0,
@@ -40,10 +32,8 @@ class UserDashboardSnapshot:
     user_id: str | None
     username: str | None
     tier: int
-    tier_label: str
     status: str
     verified: bool | None
-    can_invite: bool
     activity: dict[str, int] | None
     identity_error: str | None = None
     activity_error: str | None = None
@@ -63,10 +53,8 @@ class UserService:
             user_id=None,
             username=None,
             tier=4,
-            tier_label=TIER_LABELS[4],
             status='anonymous',
             verified=None,
-            can_invite=False,
             activity=None,
             identity_error=identity_error,
             activity_error=None,
@@ -84,10 +72,8 @@ class UserService:
                 user_id=None,
                 username='local',
                 tier=4,
-                tier_label='Local',
                 status='local',
                 verified=None,
-                can_invite=False,
                 activity=None,
                 identity_error=None,
                 activity_error=None,
@@ -116,10 +102,8 @@ class UserService:
             user_id=identity.user_id,
             username=identity.username,
             tier=identity.tier,
-            tier_label=TIER_LABELS.get(identity.tier, f'Tier {identity.tier}'),
             status=identity.status,
             verified=identity.verified,
-            can_invite=is_origin(identity.user_id) or identity.tier in {1, 2, 1337},
             activity=activity,
             identity_error=None,
             activity_error=activity_error,

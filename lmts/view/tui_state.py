@@ -10,6 +10,7 @@ from lmts.services.settings import SettingsService
 from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
 from .projector import LMTSViewProjector
+from .model_downloader_page import ModelDownloaderPage
 
 
 @dataclass(slots=True)
@@ -17,6 +18,7 @@ class TUIState:
     controller: LMTSViewController
     projector: LMTSViewProjector
     cw_bench_page: CWBenchPage
+    model_explorer_page: ModelDownloaderPage
     settings: LMTSSettings
     settings_service: SettingsService
     shortcut_overrides: dict[str, tuple[str, ...]]

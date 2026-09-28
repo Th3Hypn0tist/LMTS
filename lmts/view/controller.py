@@ -25,7 +25,6 @@ from .evaluation_state import EvaluationViewState
 from .matrix_state import MatrixViewState
 from .projector import LMTSViewState
 from .response_monitor import ResponseMonitor
-
 class LMTSViewController:
     def __init__(
         self,

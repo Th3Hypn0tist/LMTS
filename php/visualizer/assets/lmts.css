@@ -62,3 +62,11 @@ h1,h2 { margin:.25rem 0 .5rem; }
 .bar-track { height:150px; display:flex; align-items:flex-end; gap:2px; padding-top:4px; }
 .telemetry-bar { flex:1 0 5px; min-width:5px; background:currentColor; opacity:.72; border-radius:2px 2px 0 0; }
 @media (max-width:700px) { .filters { grid-template-columns:1fr 1fr; } .section-title,.chart-header { flex-direction:column; gap:4px; } }
+
+.matrix-cell-action { width:100%; border:0; background:transparent; font:inherit; cursor:pointer; }
+.evidence-overlay { position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.72); display:flex; align-items:flex-start; justify-content:center; padding:32px; overflow:auto; }
+.evidence-modal { width:min(1400px,100%); max-height:calc(100vh - 64px); overflow:auto; border:1px solid #2a3139; border-radius:10px; background:#12161b; padding:16px; box-shadow:0 18px 60px rgba(0,0,0,.45); }
+.evidence-meta { display:flex; flex-wrap:wrap; gap:8px 18px; margin:10px 0 18px; color:#8e9aa7; font-size:12px; }
+.evidence-modal h3 { margin:18px 0 8px; }
+.evidence-table { min-width:980px; }
+@media (max-width:700px) { .evidence-overlay { padding:10px; } .evidence-modal { max-height:calc(100vh - 20px); } }

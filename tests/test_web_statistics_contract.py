@@ -83,3 +83,24 @@ def test_level2_compatibility_uses_variance_evidence_and_never_propagates_perfor
     assert "'total_time_samples_ms' => []" in STATS_PHP
     assert "lighter FAIL does not propagate" in APP_JS
     assert "performance unavailable" in APP_JS
+
+
+def test_level2_supports_metric_aggregation_and_axis_controls() -> None:
+    assert "JSON_ARRAYAGG(rri.ttft_ms) AS ttft_samples_json" in STATS_PHP
+    assert "function level2ViewState()" in APP_JS
+    assert "l2_metric" in APP_JS
+    assert "l2_agg" in APP_JS
+    assert "l2_axes" in APP_JS
+    assert "option('total_time', 'Total time'" in APP_JS
+    assert "option('ttft', 'TTFT'" in APP_JS
+    assert "option('pf_score', 'P/F score'" in APP_JS
+    assert "option('med', 'Med'" in APP_JS
+    assert "option('avg', 'Avg'" in APP_JS
+    assert "option('model_test', 'Models × tests'" in APP_JS
+    assert "option('test_model', 'Tests × models'" in APP_JS
+
+
+def test_level2_inferred_pass_never_gets_measured_performance() -> None:
+    assert "if (text(cell.evidence_scope, 'unknown') === 'inferred_lighter_pass') return null;" in APP_JS
+    assert "cell.performance_scope !== 'exact'" in APP_JS
+    assert "performance unavailable" in APP_JS

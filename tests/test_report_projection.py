@@ -98,6 +98,14 @@ def _report() -> dict:
                         'npu': [],
                         'software': {'os': 'Linux'},
                     },
+                    'hardware_order': {
+                        'schema_version': 1,
+                        'status': 'incomplete',
+                        'architecture': 'x86_64',
+                        'scalar_axes': {},
+                        'gpu_devices': [],
+                        'missing': ['cpu.reference'],
+                    },
                 },
                 'execution_metadata': {'runtime_configuration': {'temperature': 0}},
                 'responses': [{
@@ -144,6 +152,7 @@ def test_projection_writes_test_record_and_telemetry(monkeypatch) -> None:
     assert 'INSERT INTO LMTS_test_versions' in query
     assert 'INSERT INTO LMTS_test_version_telemetry_types' in query
     assert 'INSERT INTO LMTS_hardware_configurations' in query
+    assert 'order_status, order_json' in query
     assert 'INSERT INTO LMTS_systems' in query
     assert 'INSERT INTO LMTS_hardware_nodes' in query
     assert 'INSERT INTO LMTS_system_memory_pools' in query

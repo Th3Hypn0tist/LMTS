@@ -477,8 +477,9 @@ try {
             $configurationCell['fail_count'] = $varianceEvidence === null ? 0 : (int)$varianceEvidence['fail_count'];
             $configurationCell['pf_score'] = $varianceEvidence === null ? null : (float)$varianceEvidence['pf_score'];
             $configurationCell['evidence_scope'] = 'exact';
-            $configurationCell['compatibility_status'] =
-                ((int)$configurationCell['pass_count']) > 0 ? 'pass' : 'fail';
+            $configurationCell['compatibility_status'] = $varianceEvidence === null
+                ? 'unknown'
+                : (((int)$configurationCell['pass_count']) > 0 ? 'pass' : 'fail');
             $configurationCell['source_configuration_ids'] = [$selectedConfigurationId];
             $configurationCell['performance_scope'] = 'exact';
             $cellIndex[$key] = true;

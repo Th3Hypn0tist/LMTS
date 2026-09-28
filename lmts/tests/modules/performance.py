@@ -27,7 +27,10 @@ class ColdWarmPerformanceTest:
     warm_repeats: int = 5
     id: str = "performance.cold_warm"
     version: str = "1.0.0"
-    requirements: TestRequirements = TestRequirements(text_generation=True)
+    requirements: TestRequirements = TestRequirements(
+        text_generation=True,
+        subject_kinds=("model",),
+    )
 
     def run(self, context: TestContext) -> TestResult:
         if self.warm_repeats < 1:

@@ -46,7 +46,7 @@ class CandidateQualification:
 
 
 class ModelExplorerService:
-    """Sequential candidate qualification: fit -> pull -> benchmark -> keep/delete."""
+    """Sequential candidate qualification: fit -> pull -> benchmark -> unload -> keep/delete."""
 
     def __init__(
         self,
@@ -56,6 +56,16 @@ class ModelExplorerService:
     ) -> None:
         self.evaluation_service = evaluation_service
         self.variance_store = VarianceStore(results_root)
+
+    @staticmethod
+    def _unload_verified(executor: TestExecutor) -> None:
+        unload = getattr(executor, 'unload', None)
+        is_loaded = getattr(executor, 'is_loaded', None)
+        if not callable(unload) or not callable(is_loaded):
+            raise RuntimeError('Model Explorer requires verified model unload support')
+        unload()
+        if bool(is_loaded()):
+            raise RuntimeError('Model Explorer candidate remained loaded after unload')
 
     def _aggregate_evaluation(
         self,
@@ -202,14 +212,28 @@ class ModelExplorerService:
                 error=f'{type(exc).__name__}: {exc}',
             )
 
+        try:
+            self._unload_verified(executor)
+        except Exception as exc:
+            deleted = False
+            if not keep_rejected:
+                try:
+                    downloader.delete(candidate.model_ref)
+                    deleted = True
+                except Exception:
+                    deleted = False
+            return CandidateQualification(
+                candidate=candidate,
+                fit=fit,
+                accepted=False,
+                deleted=deleted,
+                tests=qualifications,
+                evaluation=outcome,
+                error=f'{type(exc).__name__}: {exc}',
+            )
+
         deleted = False
         if not accepted and not keep_rejected:
-            unload = getattr(executor, 'unload', None)
-            if callable(unload):
-                try:
-                    unload()
-                except Exception:
-                    pass
             downloader.delete(candidate.model_ref)
             deleted = True
 

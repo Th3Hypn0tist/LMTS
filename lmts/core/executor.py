@@ -11,6 +11,8 @@ from .subject import EvaluationSubject
 ExecutorKind = Literal["model", "bot", "composition"]
 ResponseSink = Callable[[ResponseStreamChunk], None]
 GenerateHandler = Callable[[str, ResponseSink | None], NormalizedResponse]
+WARMUP_PROMPT = "Reply exactly OK"
+WARMUP_EXPECTED = "OK"
 
 
 class TestExecutor(Protocol):
@@ -105,21 +107,32 @@ class ModelExecutor:
             )
         return response
 
-    def warm_up(self, prompt: str = "Reply exactly OK") -> NormalizedResponse:
+    def warm_up(self) -> NormalizedResponse:
         warm_up = getattr(self.provider, "warm_up", None)
         if callable(warm_up):
-            response = warm_up(self.model, prompt)
+            response = warm_up(self.model, WARMUP_PROMPT)
         else:
-            response = self.provider.generate(self.model, prompt)
-        if not response.text.strip():
-            raise RuntimeError(f"model warm-up returned an empty response: {self.id}")
+            response = self.provider.generate(self.model, WARMUP_PROMPT)
+        actual = response.text.strip()
+        if actual != WARMUP_EXPECTED:
+            raise RuntimeError(
+                f"model warm-up readiness check failed for {self.id}: expected "
+                f"{WARMUP_EXPECTED!r}, got {actual!r}"
+            )
         return response
 
     def unload(self) -> None:
         unload = getattr(self.provider, "unload", None)
+        is_loaded = getattr(self.provider, "is_loaded", None)
         if not callable(unload):
             raise NotImplementedError(f"provider does not support model unload: {self.model.provider_ref}")
+        if not callable(is_loaded):
+            raise NotImplementedError(
+                f"provider cannot verify model unload state: {self.model.provider_ref}"
+            )
         unload(self.model)
+        if bool(is_loaded(self.model)):
+            raise RuntimeError(f"provider reported model still loaded after unload: {self.id}")
 
     def is_loaded(self) -> bool:
         is_loaded = getattr(self.provider, "is_loaded", None)

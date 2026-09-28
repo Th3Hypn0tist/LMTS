@@ -515,7 +515,11 @@ function configurationOverviewTable(rows, view, metricOptions) {
     if (!models.length) return [];
     const first = metricValue(models[0]);
     if (!Number.isFinite(first)) return [];
-    return models.filter(model => metricValue(model) === first);
+    const firstCoverage = Number(models[0].coverage);
+    return models.filter(model =>
+      metricValue(model) === first
+      && (view.metric !== 'pf_score' || Number(model.coverage) === firstCoverage)
+    );
   }
 
   function metricText(model) {
@@ -776,6 +780,8 @@ function render(payload) {
   }
   const summary = payload.summary ?? {};
   const configurationOverview = payload.configuration_overview ?? [];
+  const level1MetricOptions = payload.level1_metric_options ?? [];
+  const level1View = level1ViewState(level1MetricOptions);
   const configurationMatrix = payload.configuration_matrix ?? {};
   const level2View = level2ViewState();
   const modelDrilldown = payload.model_drilldown ?? {};
@@ -866,12 +872,34 @@ function render(payload) {
       h('div', { className: 'section-title' }, [
         h('div', {}, [
           h('h2', { text: 'Hardware configurations' }),
-          h('div', { className: 'subtle', text: 'Level 1 landing. Rows are canonical LMTS hardware configurations.' }),
+          h('div', { className: 'subtle', text: 'Level 1. Exact evidence per canonical hardware configuration. Default ranking is P/F then coverage.' }),
         ]),
         h('span', { className: 'subtle', text: String(configurationOverview.length) + ' configuration(s)' }),
       ]),
+      h('div', { className: 'filters' }, [
+        ...(level1MetricOptions ?? []).map(item => gui.button(item.label, {
+          className: 'filter-action' + (level1View.metric === item.value ? '' : ' secondary'),
+          on: { click: () => updateLevel1View({
+            ...level1View,
+            metric: item.value,
+            direction: item.value === 'pf_score' || item.value === 'coverage' ? 'desc' : level1View.direction,
+          }) },
+        })),
+        gui.field('Aggregation', gui.select({
+          on: { change: event => updateLevel1View({ ...level1View, aggregation: event.target.value }) },
+        }, [
+          option('med', 'Med', level1View.aggregation),
+          option('avg', 'Avg', level1View.aggregation),
+        ]), { className: 'filter-field compact' }),
+        gui.field('Order', gui.select({
+          on: { change: event => updateLevel1View({ ...level1View, direction: event.target.value }) },
+        }, [
+          option('desc', 'High first', level1View.direction),
+          option('asc', 'Low first', level1View.direction),
+        ]), { className: 'filter-field compact' }),
+      ]),
       configurationOverview.length
-        ? configurationOverviewTable(configurationOverview)
+        ? configurationOverviewTable(configurationOverview, level1View, level1MetricOptions)
         : h('p', { className: 'empty', text: 'No hardware configurations have benchmark evidence.' }),
     ]),
     h('section', { className: 'panel' }, [

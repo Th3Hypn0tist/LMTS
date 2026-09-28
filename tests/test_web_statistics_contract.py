@@ -7,7 +7,9 @@ from pathlib import Path
 PHP_ROOT = Path('php')
 STATS_PHP = (PHP_ROOT / 'visualizer/api/stats.php').read_text(encoding='utf-8')
 APP_JS = (PHP_ROOT / 'visualizer/app.js').read_text(encoding='utf-8')
-STORAGE_PHP = (PHP_ROOT / 'storage/report.php').read_text(encoding='utf-8')
+REPORT_PHP = (PHP_ROOT / 'report.php').read_text(encoding='utf-8')
+UPLOAD_PHP = (PHP_ROOT / 'upload.php').read_text(encoding='utf-8')
+VISUALIZER_REPORT_PHP = (PHP_ROOT / 'visualizer/api/report.php').read_text(encoding='utf-8')
 
 
 class WebStatisticsContractTests(unittest.TestCase):
@@ -43,9 +45,12 @@ class WebStatisticsContractTests(unittest.TestCase):
         self.assertIn('Open immutable report evidence', APP_JS)
 
     def test_storage_is_separate_from_visualizer(self) -> None:
-        self.assertIn("$_SERVER['REQUEST_METHOD'] !== 'POST'", STORAGE_PHP)
-        self.assertIn('X-LMTS-Key', STORAGE_PHP)
-        self.assertNotIn("$_SERVER['REQUEST_METHOD'] !== 'POST'", (PHP_ROOT / 'visualizer/api/report.php').read_text(encoding='utf-8'))
+        self.assertIn("$_SERVER['REQUEST_METHOD'] !== 'GET'", REPORT_PHP)
+        self.assertIn('report publishing uses upload.php', REPORT_PHP)
+        self.assertIn("$_SERVER['HTTP_X_LMTS_KEY']", UPLOAD_PHP)
+        self.assertIn("$_SERVER['REQUEST_METHOD'] === 'POST' && $action === 'init'", UPLOAD_PHP)
+        self.assertIn("$_SERVER['REQUEST_METHOD'] !== 'GET'", VISUALIZER_REPORT_PHP)
+        self.assertNotIn('HTTP_X_LMTS_KEY', VISUALIZER_REPORT_PHP)
 
 
 if __name__ == '__main__':

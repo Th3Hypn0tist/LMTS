@@ -64,12 +64,22 @@ def test_level1_configuration_overview_contract_is_canonical_and_unranked() -> N
     assert "'ranking_contract_unresolved' AS ranking_status" in STATS_PHP
 
 
-def test_level2_configuration_matrix_is_exact_until_hardware_ordering_exists() -> None:
+def test_level2_configuration_matrix_applies_canonical_hardware_ceiling() -> None:
     assert "'configuration_matrix' => [" in STATS_PHP
-    assert "'evidence_scope' => $selectedConfigurationId === null ? null : 'exact'" in STATS_PHP
-    assert "'hardware_ceiling_status' => $selectedConfigurationId === null" in STATS_PHP
-    assert "'ordering_contract_unresolved'" in STATS_PHP
-    assert "'lighter_configuration_ids' => []" in STATS_PHP
+    assert "'evidence_scope' => $selectedConfigurationId === null ? null : 'exact_plus_compatibility'" in STATS_PHP
+    assert "'hardware_ceiling_status' => $hardwareCeilingStatus" in STATS_PHP
+    assert "'lighter_configuration_ids' => $lighterConfigurationIds" in STATS_PHP
+    assert "stats_hardware_order_relation($candidateOrder, $selectedOrder)" in STATS_PHP
+    assert "$relation['comparable'] && $relation['lower_or_equal'] && $relation['strict']" in STATS_PHP
     assert "JSON_ARRAYAGG(rri.duration_ms) AS total_time_samples_json" in STATS_PHP
-    assert "WHERE s.configuration_id = ?" in STATS_PHP
-    assert "AND rri.target_kind = 'model'" in STATS_PHP
+
+
+def test_level2_compatibility_uses_variance_evidence_and_never_propagates_performance() -> None:
+    assert "FROM LMTS_variance_samples vs" in STATS_PHP
+    assert "'inferred_lighter_pass'" in STATS_PHP
+    assert "'lower_fail_only'" in STATS_PHP
+    assert "'performance_scope' => 'none'" in STATS_PHP
+    assert "'pf_score' => null" in STATS_PHP
+    assert "'total_time_samples_ms' => []" in STATS_PHP
+    assert "lighter FAIL does not propagate" in APP_JS
+    assert "performance unavailable" in APP_JS

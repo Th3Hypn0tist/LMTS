@@ -12,7 +12,7 @@ def _text() -> str:
 
 def test_installer_uses_canonical_schema_file() -> None:
     text = _text()
-    assert 'SCHEMA_FILE="${SCRIPT_DIR}/schema_v1.sql"' in text
+    assert 'SCHEMA_FILE="${SCRIPT_DIR}/../../schema/schema_v1.sql"' in text
     assert 'mariadb --protocol=socket "${DB_NAME}" < "${SCHEMA_FILE}"' in text
     assert 'CREATE TABLE IF NOT EXISTS reports' not in text
 
@@ -68,7 +68,7 @@ def test_installer_applies_schema_only_when_version_is_behind() -> None:
     assert 'CURRENT_SCHEMA_VERSION=0' in text
     assert 'if (( CURRENT_SCHEMA_VERSION > SCHEMA_VERSION )); then' in text
     assert 'if (( CURRENT_SCHEMA_VERSION < SCHEMA_VERSION )); then' in text
-    assert 'installed result_server schema v${CURRENT_SCHEMA_VERSION} is newer' in text
+    assert 'installed database SSOT schema v${CURRENT_SCHEMA_VERSION} is newer' in text
 
 
 def test_installer_restarts_mariadb_only_when_required() -> None:

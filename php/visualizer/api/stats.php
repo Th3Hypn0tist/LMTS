@@ -255,6 +255,53 @@ try {
      ORDER BY target_label, test_label";
     $matrix = stats_query($pdo, $matrixSql, $params)->fetchAll();
 
+    $configurationMatrix = [];
+    $selectedConfigurationId = stats_param('configuration_id');
+    if ($selectedConfigurationId !== null) {
+        $configurationMatrixSql = "SELECT
+            s.configuration_id,
+            rri.target_kind,
+            rri.target_ref,
+            COALESCE(MAX(rri.target_label), rri.target_ref) AS target_label,
+            rri.test_version_id,
+            CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
+                   CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS test_label,
+            COUNT(*) AS sample_count,
+            SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END) AS pass_count,
+            SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END) AS fail_count,
+            (100.0 * SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END) / COUNT(*)) AS pf_score,
+            JSON_ARRAYAGG(rri.duration_ms) AS total_time_samples_json
+         FROM LMTS_report_record_index rri
+         JOIN LMTS_reports r ON r.report_id = rri.report_id
+         JOIN LMTS_systems s ON s.system_id = rri.system_id
+         LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
+         LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
+         WHERE s.configuration_id = ?
+           AND rri.target_kind = 'model'
+           AND rri.outcome IN ('pass','fail')
+         GROUP BY s.configuration_id, rri.target_kind, rri.target_ref,
+                  rri.test_version_id, td.name, td.namespace, tv.version
+         ORDER BY target_label, test_label";
+        $configurationMatrix = stats_query(
+            $pdo,
+            $configurationMatrixSql,
+            [$selectedConfigurationId],
+        )->fetchAll();
+        foreach ($configurationMatrix as &$configurationCell) {
+            $rawSamples = $configurationCell['total_time_samples_json'] ?? '[]';
+            $decodedSamples = json_decode((string)$rawSamples, true);
+            $configurationCell['total_time_samples_ms'] = is_array($decodedSamples)
+                ? array_values(array_filter(
+                    $decodedSamples,
+                    static fn($value): bool => is_int($value) || is_float($value) || is_numeric($value)
+                ))
+                : [];
+            unset($configurationCell['total_time_samples_json']);
+            $configurationCell['evidence_scope'] = 'exact';
+        }
+        unset($configurationCell);
+    }
+
     $selectedSql = "SELECT rri.report_id, rri.record_id
         FROM LMTS_report_record_index rri
         JOIN LMTS_reports r ON r.report_id = rri.report_id
@@ -421,6 +468,15 @@ try {
             'telemetry_values' => (int)$telemetryCount,
         ],
         'configuration_overview' => $configurationOverview,
+        'configuration_matrix' => [
+            'configuration_id' => $selectedConfigurationId,
+            'evidence_scope' => $selectedConfigurationId === null ? null : 'exact',
+            'hardware_ceiling_status' => $selectedConfigurationId === null
+                ? null
+                : 'ordering_contract_unresolved',
+            'lighter_configuration_ids' => [],
+            'cells' => $configurationMatrix,
+        ],
         'matrix' => $matrix,
         'records' => $records,
         'telemetry' => $telemetry,

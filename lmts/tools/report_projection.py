@@ -512,12 +512,15 @@ def _system_statements(record: dict[str, Any]) -> list[str]:
     schema_version = context.get('schema_version')
     identity = context.get('identity')
     profile = context.get('profile')
+    hardware_order = context.get('hardware_order')
     if (
         not fingerprint
         or isinstance(schema_version, bool)
         or not isinstance(schema_version, int)
         or not isinstance(identity, dict)
         or not isinstance(profile, dict)
+        or not isinstance(hardware_order, dict)
+        or hardware_order.get('status') not in {'complete', 'incomplete'}
     ):
         raise ValueError(f'system_context for {system_id} has invalid canonical identity')
 
@@ -540,18 +543,22 @@ def _system_statements(record: dict[str, Any]) -> list[str]:
     probe_version = f'profile-v{schema_version}'
     statements = [f"""
 INSERT INTO LMTS_hardware_configurations (
-  configuration_id, fingerprint, label, identity_json, profile_json
+  configuration_id, fingerprint, label, identity_json, profile_json, order_status, order_json
 ) VALUES (
   {_hex_text(configuration_id)},
   {_hex_text(fingerprint)},
   {_hex_text('Configuration ' + fingerprint[:12])},
   {_hex_text(identity_json)},
-  {_hex_text(_canonical_json(hardware_profile))}
+  {_hex_text(_canonical_json(hardware_profile))},
+  {_hex_text(str(hardware_order['status']))},
+  {_hex_text(_canonical_json(hardware_order))}
 )
 ON DUPLICATE KEY UPDATE
   label = VALUES(label),
   identity_json = VALUES(identity_json),
   profile_json = VALUES(profile_json),
+  order_status = VALUES(order_status),
+  order_json = VALUES(order_json),
   updated_at = CURRENT_TIMESTAMP(6)
 """.strip(), f"""
 INSERT INTO LMTS_systems (

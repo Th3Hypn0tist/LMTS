@@ -214,6 +214,27 @@ try {
 
     $records = stats_query($pdo, $recordSql, $params)->fetchAll();
 
+    $overviewWhere = $where === ''
+        ? "WHERE rri.target_kind = 'model'"
+        : $where . " AND rri.target_kind = 'model'";
+    $configurationOverviewSql = "SELECT
+        hc.configuration_id,
+        hc.label AS configuration_name,
+        hc.fingerprint AS configuration_fingerprint,
+        COUNT(DISTINCT rri.target_ref) AS models_tested_count,
+        NULL AS leading_model,
+        NULL AS leading_model_pf_score,
+        NULL AS leading_model_time_ms,
+        'ranking_contract_unresolved' AS ranking_status
+     FROM LMTS_report_record_index rri
+     JOIN LMTS_reports r ON r.report_id = rri.report_id
+     JOIN LMTS_systems s ON s.system_id = rri.system_id
+     JOIN LMTS_hardware_configurations hc ON hc.configuration_id = s.configuration_id
+     $overviewWhere
+     GROUP BY hc.configuration_id, hc.label, hc.fingerprint
+     ORDER BY hc.label, hc.configuration_id";
+    $configurationOverview = stats_query($pdo, $configurationOverviewSql, $params)->fetchAll();
+
     $matrixSql = "SELECT
         rri.target_kind,
         rri.target_ref,
@@ -399,6 +420,7 @@ try {
             'fail' => (int)($summary['fail'] ?? 0),
             'telemetry_values' => (int)$telemetryCount,
         ],
+        'configuration_overview' => $configurationOverview,
         'matrix' => $matrix,
         'records' => $records,
         'telemetry' => $telemetry,

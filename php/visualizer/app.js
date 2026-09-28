@@ -457,9 +457,9 @@ function configurationOverviewTable(rows) {
     h('tr', {}, [
       h('th', { text: 'Hardware configuration' }),
       h('th', { text: 'Models tested' }),
-      h('th', { text: 'Leading model' }),
+      h('th', { text: 'Rank #1' }),
       h('th', { text: 'P/F score' }),
-      h('th', { text: 'Time ms' }),
+      h('th', { text: 'Coverage' }),
     ]),
   ]));
 
@@ -468,7 +468,10 @@ function configurationOverviewTable(rows) {
     const params = new URLSearchParams(location.search);
     params.set('configuration_id', text(row.configuration_id, ''));
     const href = '?' + params.toString();
-    const unresolved = row.ranking_status === 'ranking_contract_unresolved';
+    const leaders = row.leading_models ?? [];
+    const leaderLabel = leaders.length > 1
+      ? leaders.map(item => text(item.target_label || item.target_ref)).join(' · ')
+      : text(row.leading_model);
     body.append(h('tr', {}, [
       h('td', {}, [
         h('a', {
@@ -476,11 +479,20 @@ function configurationOverviewTable(rows) {
           text: text(row.configuration_name || row.configuration_id),
           title: text(row.configuration_fingerprint),
         }),
+        h('div', {
+          className: 'subtle',
+          text: 'Exact hardware evidence · P/F ↓ · coverage ↓ · equal values share rank',
+        }),
       ]),
       h('td', { text: number(row.models_tested_count, 0) }),
-      h('td', { text: unresolved ? 'Ranking contract unresolved' : text(row.leading_model) }),
-      h('td', { text: unresolved ? '—' : number(row.leading_model_pf_score) }),
-      h('td', { text: unresolved ? '—' : number(row.leading_model_time_ms) }),
+      h('td', {}, [
+        h('strong', { text: leaderLabel }),
+        leaders.length > 1
+          ? h('div', { className: 'subtle', text: 'Shared #1 · ' + String(leaders.length) + ' models' })
+          : null,
+      ].filter(Boolean)),
+      h('td', { text: number(row.leading_model_pf_score) }),
+      h('td', { text: number(row.leading_model_coverage) }),
     ]));
   }
   table.append(body);

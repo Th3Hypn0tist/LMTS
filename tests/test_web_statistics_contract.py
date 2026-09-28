@@ -69,6 +69,24 @@ def test_level1_configuration_overview_contract_ranks_exact_pf_then_coverage() -
     assert "Shared #1" in APP_JS
 
 
+
+
+def test_level1_exposes_use_case_telemetry_sort_controls() -> None:
+    assert "'level1_metric_options' => $level1MetricOptions" in STATS_PHP
+    assert "FROM LMTS_telemetry_values tv" in STATS_PHP
+    assert "JSON_ARRAYAGG(tv.value_number) AS samples_json" in STATS_PHP
+    assert "'telemetry' => $configurationTelemetry" in STATS_PHP
+    assert "function level1ViewState(metricOptions)" in APP_JS
+    assert "l1_metric" in APP_JS
+    assert "l1_agg" in APP_JS
+    assert "l1_dir" in APP_JS
+    assert "Default ranking is P/F then coverage." in APP_JS
+    assert "item.value === 'pf_score' || item.value === 'coverage'" in APP_JS
+    assert "High first" in APP_JS
+    assert "Low first" in APP_JS
+    assert "view.metric !== 'pf_score' || Number(model.coverage) === firstCoverage" in APP_JS
+
+
 def test_level2_configuration_matrix_applies_canonical_hardware_ceiling() -> None:
     assert "'configuration_matrix' => [" in STATS_PHP
     assert "'evidence_scope' => $selectedConfigurationId === null ? null : 'exact_plus_compatibility'" in STATS_PHP

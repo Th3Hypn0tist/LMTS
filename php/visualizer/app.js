@@ -150,12 +150,36 @@ function configurationComparison(matrix) {
         row.append(h('td', { className: 'matrix-empty', text: 'NaN' }));
         continue;
       }
-      const med = median(cell.total_time_samples_ms);
+
+      const scope = text(cell.evidence_scope, 'unknown');
+      const compatibility = text(cell.compatibility_status, 'unknown');
+      if (scope === 'lower_fail_only' || compatibility === 'unknown') {
+        row.append(h('td', {}, [
+          h('div', { className: 'matrix-cell matrix-cell-unknown' }, [
+            h('strong', { text: 'NaN' }),
+            h('span', { className: 'matrix-runs', text: 'lighter FAIL does not propagate' }),
+            h('span', { className: 'subtle', text: 'compatibility unknown' }),
+          ]),
+        ]));
+        continue;
+      }
+
+      const inferred = scope === 'inferred_lighter_pass';
+      const med = inferred ? null : median(cell.total_time_samples_ms);
+      const performance = inferred ? 'NaN' : (med == null ? 'NaN' : number(med) + ' ms');
+      const evidence = inferred
+        ? 'inferred PASS from lighter configuration'
+        : 'exact evidence';
+
       row.append(h('td', {}, [
-        h('div', { className: 'matrix-cell matrix-cell-' + (Number(cell.pass_count ?? 0) > 0 ? 'pass' : 'fail') }, [
-          h('strong', { text: med == null ? 'NaN' : number(med) + ' ms' }),
-          h('span', { className: 'matrix-runs', text: 'P/F ' + number(cell.pf_score) + ' · N=' + number(cell.sample_count, 0) }),
-          h('span', { className: 'subtle', text: 'exact evidence' }),
+        h('div', { className: 'matrix-cell matrix-cell-' + compatibility }, [
+          h('strong', { text: performance }),
+          h('span', { className: 'matrix-runs', text:
+            inferred
+              ? 'PASS · performance unavailable'
+              : 'P/F ' + number(cell.pf_score) + ' · N=' + number(cell.sample_count, 0)
+          }),
+          h('span', { className: 'subtle', text: evidence }),
         ]),
       ]));
     }
@@ -424,14 +448,14 @@ function render(payload) {
       h('div', { className: 'section-title' }, [
         h('div', {}, [
           h('h2', { text: 'Configuration comparison' }),
-          h('div', { className: 'subtle', text: 'Level 2 foundation. Exact selected-configuration evidence only; cells show median total time.' }),
+          h('div', { className: 'subtle', text: 'Exact evidence first. Lighter PASS may infer compatibility upward; performance never propagates.' }),
         ]),
         h('span', { className: 'subtle', text: text(configurationMatrix.configuration_id) }),
       ]),
       h('div', { className: 'subtle', text:
-        configurationMatrix.hardware_ceiling_status === 'ordering_contract_unresolved'
-          ? 'Hardware ceiling inference is disabled until canonical lighter/heavier ordering is defined.'
-          : 'Hardware ceiling enabled.'
+        configurationMatrix.hardware_ceiling_status === 'ready'
+          ? 'Hardware ceiling enabled · lighter configurations: ' + String((configurationMatrix.lighter_configuration_ids ?? []).length)
+          : 'Hardware ceiling inference disabled: canonical ordering evidence is incomplete.'
       }),
       (configurationMatrix.cells ?? []).length
         ? configurationComparison(configurationMatrix)

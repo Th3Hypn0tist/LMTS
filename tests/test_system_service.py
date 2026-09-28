@@ -22,6 +22,7 @@ def test_run_provenance_does_not_require_local_database() -> None:
         'schema_version': 7,
         'identity': {'cpu': {'model_name': 'Test CPU'}},
         'profile': {'cpu': {'model_name': 'Test CPU'}},
+        'hardware_order': {'schema_version': 1, 'status': 'incomplete', 'missing': ['cpu.reference']},
     })
     service = SystemService(None, profile)
 
@@ -38,6 +39,7 @@ def test_local_persistence_still_requires_repository() -> None:
         'schema_version': 7,
         'identity': {'cpu': {'model_name': 'Test CPU'}},
         'profile': {'cpu': {'model_name': 'Test CPU'}},
+        'hardware_order': {'schema_version': 1, 'status': 'incomplete', 'missing': ['cpu.reference']},
     })
     service = SystemService(None, profile)
 

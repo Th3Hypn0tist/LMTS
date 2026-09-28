@@ -63,3 +63,19 @@ def test_zero_variance_threshold_requires_consistent_passes() -> None:
     assert stable_fail.status == 'fail'
     assert stable_fail.variance == 0.0
     assert stable_fail.accepts(0.0) is False
+
+
+def test_memory_fit_does_not_sum_ram_and_vram() -> None:
+    profile = {
+        'memory': {'total_bytes': 16 * 1024 ** 3},
+        'gpu': [{'vram_bytes': 12 * 1024 ** 3}],
+    }
+    fit = assess_candidate_fit(
+        _candidate(20),
+        profile,
+        free_disk_bytes=500 * 1024 ** 3,
+    )
+
+    assert fit.status == 'too_large'
+    assert fit.usable_memory_bytes == int(16 * 1024 ** 3 * 0.85)
+    assert 'conservative profiled memory ceiling' in fit.reason

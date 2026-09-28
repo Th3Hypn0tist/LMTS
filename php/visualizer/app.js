@@ -30,6 +30,40 @@ function median(values) {
     : (numeric[middle - 1] + numeric[middle]) / 2;
 }
 
+function average(values) {
+  const numeric = (values ?? [])
+    .map(value => Number(value))
+    .filter(value => Number.isFinite(value));
+  if (!numeric.length) return null;
+  return numeric.reduce((sum, value) => sum + value, 0) / numeric.length;
+}
+
+function aggregate(values, mode) {
+  return mode === 'avg' ? average(values) : median(values);
+}
+
+function level2ViewState() {
+  const params = new URLSearchParams(location.search);
+  const metric = ['total_time', 'ttft', 'pf_score'].includes(params.get('l2_metric'))
+    ? params.get('l2_metric')
+    : 'total_time';
+  const aggregation = ['avg', 'med'].includes(params.get('l2_agg'))
+    ? params.get('l2_agg')
+    : 'med';
+  const axes = ['model_test', 'test_model'].includes(params.get('l2_axes'))
+    ? params.get('l2_axes')
+    : 'model_test';
+  return { metric, aggregation, axes };
+}
+
+function updateLevel2View(next) {
+  const params = new URLSearchParams(location.search);
+  params.set('l2_metric', next.metric);
+  params.set('l2_agg', next.aggregation);
+  params.set('l2_axes', next.axes);
+  load(params);
+}
+
 function targetLabel(record) {
   if (record.target_label) return record.target_label;
   const id = record.target_id ? ' · ' + record.target_id : '';
@@ -120,7 +154,7 @@ function summaryCard(label, value) {
   ]);
 }
 
-function configurationComparison(matrix) {
+function configurationComparison(matrix, view) {
   const cells = matrix?.cells ?? [];
   const targets = new Map();
   const tests = new Map();
@@ -136,16 +170,43 @@ function configurationComparison(matrix) {
 
   const targetEntries = [...targets.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }));
   const testEntries = [...tests.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }));
+  const rowEntries = view.axes === 'test_model' ? testEntries : targetEntries;
+  const columnEntries = view.axes === 'test_model' ? targetEntries : testEntries;
   const table = h('table', { className: 'matrix' });
-  const head = h('tr', {}, [h('th', { text: 'Model / test' })]);
-  for (const [, label] of testEntries) head.append(h('th', { text: label }));
+  const head = h('tr', {}, [h('th', { text: view.axes === 'test_model' ? 'Test / model' : 'Model / test' })]);
+  for (const [, label] of columnEntries) head.append(h('th', { text: label }));
   table.append(h('thead', {}, [head]));
 
+  function cellFor(rowKey, columnKey) {
+    return view.axes === 'test_model'
+      ? index.get(columnKey + '\u0001' + rowKey)
+      : index.get(rowKey + '\u0001' + columnKey);
+  }
+
+  function metricValue(cell) {
+    if (text(cell.evidence_scope, 'unknown') === 'inferred_lighter_pass') return null;
+    if (cell.performance_scope !== 'exact' && view.metric !== 'pf_score') return null;
+    if (view.metric === 'pf_score') {
+      return cell.pf_score == null ? null : Number(cell.pf_score);
+    }
+    const samples = view.metric === 'ttft'
+      ? cell.ttft_samples_ms
+      : cell.total_time_samples_ms;
+    return aggregate(samples, view.aggregation);
+  }
+
+  function metricLabel(cell) {
+    const value = metricValue(cell);
+    if (value == null || !Number.isFinite(value)) return 'NaN';
+    if (view.metric === 'pf_score') return number(value);
+    return number(value) + ' ms';
+  }
+
   const body = h('tbody');
-  for (const [targetKey, targetLabelValue] of targetEntries) {
-    const row = h('tr', {}, [h('th', { className: 'row-label', text: targetLabelValue })]);
-    for (const [testKey] of testEntries) {
-      const cell = index.get(targetKey + '\u0001' + testKey);
+  for (const [rowKey, rowLabel] of rowEntries) {
+    const row = h('tr', {}, [h('th', { className: 'row-label', text: rowLabel })]);
+    for (const [columnKey] of columnEntries) {
+      const cell = cellFor(rowKey, columnKey);
       if (!cell) {
         row.append(h('td', { className: 'matrix-empty', text: 'NaN' }));
         continue;
@@ -165,15 +226,13 @@ function configurationComparison(matrix) {
       }
 
       const inferred = scope === 'inferred_lighter_pass';
-      const med = inferred ? null : median(cell.total_time_samples_ms);
-      const performance = inferred ? 'NaN' : (med == null ? 'NaN' : number(med) + ' ms');
       const evidence = inferred
         ? 'inferred PASS from lighter configuration'
         : 'exact evidence';
 
       row.append(h('td', {}, [
         h('div', { className: 'matrix-cell matrix-cell-' + compatibility }, [
-          h('strong', { text: performance }),
+          h('strong', { text: metricLabel(cell) }),
           h('span', { className: 'matrix-runs', text:
             inferred
               ? 'PASS · performance unavailable'
@@ -262,6 +321,10 @@ function renderFilters(filters) {
     event.preventDefault();
     const data = new FormData(form);
     const params = new URLSearchParams();
+    for (const key of ['configuration_id', 'l2_metric', 'l2_agg', 'l2_axes']) {
+      const value = new URLSearchParams(location.search).get(key);
+      if (value) params.set(key, value);
+    }
     for (const [key, raw] of data.entries()) {
       const value = String(raw).trim();
       if (!value) continue;
@@ -423,6 +486,7 @@ function render(payload) {
   const summary = payload.summary ?? {};
   const configurationOverview = payload.configuration_overview ?? [];
   const configurationMatrix = payload.configuration_matrix ?? {};
+  const level2View = level2ViewState();
   const matrix = payload.matrix ?? [];
   const records = payload.records ?? [];
   const series = numericSeries(payload.telemetry);
@@ -452,13 +516,34 @@ function render(payload) {
         ]),
         h('span', { className: 'subtle', text: text(configurationMatrix.configuration_id) }),
       ]),
+      h('div', { className: 'filters' }, [
+        gui.field('Metric', gui.select({
+          on: { change: event => updateLevel2View({ ...level2View, metric: event.target.value }) },
+        }, [
+          option('total_time', 'Total time', level2View.metric),
+          option('ttft', 'TTFT', level2View.metric),
+          option('pf_score', 'P/F score', level2View.metric),
+        ]), { className: 'filter-field compact' }),
+        gui.field('Aggregation', gui.select({
+          on: { change: event => updateLevel2View({ ...level2View, aggregation: event.target.value }) },
+        }, [
+          option('med', 'Med', level2View.aggregation),
+          option('avg', 'Avg', level2View.aggregation),
+        ]), { className: 'filter-field compact' }),
+        gui.field('Axes', gui.select({
+          on: { change: event => updateLevel2View({ ...level2View, axes: event.target.value }) },
+        }, [
+          option('model_test', 'Models × tests', level2View.axes),
+          option('test_model', 'Tests × models', level2View.axes),
+        ]), { className: 'filter-field compact' }),
+      ]),
       h('div', { className: 'subtle', text:
         configurationMatrix.hardware_ceiling_status === 'ready'
           ? 'Hardware ceiling enabled · lighter configurations: ' + String((configurationMatrix.lighter_configuration_ids ?? []).length)
           : 'Hardware ceiling inference disabled: canonical ordering evidence is incomplete.'
       }),
       (configurationMatrix.cells ?? []).length
-        ? configurationComparison(configurationMatrix)
+        ? configurationComparison(configurationMatrix, level2View)
         : h('p', { className: 'empty', text: 'No exact model/test evidence exists for this configuration.' }),
     ]) : null,
     h('section', { className: 'panel' }, [

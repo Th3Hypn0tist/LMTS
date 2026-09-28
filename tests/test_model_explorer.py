@@ -5,6 +5,7 @@ from lmts.core.model_explorer import (
     assess_candidate_fit,
     qualification_aggregate,
 )
+from lmts.services.model_explorer import ModelExplorerService
 
 
 def _candidate(size_gb: int) -> ModelCandidate:
@@ -79,3 +80,35 @@ def test_memory_fit_does_not_sum_ram_and_vram() -> None:
     assert fit.status == 'too_large'
     assert fit.usable_memory_bytes == int(16 * 1024 ** 3 * 0.85)
     assert 'conservative profiled memory ceiling' in fit.reason
+
+
+class _LifecycleExecutor:
+    def __init__(self, *, stays_loaded: bool = False) -> None:
+        self.loaded = True
+        self.stays_loaded = stays_loaded
+
+    def unload(self) -> None:
+        if not self.stays_loaded:
+            self.loaded = False
+
+    def is_loaded(self) -> bool:
+        return self.loaded
+
+
+def test_explorer_requires_verified_candidate_unload() -> None:
+    executor = _LifecycleExecutor()
+
+    ModelExplorerService._unload_verified(executor)
+
+    assert executor.loaded is False
+
+
+def test_explorer_rejects_candidate_that_remains_loaded() -> None:
+    executor = _LifecycleExecutor(stays_loaded=True)
+
+    try:
+        ModelExplorerService._unload_verified(executor)
+    except RuntimeError as exc:
+        assert 'remained loaded after unload' in str(exc)
+    else:
+        raise AssertionError('candidate cleanup accepted a still-loaded model')

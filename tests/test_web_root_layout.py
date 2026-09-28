@@ -21,7 +21,8 @@ def test_php_package_is_directly_copyable() -> None:
     assert 'visualizer/app.js' in files
     assert 'visualizer/api/stats.php' in files
     assert 'visualizer/api/report.php' in files
-    assert 'storage/report.php' in files
+    assert 'report.php' in files
+    assert 'upload.php' in files
     assert 'storage/lib/report_contract.php' in files
 
 

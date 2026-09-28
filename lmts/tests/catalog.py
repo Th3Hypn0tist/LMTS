@@ -169,7 +169,7 @@ def default_test_type_registry() -> TestTypeRegistry:
             title="Cold and warm inference",
             description="Measure first-call behavior separately from repeated warm inference.",
             minimum_level=_minimum_level("performance.cold_warm"),
-            requirements=TestRequirements(text_generation=True),
+            requirements=TestRequirements(text_generation=True, subject_kinds=("model",)),
             parameters=(
                 TestParameter(name="prompt", label="Prompt", kind="text", required=True, default="Reply exactly PERF_OK", multiline=True),
                 TestParameter(name="warm_repeats", label="Warm repeats", kind="integer", required=True, default=5, minimum=1, maximum=100),

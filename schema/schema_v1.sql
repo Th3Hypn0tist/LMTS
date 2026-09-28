@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS LMTS_hardware_nodes (
     resolution_type    VARCHAR(32) NOT NULL DEFAULT 'exact',
     identity_json      LONGTEXT NOT NULL,
     profile_json       LONGTEXT NOT NULL,
+    order_status       VARCHAR(32) NOT NULL DEFAULT 'incomplete',
+    order_json         LONGTEXT NOT NULL,
     created_at         DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     deprecated_at      DATETIME(6) NULL,
     replacement_id     VARCHAR(128) NULL,
@@ -70,8 +72,11 @@ CREATE TABLE IF NOT EXISTS LMTS_hardware_configurations (
     updated_at         DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     PRIMARY KEY (configuration_id),
     UNIQUE KEY uq_hardware_configurations_fingerprint (fingerprint),
+    KEY idx_hardware_configurations_order_status (order_status),
+    CONSTRAINT chk_hardware_configurations_order_status CHECK (order_status IN ('complete','incomplete')),
     CONSTRAINT chk_hardware_configurations_identity CHECK (JSON_VALID(identity_json)),
-    CONSTRAINT chk_hardware_configurations_profile CHECK (JSON_VALID(profile_json))
+    CONSTRAINT chk_hardware_configurations_profile CHECK (JSON_VALID(profile_json)),
+    CONSTRAINT chk_hardware_configurations_order CHECK (JSON_VALID(order_json))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS LMTS_hardware_aliases (

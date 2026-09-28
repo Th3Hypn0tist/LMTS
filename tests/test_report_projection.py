@@ -162,8 +162,8 @@ def test_projection_writes_test_record_and_telemetry(monkeypatch) -> None:
     assert '6f6c6c616d612d6c6f63616c3a6d6f64656c' in query
     assert 'INSERT INTO LMTS_variance_samples' in query
     assert 'INSERT INTO LMTS_telemetry_values' in query
-    assert 'input_tokens' in query
-    assert 'gpu_memory_used_mib' in query
+    assert '696e7075745f746f6b656e73' in query
+    assert '6770755f6d656d6f72795f757365645f6d6962' in query
     assert 'usr_test' not in query
     assert '7573725f74657374' in query
     assert query.strip().endswith('COMMIT')

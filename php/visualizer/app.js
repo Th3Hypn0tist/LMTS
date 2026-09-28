@@ -82,6 +82,111 @@ function updateLevel3View(next) {
   load(params);
 }
 
+function evidenceValue(sample) {
+  if (sample.value_number != null && sample.value_number !== '') return number(sample.value_number);
+  if (sample.value_boolean != null && sample.value_boolean !== '') return String(Boolean(Number(sample.value_boolean)));
+  if (sample.value_text != null && sample.value_text !== '') return String(sample.value_text);
+  if (sample.value_json != null && sample.value_json !== '') return String(sample.value_json);
+  return '-';
+}
+
+function evidenceTable(headers, rows) {
+  const table = h('table', { className: 'results-table evidence-table' });
+  table.append(h('thead', {}, [h('tr', {}, headers.map(label => h('th', { text: label }))) ]));
+  const body = h('tbody');
+  for (const row of rows) body.append(h('tr', {}, row.map(value => h('td', {}, Array.isArray(value) ? value : [value]))));
+  table.append(body);
+  return h('div', { className: 'scroll' }, [table]);
+}
+
+function openEvidenceModal(cell, payload) {
+  const sourceIds = cell.source_configuration_ids ?? [cell.configuration_id];
+  const records = (payload.records ?? []).filter(record =>
+    record.target_ref === cell.target_ref
+    && record.test_version_id === cell.test_version_id
+    && sourceIds.includes(record.configuration_id)
+  );
+  const recordKeys = new Set(records.map(record => record.report_id + '\u0000' + record.record_id));
+  const telemetry = (payload.telemetry ?? []).filter(sample =>
+    recordKeys.has(sample.report_id + '\u0000' + sample.record_id)
+  );
+  const variance = (payload.variance ?? []).filter(sample =>
+    sample.target_ref === cell.target_ref
+    && sample.test_version_id === cell.test_version_id
+    && sourceIds.includes(sample.configuration_id)
+  );
+
+  const overlay = h('div', { className: 'evidence-overlay' });
+  const close = () => overlay.remove();
+  const runRows = records.map(run => [
+    h('a', {
+      href: './api/report.php?id=' + encodeURIComponent(run.report_id),
+      target: '_blank',
+      rel: 'noopener',
+      text: run.report_id,
+      title: 'Open immutable report evidence',
+    }),
+    text(run.record_id),
+    text(run.configuration_label || run.configuration_id),
+    outcomeLabel(run.outcome),
+    number(run.total_time_ms),
+    number(run.ttft_ms),
+    number(run.score_percent),
+    text(run.started_at),
+  ]);
+  const varianceRows = variance.map(sample => [
+    text(sample.configuration_id),
+    text(sample.status),
+    number(sample.pass_count, 0),
+    number(sample.fail_count, 0),
+    number(sample.sample_count, 0),
+    number(sample.pf_score),
+    number(sample.variance),
+  ]);
+  const telemetryRows = telemetry.map(sample => [
+    text(sample.report_id),
+    text(sample.record_id),
+    text(sample.telemetry_name || sample.canonical_key),
+    evidenceValue(sample),
+    text(sample.unit, ''),
+    number(sample.sample_ordinal, 0),
+    text(sample.observed_at),
+  ]);
+
+  const dialog = h('section', { className: 'evidence-modal', role: 'dialog', 'aria-modal': 'true' }, [
+    h('div', { className: 'section-title' }, [
+      h('div', {}, [
+        h('h2', { text: 'Raw evidence' }),
+        h('div', { className: 'subtle', text: text(cell.target_label || cell.target_ref) + ' · ' + text(cell.test_label || cell.test_version_id) }),
+      ]),
+      gui.button('Close', { className: 'filter-action secondary', on: { click: close } }),
+    ]),
+    h('div', { className: 'evidence-meta' }, [
+      h('span', { text: 'Requested configuration: ' + text(cell.configuration_id) }),
+      h('span', { text: 'Evidence scope: ' + text(cell.evidence_scope, 'exact') }),
+      h('span', { text: 'Source configurations: ' + sourceIds.join(', ') }),
+      h('span', { text: 'Matrix state: ' + (location.search || '(default)') }),
+    ]),
+    cell.evidence_scope === 'inferred_lighter_pass'
+      ? h('p', { className: 'panel-note', text: 'Compatibility is inferred from lighter PASS evidence. No performance value is attributed to the requested configuration.' })
+      : null,
+    h('h3', { text: 'Runs in current statistics payload' }),
+    runRows.length
+      ? evidenceTable(['Report', 'Record', 'Configuration', 'Outcome', 'Total ms', 'TTFT ms', 'Score', 'Started'], runRows)
+      : h('p', { className: 'empty', text: 'No source run rows are present in the current statistics payload.' }),
+    h('h3', { text: 'Canonical PASS / FAIL aggregate' }),
+    varianceRows.length
+      ? evidenceTable(['Configuration', 'Status', 'Pass', 'Fail', 'N', 'P/F', 'Variance'], varianceRows)
+      : h('p', { className: 'empty', text: 'No variance aggregate is present for this source cell.' }),
+    h('h3', { text: 'Telemetry samples in current statistics payload' }),
+    telemetryRows.length
+      ? evidenceTable(['Report', 'Record', 'Metric', 'Value', 'Unit', 'Ordinal', 'Observed'], telemetryRows)
+      : h('p', { className: 'empty', text: 'No telemetry samples are present for the visible source runs.' }),
+  ].filter(Boolean));
+  overlay.append(dialog);
+  document.body.append(overlay);
+}
+
 function targetLabel(record) {
   if (record.target_label) return record.target_label;
   const id = record.target_id ? ' · ' + record.target_id : '';
@@ -172,7 +277,7 @@ function summaryCard(label, value) {
   ]);
 }
 
-function configurationComparison(matrix, view) {
+function configurationComparison(matrix, view, payload) {
   const cells = matrix?.cells ?? [];
   const targets = new Map();
   const tests = new Map();
@@ -249,7 +354,11 @@ function configurationComparison(matrix, view) {
         : 'exact evidence';
 
       row.append(h('td', {}, [
-        h('div', { className: 'matrix-cell matrix-cell-' + compatibility }, [
+        h('button', {
+          className: 'matrix-cell matrix-cell-action matrix-cell-' + compatibility,
+          on: { click: () => openEvidenceModal(cell, payload) },
+          title: 'Open raw evidence',
+        }, [
           h('strong', { text: metricLabel(cell) }),
           h('span', { className: 'matrix-runs', text:
             inferred
@@ -266,7 +375,7 @@ function configurationComparison(matrix, view) {
   return h('div', { className: 'scroll' }, [table]);
 }
 
-function modelDrilldownTable(drilldown, view) {
+function modelDrilldownTable(drilldown, view, payload) {
   const cells = drilldown?.cells ?? [];
   const tests = new Map();
   const configurations = new Map();
@@ -325,7 +434,11 @@ function modelDrilldownTable(drilldown, view) {
         ? 'NaN'
         : number(value) + (unit ? ' ' + unit : '');
       row.append(h('td', {}, [
-        h('div', { className: 'matrix-cell matrix-cell-' + text(cell.compatibility_status, 'unknown') }, [
+        h('button', {
+          className: 'matrix-cell matrix-cell-action matrix-cell-' + text(cell.compatibility_status, 'unknown'),
+          on: { click: () => openEvidenceModal({ ...cell, evidence_scope: 'exact', source_configuration_ids: [cell.configuration_id] }, payload) },
+          title: 'Open raw evidence',
+        }, [
           h('strong', { text: label }),
           h('span', { className: 'matrix-runs', text: 'P/F ' + number(cell.pf_score) + ' · N=' + number(cell.sample_count, 0) }),
           h('span', { className: 'subtle', text: 'exact configuration evidence' }),
@@ -635,7 +748,7 @@ function render(payload) {
           : 'Hardware ceiling inference disabled: canonical ordering evidence is incomplete.'
       }),
       (configurationMatrix.cells ?? []).length
-        ? configurationComparison(configurationMatrix, level2View)
+        ? configurationComparison(configurationMatrix, level2View, payload)
         : h('p', { className: 'empty', text: 'No exact model/test evidence exists for this configuration.' }),
     ]) : null,
     modelDrilldown.target_ref ? h('section', { className: 'panel' }, [
@@ -658,7 +771,7 @@ function render(payload) {
         ]), { className: 'filter-field compact' }),
       ]),
       (modelDrilldown.cells ?? []).length
-        ? modelDrilldownTable(modelDrilldown, level3View)
+        ? modelDrilldownTable(modelDrilldown, level3View, payload)
         : h('p', { className: 'empty', text: 'No exact hardware evidence exists for this model.' }),
     ]) : null,
     h('section', { className: 'panel' }, [

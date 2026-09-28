@@ -73,7 +73,7 @@ def test_mysql_report_writer_uses_insert_only(monkeypatch) -> None:
     assert report_id == 'report-1'
     assert captured['mysql'] == _mysql()
     report_insert = captured['queries'][0]
-    assert 'INSERT INTO reports' in report_insert
+    assert 'INSERT INTO LMTS_reports' in report_insert
     assert 'UPDATE' not in report_insert.upper()
     assert 'DELETE' not in report_insert.upper()
 

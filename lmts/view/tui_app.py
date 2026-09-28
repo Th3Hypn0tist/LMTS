@@ -94,6 +94,16 @@ class TUIApplication:
             raise ValueError('persisted selected_target_ids must be an array of strings')
         self.state.controller.select_target_ids(set(raw_targets))
 
+        explorer_threshold = payload.get('model_explorer_variance_threshold')
+        if explorer_threshold is not None:
+            if isinstance(explorer_threshold, bool) or not isinstance(explorer_threshold, (int, float)):
+                raise ValueError('persisted Model Explorer variance threshold must be numeric')
+            explorer_threshold = float(explorer_threshold)
+            if not 0.0 <= explorer_threshold <= 0.25:
+                raise ValueError('persisted Model Explorer variance threshold must be between 0 and 0.25')
+            if self.state.model_explorer_page is not None:
+                self.state.model_explorer_page.variance_threshold = explorer_threshold
+
         active_tab = str(payload.get('active_tab') or 'benchmark').strip()
         TAB_REGISTRY.get(active_tab)
         self.state.active_tab = active_tab
@@ -172,6 +182,14 @@ class TUIApplication:
             self.state.cw_bench_page.run(host)
             self.state.events.publish('ui.message', controller.state.message, source='cw_bench')
 
+        def set_explorer_variance(_stdscr) -> None:
+            if self.state.model_explorer_page is None:
+                return
+            before = self.state.model_explorer_page.variance_threshold
+            self.state.model_explorer_page.set_variance_threshold(host, stdscr)
+            if self.state.model_explorer_page.variance_threshold != before:
+                navigation.persist_ui_state()
+
         def show_help(_stdscr) -> None:
             host.text_viewer(
                 stdscr,
@@ -193,7 +211,7 @@ class TUIApplication:
             'tab.downloader': lambda _: navigation.open_tab('downloader'),
             'downloader.module': lambda _: self.state.model_explorer_page.choose_module(host, stdscr),
             'downloader.catalog': lambda _: self.state.model_explorer_page.explore_catalog(host, stdscr),
-            'downloader.variance': lambda _: self.state.model_explorer_page.set_variance_threshold(host, stdscr),
+            'downloader.variance': set_explorer_variance,
             'downloader.download': lambda _: self.state.model_explorer_page.enqueue(host, stdscr),
             'downloader.delete': lambda _: self.state.model_explorer_page.delete(host, stdscr),
             'downloader.progress': lambda _: self.state.model_explorer_page.show_progress(host, stdscr),

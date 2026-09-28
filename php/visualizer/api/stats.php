@@ -28,7 +28,7 @@ function stats_time(?string $value): ?string {
     }
 }
 
-function stats_scope(): array {
+function stats_scope(bool $includeConfiguration = true): array {
     $conditions = [];
     $params = [];
 
@@ -48,7 +48,7 @@ function stats_scope(): array {
     }
 
     $configurationId = stats_param('configuration_id');
-    if ($configurationId !== null) {
+    if ($includeConfiguration && $configurationId !== null) {
         $conditions[] = 'rri.system_id IN (
             SELECT system_id
             FROM LMTS_systems
@@ -102,6 +102,108 @@ function stats_query(PDO $pdo, string $sql, array $params = []): PDOStatement {
 function stats_iso(?string $value): ?string {
     if ($value === null || $value === '') return null;
     return (new DateTimeImmutable($value, new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z');
+}
+
+function stats_add_condition(string $where, string $condition): string {
+    return $where === '' ? 'WHERE ' . $condition : $where . ' AND ' . $condition;
+}
+
+function stats_positive_number(mixed $value): ?float {
+    if (!is_int($value) && !is_float($value)) return null;
+    $number = (float)$value;
+    return $number > 0 ? $number : null;
+}
+
+function stats_gpu_device_dominates(array $higher, array $lower): array {
+    $highVram = stats_positive_number($higher['vram_bytes'] ?? null);
+    $lowVram = stats_positive_number($lower['vram_bytes'] ?? null);
+    if ($highVram === null || $lowVram === null || $highVram < $lowVram) {
+        return [false, false];
+    }
+    $strict = $highVram > $lowVram;
+    $required = [
+        'lmts.reference.gpu.d2d',
+        'lmts.reference.gpu.h2d_pinned',
+        'lmts.reference.gpu.d2h_pinned',
+        'lmts.reference.gpu.fma_fp32',
+    ];
+    $highMetrics = isset($higher['metrics']) && is_array($higher['metrics']) ? $higher['metrics'] : [];
+    $lowMetrics = isset($lower['metrics']) && is_array($lower['metrics']) ? $lower['metrics'] : [];
+    foreach ($required as $metric) {
+        $high = stats_positive_number($highMetrics[$metric] ?? null);
+        $low = stats_positive_number($lowMetrics[$metric] ?? null);
+        if ($high === null || $low === null || $high < $low) {
+            return [false, false];
+        }
+        $strict = $strict || $high > $low;
+    }
+    return [true, $strict];
+}
+
+function stats_match_gpu_devices(array $higher, array $lower): array {
+    if (count($higher) < count($lower)) return [false, false];
+    $used = [];
+
+    $search = function(int $position, bool $strictSoFar) use (&$search, &$used, $higher, $lower): array {
+        if ($position >= count($lower)) {
+            return [true, $strictSoFar || count($higher) > count($lower)];
+        }
+        $low = $lower[$position];
+        if (!is_array($low)) return [false, false];
+        foreach ($higher as $index => $high) {
+            if (isset($used[$index]) || !is_array($high)) continue;
+            [$dominates, $strict] = stats_gpu_device_dominates($high, $low);
+            if (!$dominates) continue;
+            $used[$index] = true;
+            [$ok, $finalStrict] = $search($position + 1, $strictSoFar || $strict);
+            unset($used[$index]);
+            if ($ok) return [true, $finalStrict];
+        }
+        return [false, false];
+    };
+
+    return $search(0, false);
+}
+
+function stats_hardware_order_relation(array $lower, array $higher): array {
+    if (($lower['schema_version'] ?? null) !== 1 || ($higher['schema_version'] ?? null) !== 1) {
+        return ['comparable' => false, 'lower_or_equal' => false, 'strict' => false];
+    }
+    if (($lower['status'] ?? null) !== 'complete' || ($higher['status'] ?? null) !== 'complete') {
+        return ['comparable' => false, 'lower_or_equal' => false, 'strict' => false];
+    }
+    if (($lower['architecture'] ?? null) !== ($higher['architecture'] ?? null)) {
+        return ['comparable' => false, 'lower_or_equal' => false, 'strict' => false];
+    }
+
+    $lowAxes = isset($lower['scalar_axes']) && is_array($lower['scalar_axes']) ? $lower['scalar_axes'] : [];
+    $highAxes = isset($higher['scalar_axes']) && is_array($higher['scalar_axes']) ? $higher['scalar_axes'] : [];
+    $keys = array_values(array_unique(array_merge(array_keys($lowAxes), array_keys($highAxes))));
+    sort($keys, SORT_STRING);
+    $strict = false;
+    foreach ($keys as $key) {
+        $low = stats_positive_number($lowAxes[$key] ?? null);
+        $high = stats_positive_number($highAxes[$key] ?? null);
+        if ($low === null || $high === null) {
+            return ['comparable' => false, 'lower_or_equal' => false, 'strict' => false];
+        }
+        if ($high < $low) {
+            return ['comparable' => true, 'lower_or_equal' => false, 'strict' => false];
+        }
+        $strict = $strict || $high > $low;
+    }
+
+    $lowGpu = isset($lower['gpu_devices']) && is_array($lower['gpu_devices']) ? $lower['gpu_devices'] : [];
+    $highGpu = isset($higher['gpu_devices']) && is_array($higher['gpu_devices']) ? $higher['gpu_devices'] : [];
+    [$gpuOk, $gpuStrict] = stats_match_gpu_devices($highGpu, $lowGpu);
+    if (!$gpuOk) {
+        return ['comparable' => true, 'lower_or_equal' => false, 'strict' => false];
+    }
+    return [
+        'comparable' => true,
+        'lower_or_equal' => true,
+        'strict' => $strict || $gpuStrict,
+    ];
 }
 
 try {
@@ -256,8 +358,55 @@ try {
     $matrix = stats_query($pdo, $matrixSql, $params)->fetchAll();
 
     $configurationMatrix = [];
+    $lighterConfigurationIds = [];
+    $ignoredIncompleteConfigurationIds = [];
+    $hardwareCeilingStatus = null;
     $selectedConfigurationId = stats_param('configuration_id');
     if ($selectedConfigurationId !== null) {
+        $configurationRows = $pdo->query(
+            "SELECT configuration_id, order_status, order_json
+             FROM LMTS_hardware_configurations
+             ORDER BY configuration_id"
+        )->fetchAll();
+        $configurationOrders = [];
+        foreach ($configurationRows as $configurationRow) {
+            $configurationId = (string)$configurationRow['configuration_id'];
+            $order = json_decode((string)$configurationRow['order_json'], true, 512, JSON_THROW_ON_ERROR);
+            if (!is_array($order)) {
+                throw new RuntimeException('invalid hardware order payload: ' . $configurationId);
+            }
+            $configurationOrders[$configurationId] = $order;
+            if (($configurationRow['order_status'] ?? null) !== 'complete') {
+                $ignoredIncompleteConfigurationIds[] = $configurationId;
+            }
+        }
+        if (!array_key_exists($selectedConfigurationId, $configurationOrders)) {
+            stats_fail(400, 'unknown configuration_id');
+        }
+
+        $selectedOrder = $configurationOrders[$selectedConfigurationId];
+        if (($selectedOrder['status'] ?? null) !== 'complete') {
+            $hardwareCeilingStatus = 'ordering_evidence_incomplete';
+        } else {
+            foreach ($configurationOrders as $candidateId => $candidateOrder) {
+                if ($candidateId === $selectedConfigurationId || ($candidateOrder['status'] ?? null) !== 'complete') {
+                    continue;
+                }
+                $relation = stats_hardware_order_relation($candidateOrder, $selectedOrder);
+                if ($relation['comparable'] && $relation['lower_or_equal'] && $relation['strict']) {
+                    $lighterConfigurationIds[] = $candidateId;
+                }
+            }
+            sort($lighterConfigurationIds, SORT_STRING);
+            $hardwareCeilingStatus = 'ready';
+        }
+
+        [$level2Where, $level2Params] = stats_scope(false);
+        $level2Where = stats_add_condition($level2Where, 's.configuration_id = ?');
+        $level2Where = stats_add_condition($level2Where, "rri.target_kind = 'model'");
+        $level2Where = stats_add_condition($level2Where, "rri.outcome IN ('pass','fail')");
+        $level2Params[] = $selectedConfigurationId;
+
         $configurationMatrixSql = "SELECT
             s.configuration_id,
             rri.target_kind,
@@ -276,17 +425,17 @@ try {
          JOIN LMTS_systems s ON s.system_id = rri.system_id
          LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
          LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
-         WHERE s.configuration_id = ?
-           AND rri.target_kind = 'model'
-           AND rri.outcome IN ('pass','fail')
+         $level2Where
          GROUP BY s.configuration_id, rri.target_kind, rri.target_ref,
                   rri.test_version_id, td.name, td.namespace, tv.version
          ORDER BY target_label, test_label";
         $configurationMatrix = stats_query(
             $pdo,
             $configurationMatrixSql,
-            [$selectedConfigurationId],
+            $level2Params,
         )->fetchAll();
+
+        $cellIndex = [];
         foreach ($configurationMatrix as &$configurationCell) {
             $rawSamples = $configurationCell['total_time_samples_json'] ?? '[]';
             $decodedSamples = json_decode((string)$rawSamples, true);
@@ -298,8 +447,78 @@ try {
                 : [];
             unset($configurationCell['total_time_samples_json']);
             $configurationCell['evidence_scope'] = 'exact';
+            $configurationCell['compatibility_status'] =
+                ((int)($configurationCell['pass_count'] ?? 0)) > 0 ? 'pass' : 'fail';
+            $configurationCell['source_configuration_ids'] = [$selectedConfigurationId];
+            $configurationCell['performance_scope'] = 'exact';
+            $key = (string)$configurationCell['target_ref'] . "\0" . (string)$configurationCell['test_version_id'];
+            $cellIndex[$key] = true;
         }
         unset($configurationCell);
+
+        if ($hardwareCeilingStatus === 'ready' && $lighterConfigurationIds !== []) {
+            [$lighterWhere, $lighterParams] = stats_scope(false);
+            $placeholders = implode(',', array_fill(0, count($lighterConfigurationIds), '?'));
+            $lighterWhere = stats_add_condition($lighterWhere, "s.configuration_id IN ($placeholders)");
+            $lighterWhere = stats_add_condition($lighterWhere, "rri.target_kind = 'model'");
+            $lighterWhere = stats_add_condition($lighterWhere, "rri.outcome IN ('pass','fail')");
+            $lighterParams = array_merge($lighterParams, $lighterConfigurationIds);
+
+            $lighterSql = "SELECT
+                rri.target_kind,
+                rri.target_ref,
+                COALESCE(MAX(rri.target_label), rri.target_ref) AS target_label,
+                rri.test_version_id,
+                CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
+                       CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS test_label,
+                SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END) AS source_pass_count,
+                SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END) AS source_fail_count,
+                GROUP_CONCAT(DISTINCT s.configuration_id ORDER BY s.configuration_id SEPARATOR ',') AS source_configuration_ids_csv
+             FROM LMTS_report_record_index rri
+             JOIN LMTS_reports r ON r.report_id = rri.report_id
+             JOIN LMTS_systems s ON s.system_id = rri.system_id
+             LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
+             LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
+             $lighterWhere
+             GROUP BY rri.target_kind, rri.target_ref, rri.test_version_id,
+                      td.name, td.namespace, tv.version
+             ORDER BY target_label, test_label";
+            $lighterRows = stats_query($pdo, $lighterSql, $lighterParams)->fetchAll();
+
+            foreach ($lighterRows as $lighterRow) {
+                $key = (string)$lighterRow['target_ref'] . "\0" . (string)$lighterRow['test_version_id'];
+                if (isset($cellIndex[$key])) {
+                    continue;
+                }
+                $sourceIds = array_values(array_filter(
+                    explode(',', (string)($lighterRow['source_configuration_ids_csv'] ?? '')),
+                    static fn(string $value): bool => $value !== ''
+                ));
+                $sourcePassCount = (int)($lighterRow['source_pass_count'] ?? 0);
+                $sourceFailCount = (int)($lighterRow['source_fail_count'] ?? 0);
+                $inferredPass = $sourcePassCount > 0;
+                $configurationMatrix[] = [
+                    'configuration_id' => $selectedConfigurationId,
+                    'target_kind' => (string)$lighterRow['target_kind'],
+                    'target_ref' => (string)$lighterRow['target_ref'],
+                    'target_label' => (string)$lighterRow['target_label'],
+                    'test_version_id' => (string)$lighterRow['test_version_id'],
+                    'test_label' => (string)$lighterRow['test_label'],
+                    'sample_count' => null,
+                    'pass_count' => null,
+                    'fail_count' => null,
+                    'pf_score' => null,
+                    'total_time_samples_ms' => [],
+                    'evidence_scope' => $inferredPass ? 'inferred_lighter_pass' : 'lower_fail_only',
+                    'compatibility_status' => $inferredPass ? 'pass' : 'unknown',
+                    'source_configuration_ids' => $sourceIds,
+                    'source_pass_count' => $sourcePassCount,
+                    'source_fail_count' => $sourceFailCount,
+                    'performance_scope' => 'none',
+                ];
+                $cellIndex[$key] = true;
+            }
+        }
     }
 
     $selectedSql = "SELECT rri.report_id, rri.record_id
@@ -470,11 +689,10 @@ try {
         'configuration_overview' => $configurationOverview,
         'configuration_matrix' => [
             'configuration_id' => $selectedConfigurationId,
-            'evidence_scope' => $selectedConfigurationId === null ? null : 'exact',
-            'hardware_ceiling_status' => $selectedConfigurationId === null
-                ? null
-                : 'ordering_contract_unresolved',
-            'lighter_configuration_ids' => [],
+            'evidence_scope' => $selectedConfigurationId === null ? null : 'exact_plus_compatibility',
+            'hardware_ceiling_status' => $hardwareCeilingStatus,
+            'lighter_configuration_ids' => $lighterConfigurationIds,
+            'ignored_incomplete_configuration_ids' => $ignoredIncompleteConfigurationIds,
             'cells' => $configurationMatrix,
         ],
         'matrix' => $matrix,

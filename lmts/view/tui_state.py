@@ -10,7 +10,7 @@ from lmts.services.settings import SettingsService
 from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
 from .projector import LMTSViewProjector
-from .model_downloader_page import ModelDownloaderPage
+from .model_explorer_page import ModelExplorerPage
 
 
 @dataclass(slots=True)
@@ -23,7 +23,7 @@ class TUIState:
     shortcut_overrides: dict[str, tuple[str, ...]]
     shortcuts: Any
     events: UIEventBus
-    model_explorer_page: ModelDownloaderPage | None = None
+    model_explorer_page: ModelExplorerPage | None = None
     active_tab: str = 'benchmark'
     ui_state_scope: str | None = None
     profile_console: list[str] = field(default_factory=list)

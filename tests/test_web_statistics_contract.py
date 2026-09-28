@@ -52,16 +52,21 @@ if __name__ == '__main__':
     unittest.main()
 
 
-def test_level1_configuration_overview_contract_is_canonical_and_unranked() -> None:
+def test_level1_configuration_overview_contract_ranks_exact_pf_then_coverage() -> None:
     assert "'configuration_overview' => $configurationOverview" in STATS_PHP
-    assert "hc.configuration_id" in STATS_PHP
-    assert "hc.label AS configuration_name" in STATS_PHP
-    assert "COUNT(DISTINCT rri.target_ref) AS models_tested_count" in STATS_PHP
-    assert "rri.target_kind = 'model'" in STATS_PHP
-    assert "NULL AS leading_model" in STATS_PHP
-    assert "NULL AS leading_model_pf_score" in STATS_PHP
-    assert "NULL AS leading_model_time_ms" in STATS_PHP
-    assert "'ranking_contract_unresolved' AS ranking_status" in STATS_PHP
+    assert "FROM LMTS_variance_samples vs" in STATS_PHP
+    assert "JOIN LMTS_hardware_configurations hc ON hc.configuration_id = vs.configuration_id" in STATS_PHP
+    assert "s.configuration_id = vs.configuration_id" in STATS_PHP
+    assert "100.0 * SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) / COUNT(*)" in STATS_PHP
+    assert "array_sum($perTestScores) / count($perTestScores)" in STATS_PHP
+    assert "100.0 * $testedCount / $testUniverseCount" in STATS_PHP
+    assert "$right['pf_score'] <=> $left['pf_score']" in STATS_PHP
+    assert "$right['coverage'] <=> $left['coverage']" in STATS_PHP
+    assert "$sameRank ? $previousRank : $index + 1" in STATS_PHP
+    assert "'ranking_status' => 'ranked_exact_pf_coverage'" in STATS_PHP
+    assert "'ranking_contract' => 'exact_hardware:pf_desc:coverage_desc:shared_equal'" in STATS_PHP
+    assert "Exact hardware evidence · P/F ↓ · coverage ↓ · equal values share rank" in APP_JS
+    assert "Shared #1" in APP_JS
 
 
 def test_level2_configuration_matrix_applies_canonical_hardware_ceiling() -> None:

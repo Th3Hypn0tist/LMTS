@@ -41,8 +41,8 @@ def test_projection_projects_system_profile_hardware_and_memory() -> None:
     assert 'LMTS_hardware_configurations' in text
     assert "system_context fingerprint does not match canonical hardware identity" in text
     assert "lmts_projection_project_system_profile($pdo, $systemId, $profile)" in text
-    assert "'memory_type' => $probe['memory_type'] ?? null" in text
-    assert "'ecc' => array_key_exists('ecc', $probe) ? $probe['ecc'] : null" in text
+    assert "capacity_bytes, properties_json" in text
+    assert "lmts_projection_json($memory)" in text
     assert "return;" not in text[
         text.index('function lmts_projection_ensure_system(PDO $pdo, array $record): void'):
         text.index('function lmts_projection_assert_compute_profile')

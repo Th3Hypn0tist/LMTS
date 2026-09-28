@@ -104,3 +104,25 @@ def test_level2_inferred_pass_never_gets_measured_performance() -> None:
     assert "if (text(cell.evidence_scope, 'unknown') === 'inferred_lighter_pass') return null;" in APP_JS
     assert "cell.performance_scope !== 'exact'" in APP_JS
     assert "performance unavailable" in APP_JS
+
+
+def test_level3_model_drilldown_is_tests_by_exact_hardware() -> None:
+    assert "'model_drilldown' => $modelDrilldown" in STATS_PHP
+    assert "$selectedTargetKind === 'model'" in STATS_PHP
+    assert "GROUP BY s.configuration_id, hc.label, hc.order_status, rri.target_ref" in STATS_PHP
+    assert "FROM LMTS_variance_samples vs" in STATS_PHP
+    assert "FROM LMTS_telemetry_values tv" in STATS_PHP
+    assert "function modelDrilldownTable(drilldown, view)" in APP_JS
+    assert "Test / hardware" in APP_JS
+    assert "Axes are fixed." in APP_JS
+
+
+def test_level3_metric_options_include_timing_pf_variance_and_numeric_telemetry() -> None:
+    assert "['value' => 'total_time', 'label' => 'Total time (ms)']" in STATS_PHP
+    assert "['value' => 'ttft', 'label' => 'TTFT (ms)']" in STATS_PHP
+    assert "['value' => 'pf_score', 'label' => 'P/F score']" in STATS_PHP
+    assert "['value' => 'variance', 'label' => 'Variance']" in STATS_PHP
+    assert "'value' => 'telemetry:' . $typeId" in STATS_PHP
+    assert "view.metric.startsWith('telemetry:')" in APP_JS
+    assert "l3_metric" in APP_JS
+    assert "l3_agg" in APP_JS

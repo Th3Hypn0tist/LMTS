@@ -50,3 +50,15 @@ class WebStatisticsContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_level1_configuration_overview_contract_is_canonical_and_unranked() -> None:
+    assert "'configuration_overview' => $configurationOverview" in STATS_PHP
+    assert "hc.configuration_id" in STATS_PHP
+    assert "hc.label AS configuration_name" in STATS_PHP
+    assert "COUNT(DISTINCT rri.target_ref) AS models_tested_count" in STATS_PHP
+    assert "rri.target_kind = 'model'" in STATS_PHP
+    assert "NULL AS leading_model" in STATS_PHP
+    assert "NULL AS leading_model_pf_score" in STATS_PHP
+    assert "NULL AS leading_model_time_ms" in STATS_PHP
+    assert "'ranking_contract_unresolved' AS ranking_status" in STATS_PHP

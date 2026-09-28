@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from lmts.core.settings import MySQLSettings
 from lmts.reporting import REPORT_FORMAT, REPORT_VERSION
-from lmts.tools import mysql_reports, report_publish
+from lmts.tools import mysql_reports, report_projection, report_publish
 from lmts.tools.report_profiles import ReportProfile
 
 
@@ -67,6 +67,7 @@ def test_mysql_report_writer_uses_insert_only(monkeypatch) -> None:
         return ''
 
     monkeypatch.setattr(mysql_reports, '_run', fake_run)
+    monkeypatch.setattr(report_projection, '_run', fake_run)
     report_id = mysql_reports.write_report(_mysql(), _report(), verify=False)
 
     assert report_id == 'report-1'

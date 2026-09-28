@@ -64,6 +64,24 @@ function updateLevel2View(next) {
   load(params);
 }
 
+function level3ViewState(drilldown) {
+  const params = new URLSearchParams(location.search);
+  const available = new Set((drilldown?.metric_options ?? []).map(item => item.value));
+  const requested = params.get('l3_metric');
+  const metric = requested && available.has(requested) ? requested : 'total_time';
+  const aggregation = ['avg', 'med'].includes(params.get('l3_agg'))
+    ? params.get('l3_agg')
+    : 'med';
+  return { metric, aggregation };
+}
+
+function updateLevel3View(next) {
+  const params = new URLSearchParams(location.search);
+  params.set('l3_metric', next.metric);
+  params.set('l3_agg', next.aggregation);
+  load(params);
+}
+
 function targetLabel(record) {
   if (record.target_label) return record.target_label;
   const id = record.target_id ? ' · ' + record.target_id : '';
@@ -248,6 +266,78 @@ function configurationComparison(matrix, view) {
   return h('div', { className: 'scroll' }, [table]);
 }
 
+function modelDrilldownTable(drilldown, view) {
+  const cells = drilldown?.cells ?? [];
+  const tests = new Map();
+  const configurations = new Map();
+  const index = new Map();
+
+  for (const cell of cells) {
+    const testKey = text(cell.test_version_id, 'unresolved');
+    const configKey = text(cell.configuration_id, 'unresolved');
+    if (!tests.has(testKey)) tests.set(testKey, cell.test_label || cell.test_version_id || 'Unresolved test');
+    if (!configurations.has(configKey)) configurations.set(configKey, cell.configuration_label || cell.configuration_id || 'Unresolved configuration');
+    index.set(testKey + '\u0001' + configKey, cell);
+  }
+
+  const testEntries = [...tests.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }));
+  const configEntries = [...configurations.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }));
+  const table = h('table', { className: 'matrix' });
+  const head = h('tr', {}, [h('th', { text: 'Test / hardware' })]);
+  for (const [, label] of configEntries) head.append(h('th', { text: label }));
+  table.append(h('thead', {}, [head]));
+
+  function metricValue(cell) {
+    if (view.metric === 'pf_score') return cell.pf_score == null ? null : Number(cell.pf_score);
+    if (view.metric === 'variance') return cell.variance == null ? null : Number(cell.variance);
+    if (view.metric === 'total_time') return aggregate(cell.total_time_samples_ms, view.aggregation);
+    if (view.metric === 'ttft') return aggregate(cell.ttft_samples_ms, view.aggregation);
+    if (view.metric.startsWith('telemetry:')) {
+      const typeId = view.metric.slice('telemetry:'.length);
+      return aggregate(cell.telemetry?.[typeId]?.samples, view.aggregation);
+    }
+    return null;
+  }
+
+  function metricUnit(cell) {
+    if (view.metric === 'total_time' || view.metric === 'ttft') return 'ms';
+    if (view.metric === 'pf_score') return '';
+    if (view.metric === 'variance') return '';
+    if (view.metric.startsWith('telemetry:')) {
+      const typeId = view.metric.slice('telemetry:'.length);
+      return text(cell.telemetry?.[typeId]?.unit, '');
+    }
+    return '';
+  }
+
+  const body = h('tbody');
+  for (const [testKey, testLabelValue] of testEntries) {
+    const row = h('tr', {}, [h('th', { className: 'row-label', text: testLabelValue })]);
+    for (const [configKey] of configEntries) {
+      const cell = index.get(testKey + '\u0001' + configKey);
+      if (!cell) {
+        row.append(h('td', { className: 'matrix-empty', text: 'NaN' }));
+        continue;
+      }
+      const value = metricValue(cell);
+      const unit = metricUnit(cell);
+      const label = value == null || !Number.isFinite(value)
+        ? 'NaN'
+        : number(value) + (unit ? ' ' + unit : '');
+      row.append(h('td', {}, [
+        h('div', { className: 'matrix-cell matrix-cell-' + text(cell.compatibility_status, 'unknown') }, [
+          h('strong', { text: label }),
+          h('span', { className: 'matrix-runs', text: 'P/F ' + number(cell.pf_score) + ' · N=' + number(cell.sample_count, 0) }),
+          h('span', { className: 'subtle', text: 'exact configuration evidence' }),
+        ]),
+      ]));
+    }
+    body.append(row);
+  }
+  table.append(body);
+  return h('div', { className: 'scroll' }, [table]);
+}
+
 function configurationOverviewTable(rows) {
   const table = h('table', { className: 'results-table' });
   table.append(h('thead', {}, [
@@ -321,7 +411,7 @@ function renderFilters(filters) {
     event.preventDefault();
     const data = new FormData(form);
     const params = new URLSearchParams();
-    for (const key of ['configuration_id', 'l2_metric', 'l2_agg', 'l2_axes']) {
+    for (const key of ['configuration_id', 'l2_metric', 'l2_agg', 'l2_axes', 'l3_metric', 'l3_agg']) {
       const value = new URLSearchParams(location.search).get(key);
       if (value) params.set(key, value);
     }
@@ -487,6 +577,8 @@ function render(payload) {
   const configurationOverview = payload.configuration_overview ?? [];
   const configurationMatrix = payload.configuration_matrix ?? {};
   const level2View = level2ViewState();
+  const modelDrilldown = payload.model_drilldown ?? {};
+  const level3View = level3ViewState(modelDrilldown);
   const matrix = payload.matrix ?? [];
   const records = payload.records ?? [];
   const series = numericSeries(payload.telemetry);
@@ -545,6 +637,29 @@ function render(payload) {
       (configurationMatrix.cells ?? []).length
         ? configurationComparison(configurationMatrix, level2View)
         : h('p', { className: 'empty', text: 'No exact model/test evidence exists for this configuration.' }),
+    ]) : null,
+    modelDrilldown.target_ref ? h('section', { className: 'panel' }, [
+      h('div', { className: 'section-title' }, [
+        h('div', {}, [
+          h('h2', { text: 'Model drilldown' }),
+          h('div', { className: 'subtle', text: 'Level 3. Rows are tests; columns are exact hardware configurations. Axes are fixed.' }),
+        ]),
+        h('span', { className: 'subtle', text: text(modelDrilldown.target_label || modelDrilldown.target_ref) }),
+      ]),
+      h('div', { className: 'filters' }, [
+        gui.field('Metric', gui.select({
+          on: { change: event => updateLevel3View({ ...level3View, metric: event.target.value }) },
+        }, (modelDrilldown.metric_options ?? []).map(item => option(item.value, item.label, level3View.metric))), { className: 'filter-field' }),
+        gui.field('Aggregation', gui.select({
+          on: { change: event => updateLevel3View({ ...level3View, aggregation: event.target.value }) },
+        }, [
+          option('med', 'Med', level3View.aggregation),
+          option('avg', 'Avg', level3View.aggregation),
+        ]), { className: 'filter-field compact' }),
+      ]),
+      (modelDrilldown.cells ?? []).length
+        ? modelDrilldownTable(modelDrilldown, level3View)
+        : h('p', { className: 'empty', text: 'No exact hardware evidence exists for this model.' }),
     ]) : null,
     h('section', { className: 'panel' }, [
       h('div', { className: 'section-title' }, [

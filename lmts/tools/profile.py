@@ -12,6 +12,8 @@ from pathlib import Path
 
 from lmts.core.paths import SYSTEM_PROFILE_PATH
 
+from lmts.core.hardware_order import build_hardware_order_profile
+
 from .reference_benchmark import (
     REFERENCE_BENCHMARK_DOMAINS,
     ReferenceBenchmarkProgressCallback,
@@ -572,13 +574,15 @@ def save_system_profile(profile: SystemProfile, path: Path = DEFAULT_PROFILE_PAT
         references = _existing_reference_benchmarks(target, fingerprint) or empty_reference_benchmarks()
     if not validate_reference_benchmarks(references):
         raise ValueError("invalid reference benchmark payload")
+    profile_data = profile.to_dict()
     payload = {
         "schema_version": PROFILE_SCHEMA_VERSION,
         "profiled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "fingerprint": fingerprint,
         "identity": system_identity(profile),
-        "profile": profile.to_dict(),
+        "profile": profile_data,
         "reference_benchmarks": references,
+        "hardware_order": build_hardware_order_profile(profile_data, references),
     }
     target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return target
@@ -594,7 +598,11 @@ def load_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object] 
         return None
     if not isinstance(payload, dict) or payload.get("schema_version") != PROFILE_SCHEMA_VERSION or not isinstance(payload.get("profile"), dict):
         return None
-    if not validate_reference_benchmarks(payload.get("reference_benchmarks")):
+    references = payload.get("reference_benchmarks")
+    if not validate_reference_benchmarks(references):
+        return None
+    hardware_order = payload.get("hardware_order")
+    if hardware_order != build_hardware_order_profile(payload["profile"], references):
         return None
     fingerprint = payload.get("fingerprint")
     identity = payload.get("identity")
@@ -622,6 +630,7 @@ def save_reference_benchmark(domain: str, result: dict[str, object], path: Path 
     if not validate_reference_benchmarks(references):
         raise ValueError("invalid reference benchmark result")
     payload["reference_benchmarks"] = references
+    payload["hardware_order"] = build_hardware_order_profile(payload["profile"], references)
     target = path.expanduser()
     target.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return target
@@ -650,6 +659,10 @@ def ensure_system_profile(path: Path = DEFAULT_PROFILE_PATH) -> dict[str, object
         "identity": system_identity(profile),
         "profile": profile.to_dict(),
         "reference_benchmarks": empty_reference_benchmarks(),
+        "hardware_order": build_hardware_order_profile(
+            profile.to_dict(),
+            empty_reference_benchmarks(),
+        ),
     }
 
 

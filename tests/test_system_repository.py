@@ -55,6 +55,7 @@ def test_ensure_system_upserts_user_owned_profile(monkeypatch) -> None:
         profile_schema_version=7,
         identity=identity,
         profile={'cpu': {'model_name': 'Test CPU'}},
+        hardware_order={'schema_version': 1, 'status': 'incomplete', 'missing': ['cpu.reference']},
     )
 
     assert record.user_id == 'usr_test'
@@ -62,4 +63,6 @@ def test_ensure_system_upserts_user_owned_profile(monkeypatch) -> None:
     assert record.configuration_id == hardware_configuration_id_for(fingerprint)
     assert 'INSERT INTO LMTS_hardware_configurations' in seen['query']
     assert 'configuration_id' in seen['query']
+    assert 'order_status' in seen['query']
+    assert 'order_json' in seen['query']
     assert 'ON DUPLICATE KEY UPDATE' in seen['query']

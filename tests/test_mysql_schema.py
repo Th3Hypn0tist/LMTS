@@ -20,6 +20,9 @@ def test_schema_file_contains_canonical_database_tables() -> None:
     assert 'IAM IDENTITY BOUNDARY' in text
     assert 'CREATE TABLE IF NOT EXISTS LMTS_reports' in text
     assert 'CREATE TABLE IF NOT EXISTS LMTS_hardware_configurations' in text
+    assert 'order_status       VARCHAR(32) NOT NULL' in text
+    assert 'order_json         LONGTEXT NOT NULL' in text
+    assert "order_status IN ('complete','incomplete')" in text
     assert 'CREATE TABLE IF NOT EXISTS LMTS_variance_samples' in text
     assert "CHECK (outcome IN ('pass','fail'))" in text
     assert 'configuration_id      VARCHAR(128) NOT NULL' in text

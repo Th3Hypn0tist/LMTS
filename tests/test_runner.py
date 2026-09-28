@@ -1,4 +1,4 @@
-from lmts.core.executor import RuntimeExecutor
+from lmts.core.executor import ModelExecutor, RuntimeExecutor
 from lmts.core.models import ModelDescriptor, NormalizedResponse, NormalizedTiming, NormalizedUsage
 from lmts.core.registry import ProviderRegistry
 from lmts.core.runner import TestRunner
@@ -161,9 +161,10 @@ def test_variance_execution_returns_only_outcome_and_does_not_persist_run(tmp_pa
     results_root = tmp_path / "results"
     runner = _runner(providers, results_root)
 
+    executor = ModelExecutor(providers.provider(model.provider_ref), model)
     observation = runner.run_variance_executor(
         TextGenerationTest(),
-        model,
+        executor,
         tmp_path / "workspaces",
     )
 

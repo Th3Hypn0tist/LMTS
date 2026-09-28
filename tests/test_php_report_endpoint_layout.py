@@ -43,10 +43,11 @@ def test_projection_projects_system_profile_hardware_and_memory() -> None:
     assert "lmts_projection_project_system_profile($pdo, $systemId, $profile)" in text
     assert "capacity_bytes, properties_json" in text
     assert "lmts_projection_json($memory)" in text
-    assert "return;" not in text[
+    ensure_system = text[
         text.index('function lmts_projection_ensure_system(PDO $pdo, array $record): void'):
         text.index('function lmts_projection_assert_compute_profile')
-    ].split('lmts_projection_project_system_profile', 1)[0]
+    ]
+    assert ensure_system.index('lmts_projection_ensure_system_identity') < ensure_system.index('lmts_projection_project_system_profile')
 
 
 

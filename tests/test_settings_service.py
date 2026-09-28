@@ -17,6 +17,8 @@ def test_settings_service_owns_unique_stores_under_one_root(tmp_path: Path) -> N
         'runtime_targets',
         'ftp_profiles',
         'report_profiles',
+        'custom_suites',
+        'ui_state',
     ]
     assert len({store.path for store in stores}) == len(stores)
     assert all(store.path.parent == root for store in stores)

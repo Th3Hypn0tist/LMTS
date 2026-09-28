@@ -156,7 +156,7 @@ class ModelDownloaderPage:
         identity = self.controller.auth_service.require_identity()
         return self.controller.system_service.build_run_provenance(identity.user_id).to_dict()
 
-    def _run_candidates(self, candidates, downloader, profile, free_disk, tests) -> None:
+    def _run_candidates(self, candidates, downloader, profile, tests) -> None:
         if self.controller is None:
             self._explorer_status = 'error: controller unavailable'
             return
@@ -181,6 +181,7 @@ class ModelDownloaderPage:
                         f'{index}/{len(candidates)} {candidate.model_ref}: {event.status}{suffix}'
                     )
 
+                free_disk = self._disk_free_bytes(downloader)
                 result = service.explore_one(
                     candidate,
                     downloader,
@@ -293,7 +294,7 @@ class ModelDownloaderPage:
             return
         self._explorer_thread = threading.Thread(
             target=self._run_candidates,
-            args=(selected, downloader, profile, free_disk, tests),
+            args=(selected, downloader, profile, tests),
             name='lmts-model-explorer',
             daemon=True,
         )

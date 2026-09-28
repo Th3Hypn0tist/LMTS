@@ -140,7 +140,7 @@ def test_level3_model_drilldown_is_tests_by_exact_hardware() -> None:
     assert "GROUP BY s.configuration_id, hc.label, hc.order_status, rri.target_ref" in STATS_PHP
     assert "FROM LMTS_variance_samples vs" in STATS_PHP
     assert "FROM LMTS_telemetry_values tv" in STATS_PHP
-    assert "function modelDrilldownTable(drilldown, view)" in APP_JS
+    assert "function modelDrilldownTable(drilldown, view, payload)" in APP_JS
     assert "Test / hardware" in APP_JS
     assert "Axes are fixed." in APP_JS
 

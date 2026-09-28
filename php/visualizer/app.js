@@ -473,14 +473,65 @@ function modelDrilldownTable(drilldown, view, payload) {
   return h('div', { className: 'scroll' }, [table]);
 }
 
-function configurationOverviewTable(rows) {
+function configurationOverviewTable(rows, view, metricOptions) {
+  const metricOption = (metricOptions ?? []).find(item => item.value === view.metric) ?? {
+    value: 'pf_score',
+    label: 'P/F score',
+    unit: null,
+  };
+
+  function metricValue(model) {
+    if (view.metric === 'pf_score') return Number(model.pf_score);
+    if (view.metric === 'coverage') return Number(model.coverage);
+    if (view.metric.startsWith('telemetry:')) {
+      const typeId = view.metric.slice('telemetry:'.length);
+      return aggregate(model.telemetry?.[typeId]?.samples, view.aggregation);
+    }
+    return null;
+  }
+
+  function orderedModels(row) {
+    const models = [...(row.models ?? [])];
+    models.sort((left, right) => {
+      const a = metricValue(left);
+      const b = metricValue(right);
+      const aValid = Number.isFinite(a);
+      const bValid = Number.isFinite(b);
+      if (aValid !== bValid) return aValid ? -1 : 1;
+      if (aValid && bValid && a !== b) {
+        return view.direction === 'asc' ? a - b : b - a;
+      }
+      if (view.metric === 'pf_score') {
+        const coverage = Number(right.coverage) - Number(left.coverage);
+        if (coverage !== 0) return coverage;
+      }
+      return String(left.target_ref).localeCompare(String(right.target_ref), undefined, { numeric: true });
+    });
+    return models;
+  }
+
+  function leaders(row) {
+    const models = orderedModels(row);
+    if (!models.length) return [];
+    const first = metricValue(models[0]);
+    if (!Number.isFinite(first)) return [];
+    return models.filter(model => metricValue(model) === first);
+  }
+
+  function metricText(model) {
+    const value = metricValue(model);
+    if (!Number.isFinite(value)) return 'NaN';
+    const unit = metricOption.unit ? ' ' + metricOption.unit : '';
+    return number(value) + unit;
+  }
+
   const table = h('table', { className: 'results-table' });
   table.append(h('thead', {}, [
     h('tr', {}, [
       h('th', { text: 'Hardware configuration' }),
       h('th', { text: 'Models tested' }),
       h('th', { text: 'Rank #1' }),
-      h('th', { text: 'P/F score' }),
+      h('th', { text: metricOption.label }),
       h('th', { text: 'Coverage' }),
     ]),
   ]));
@@ -490,10 +541,11 @@ function configurationOverviewTable(rows) {
     const params = new URLSearchParams(location.search);
     params.set('configuration_id', text(row.configuration_id, ''));
     const href = '?' + params.toString();
-    const leaders = row.leading_models ?? [];
-    const leaderLabel = leaders.length > 1
-      ? leaders.map(item => text(item.target_label || item.target_ref)).join(' · ')
-      : text(row.leading_model);
+    const top = leaders(row);
+    const leaderLabel = top.length
+      ? top.map(item => text(item.target_label || item.target_ref)).join(' · ')
+      : 'NaN';
+    const defaultRanking = view.metric === 'pf_score';
     body.append(h('tr', {}, [
       h('td', {}, [
         h('a', {
@@ -503,18 +555,20 @@ function configurationOverviewTable(rows) {
         }),
         h('div', {
           className: 'subtle',
-          text: 'Exact hardware evidence · P/F ↓ · coverage ↓ · equal values share rank',
+          text: defaultRanking
+            ? 'Exact hardware evidence · P/F ↓ · coverage ↓ · equal values share rank'
+            : 'Exact hardware evidence · use-case sort: ' + metricOption.label,
         }),
       ]),
       h('td', { text: number(row.models_tested_count, 0) }),
       h('td', {}, [
         h('strong', { text: leaderLabel }),
-        leaders.length > 1
-          ? h('div', { className: 'subtle', text: 'Shared #1 · ' + String(leaders.length) + ' models' })
+        top.length > 1
+          ? h('div', { className: 'subtle', text: 'Shared #1 · ' + String(top.length) + ' models' })
           : null,
       ].filter(Boolean)),
-      h('td', { text: number(row.leading_model_pf_score) }),
-      h('td', { text: number(row.leading_model_coverage) }),
+      h('td', { text: top.length ? metricText(top[0]) : 'NaN' }),
+      h('td', { text: top.length ? number(top[0].coverage) : 'NaN' }),
     ]));
   }
   table.append(body);
@@ -558,7 +612,7 @@ function renderFilters(filters) {
     event.preventDefault();
     const data = new FormData(form);
     const params = new URLSearchParams();
-    for (const key of ['configuration_id', 'l2_metric', 'l2_agg', 'l2_axes', 'l3_metric', 'l3_agg']) {
+    for (const key of ['configuration_id', 'l1_metric', 'l1_agg', 'l1_dir', 'l2_metric', 'l2_agg', 'l2_axes', 'l3_metric', 'l3_agg']) {
       const value = new URLSearchParams(location.search).get(key);
       if (value) params.set(key, value);
     }

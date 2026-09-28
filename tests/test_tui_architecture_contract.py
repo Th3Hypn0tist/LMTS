@@ -87,10 +87,10 @@ def test_help_only_contains_hidden_global_controls() -> None:
     app = APP.read_text(encoding='utf-8')
     help_block = app.split('def show_help', 1)[1].split('bindings =', 1)[0]
     assert "'Global controls'" in help_block
-    assert "'Esc      Back'" in help_block
-    assert "'Up/Down  Scroll'" in help_block
-    assert "'Ctrl+L   Layout controls'" in help_block
-    assert "'q q q    Quit'" in help_block
+    assert "'  Esc      Back'" in help_block
+    assert "'  Up/Down  Scroll'" in help_block
+    assert "'  Ctrl+L   Layout controls'" in help_block
+    assert "'  q q q    Quit'" in help_block
     assert "'Tabs'" not in help_block
     assert "'Page actions'" not in help_block
 

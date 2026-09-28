@@ -383,6 +383,7 @@ function lmts_projection_ensure_hardware_configuration(
     string $fingerprint,
     array $identity,
     array $profile,
+    array $hardwareOrder,
 ): string {
     $identityJson = lmts_projection_json($identity);
     $calculated = hash('sha256', $identityJson);
@@ -399,14 +400,21 @@ function lmts_projection_ensure_hardware_configuration(
         }
     }
 
+    $orderStatus = $hardwareOrder['status'] ?? null;
+    if (!is_string($orderStatus) || !in_array($orderStatus, ['complete', 'incomplete'], true)) {
+        throw new RuntimeException('system_context has invalid hardware ordering evidence');
+    }
+
     $stmt = $pdo->prepare(
         'INSERT INTO LMTS_hardware_configurations (
-            configuration_id, fingerprint, label, identity_json, profile_json
-         ) VALUES (?, ?, ?, ?, ?)
+            configuration_id, fingerprint, label, identity_json, profile_json, order_status, order_json
+         ) VALUES (?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
             label = VALUES(label),
             identity_json = VALUES(identity_json),
             profile_json = VALUES(profile_json),
+            order_status = VALUES(order_status),
+            order_json = VALUES(order_json),
             updated_at = CURRENT_TIMESTAMP(6)'
     );
     $stmt->execute([
@@ -415,6 +423,8 @@ function lmts_projection_ensure_hardware_configuration(
         $label,
         $identityJson,
         lmts_projection_json($hardwareProfile),
+        $orderStatus,
+        lmts_projection_json($hardwareOrder),
     ]);
 
     $check = $pdo->prepare(
@@ -444,8 +454,10 @@ function lmts_projection_ensure_system_identity(
     $schemaVersion = $context['schema_version'] ?? null;
     $identity = $context['identity'] ?? null;
     $profile = $context['profile'] ?? null;
+    $hardwareOrder = $context['hardware_order'] ?? null;
 
-    if ($fingerprint === '' || !is_int($schemaVersion) || !is_array($identity) || !is_array($profile)) {
+    if ($fingerprint === '' || !is_int($schemaVersion) || !is_array($identity)
+        || !is_array($profile) || !is_array($hardwareOrder)) {
         throw new RuntimeException("system_context for $systemId has invalid canonical identity");
     }
 
@@ -459,6 +471,7 @@ function lmts_projection_ensure_system_identity(
         $fingerprint,
         $identity,
         $profile,
+        $hardwareOrder,
     );
 
     $check = $pdo->prepare(

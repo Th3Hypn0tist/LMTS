@@ -48,6 +48,7 @@ class SystemRepository:
         profile_schema_version: int,
         identity: dict[str, object],
         profile: dict[str, object],
+        hardware_order: dict[str, object],
         label: str | None = None,
     ) -> SystemRecord:
         system_id = system_id_for(user_id, fingerprint)
@@ -66,21 +67,28 @@ class SystemRepository:
             if key in profile
         }
         profile_json = json.dumps(hardware_profile, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+        if hardware_order.get('status') not in {'complete', 'incomplete'}:
+            raise ValueError('hardware configuration has invalid ordering status')
+        order_json = json.dumps(hardware_order, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
         configuration_label = f'Configuration {fingerprint[:12]}'
         query = f"""
 INSERT INTO LMTS_hardware_configurations (
-  configuration_id, fingerprint, label, identity_json, profile_json
+  configuration_id, fingerprint, label, identity_json, profile_json, order_status, order_json
 ) VALUES (
   {_hex_text(configuration_id)},
   {_hex_text(fingerprint)},
   {_hex_text(configuration_label)},
   {_hex_text(identity_json)},
-  {_hex_text(profile_json)}
+  {_hex_text(profile_json)},
+  {_hex_text(str(hardware_order['status']))},
+  {_hex_text(order_json)}
 )
 ON DUPLICATE KEY UPDATE
   label = VALUES(label),
   identity_json = VALUES(identity_json),
-  profile_json = VALUES(profile_json);
+  profile_json = VALUES(profile_json),
+  order_status = VALUES(order_status),
+  order_json = VALUES(order_json);
 
 INSERT INTO LMTS_systems (
   system_id, user_id, label, system_class, configuration_id, probe_version, last_probed_at

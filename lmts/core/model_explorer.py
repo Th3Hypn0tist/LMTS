@@ -62,21 +62,29 @@ def _positive_int(value: object) -> int | None:
 
 
 def usable_memory_bytes(profile: dict[str, object]) -> int | None:
-    memory = profile.get('memory') if isinstance(profile.get('memory'), dict) else {}
-    system_bytes = _positive_int(memory.get('total_bytes'))
-    gpus = profile.get('gpu') if isinstance(profile.get('gpu'), list) else []
+    """Return a conservative single-pool memory ceiling.
 
-    dedicated_vram = 0
+    System RAM and GPU VRAM are not summed here. Without provider/runtime
+    topology evidence LMTS cannot know whether pools are independent,
+    offload-compatible or aliases of unified memory. Using the largest
+    observed pool avoids double-counting unified memory and avoids pretending
+    that arbitrary RAM+VRAM combinations are fully usable by one model.
+    """
+    memory = profile.get('memory') if isinstance(profile.get('memory'), dict) else {}
+    capacities: list[int] = []
+    system_bytes = _positive_int(memory.get('total_bytes'))
+    if system_bytes is not None:
+        capacities.append(system_bytes)
+
+    gpus = profile.get('gpu') if isinstance(profile.get('gpu'), list) else []
     for gpu in gpus:
         if not isinstance(gpu, dict):
             continue
         value = _positive_int(gpu.get('vram_bytes'))
         if value is not None:
-            dedicated_vram += value
+            capacities.append(value)
 
-    if system_bytes is None and dedicated_vram <= 0:
-        return None
-    return (system_bytes or 0) + dedicated_vram
+    return max(capacities) if capacities else None
 
 
 def assess_candidate_fit(
@@ -120,7 +128,7 @@ def assess_candidate_fit(
                 estimated_runtime_bytes=runtime_estimate,
                 usable_memory_bytes=usable,
                 free_disk_bytes=free_disk_bytes,
-                reason='estimated runtime memory exceeds profiled memory ceiling',
+                reason='estimated runtime memory exceeds conservative profiled memory ceiling',
             )
         if runtime_estimate > int(usable * 0.8):
             return FitAssessment(
@@ -137,7 +145,7 @@ def assess_candidate_fit(
             estimated_runtime_bytes=runtime_estimate,
             usable_memory_bytes=usable,
             free_disk_bytes=free_disk_bytes,
-            reason='artifact fits disk and profiled memory ceiling',
+            reason='artifact fits disk and conservative profiled memory ceiling',
         )
 
     return FitAssessment(

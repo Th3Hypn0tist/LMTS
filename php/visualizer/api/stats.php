@@ -562,6 +562,183 @@ try {
         }
     }
 
+    $modelDrilldown = [
+        'target_ref' => null,
+        'target_label' => null,
+        'cells' => [],
+        'configurations' => [],
+        'metric_options' => [],
+    ];
+    $selectedTargetKind = stats_param('target_kind');
+    $selectedTargetId = stats_param('target_id');
+    if ($selectedTargetKind === 'model' && $selectedTargetId !== null) {
+        [$modelWhere, $modelParams] = stats_scope(false);
+        $modelWhere = stats_add_condition($modelWhere, "rri.target_kind = 'model'");
+        $modelWhere = stats_add_condition($modelWhere, "rri.outcome IN ('pass','fail')");
+
+        $modelSql = "SELECT
+            s.configuration_id,
+            hc.label AS configuration_label,
+            hc.order_status,
+            rri.target_ref,
+            COALESCE(MAX(rri.target_label), rri.target_ref) AS target_label,
+            rri.test_version_id,
+            CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
+                   CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS test_label,
+            JSON_ARRAYAGG(rri.duration_ms) AS total_time_samples_json,
+            JSON_ARRAYAGG(rri.ttft_ms) AS ttft_samples_json
+         FROM LMTS_report_record_index rri
+         JOIN LMTS_reports r ON r.report_id = rri.report_id
+         JOIN LMTS_systems s ON s.system_id = rri.system_id
+         JOIN LMTS_hardware_configurations hc ON hc.configuration_id = s.configuration_id
+         LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
+         LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
+         $modelWhere
+         GROUP BY s.configuration_id, hc.label, hc.order_status, rri.target_ref,
+                  rri.test_version_id, td.name, td.namespace, tv.version
+         ORDER BY test_label, hc.label, s.configuration_id";
+        $modelCells = stats_query($pdo, $modelSql, $modelParams)->fetchAll();
+
+        [$modelVarianceWhere, $modelVarianceParams] = stats_scope(false);
+        $modelVarianceWhere = stats_add_condition($modelVarianceWhere, "vs.target_kind = 'model'");
+        $modelVarianceSql = "SELECT
+            vs.configuration_id,
+            vs.target_ref,
+            vs.test_version_id,
+            COUNT(*) AS sample_count,
+            SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) AS pass_count,
+            SUM(CASE WHEN vs.outcome = 'fail' THEN 1 ELSE 0 END) AS fail_count,
+            (100.0 * SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) / COUNT(*)) AS pf_score,
+            (
+                (SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) / COUNT(*))
+                * (1.0 - (SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) / COUNT(*)))
+            ) AS variance
+         FROM LMTS_variance_samples vs
+         JOIN LMTS_report_record_index rri
+           ON rri.report_id = vs.source_report_id AND rri.record_id = vs.source_record_id
+         JOIN LMTS_reports r ON r.report_id = rri.report_id
+         $modelVarianceWhere
+         GROUP BY vs.configuration_id, vs.target_ref, vs.test_version_id";
+        $modelVarianceRows = stats_query($pdo, $modelVarianceSql, $modelVarianceParams)->fetchAll();
+        $modelVariance = [];
+        foreach ($modelVarianceRows as $row) {
+            $key = (string)$row['configuration_id'] . "\0"
+                . (string)$row['target_ref'] . "\0"
+                . (string)$row['test_version_id'];
+            $modelVariance[$key] = $row;
+        }
+
+        [$modelTelemetryWhere, $modelTelemetryParams] = stats_scope(false);
+        $modelTelemetryWhere = stats_add_condition($modelTelemetryWhere, "rri.target_kind = 'model'");
+        $modelTelemetryWhere = stats_add_condition($modelTelemetryWhere, "tv.value_number IS NOT NULL");
+        $modelTelemetrySql = "SELECT
+            s.configuration_id,
+            rri.target_ref,
+            rri.test_version_id,
+            tv.telemetry_type_id,
+            tt.canonical_key,
+            tt.name AS telemetry_name,
+            COALESCE(tv.unit_snapshot, tt.unit, '') AS unit,
+            JSON_ARRAYAGG(tv.value_number) AS samples_json
+         FROM LMTS_telemetry_values tv
+         JOIN LMTS_telemetry_types tt ON tt.telemetry_type_id = tv.telemetry_type_id
+         JOIN LMTS_report_record_index rri
+           ON rri.report_id = tv.report_id AND rri.record_id = tv.record_id
+         JOIN LMTS_reports r ON r.report_id = rri.report_id
+         JOIN LMTS_systems s ON s.system_id = rri.system_id
+         $modelTelemetryWhere
+         GROUP BY s.configuration_id, rri.target_ref, rri.test_version_id,
+                  tv.telemetry_type_id, tt.canonical_key, tt.name,
+                  COALESCE(tv.unit_snapshot, tt.unit, '')
+         ORDER BY tt.canonical_key, tv.telemetry_type_id";
+        $modelTelemetryRows = stats_query($pdo, $modelTelemetrySql, $modelTelemetryParams)->fetchAll();
+
+        $telemetryByCell = [];
+        $metricOptions = [];
+        foreach ($modelTelemetryRows as $row) {
+            $key = (string)$row['configuration_id'] . "\0"
+                . (string)$row['target_ref'] . "\0"
+                . (string)$row['test_version_id'];
+            $samples = json_decode((string)($row['samples_json'] ?? '[]'), true);
+            $numeric = is_array($samples)
+                ? array_values(array_filter(
+                    $samples,
+                    static fn($value): bool => is_int($value) || is_float($value) || is_numeric($value)
+                ))
+                : [];
+            $typeId = (string)$row['telemetry_type_id'];
+            $telemetryByCell[$key][$typeId] = [
+                'canonical_key' => (string)$row['canonical_key'],
+                'name' => (string)$row['telemetry_name'],
+                'unit' => (string)$row['unit'],
+                'samples' => $numeric,
+            ];
+            if (!in_array($typeId, ['total_time', 'ttft'], true)) {
+                $metricOptions[$typeId] = [
+                    'value' => 'telemetry:' . $typeId,
+                    'label' => (string)$row['telemetry_name']
+                        . ((string)$row['unit'] === '' ? '' : ' (' . (string)$row['unit'] . ')'),
+                ];
+            }
+        }
+
+        $configurationMap = [];
+        foreach ($modelCells as &$cell) {
+            foreach (['total_time_samples_json' => 'total_time_samples_ms', 'ttft_samples_json' => 'ttft_samples_ms'] as $rawKey => $finalKey) {
+                $decoded = json_decode((string)($cell[$rawKey] ?? '[]'), true);
+                $cell[$finalKey] = is_array($decoded)
+                    ? array_values(array_filter(
+                        $decoded,
+                        static fn($value): bool => is_int($value) || is_float($value) || is_numeric($value)
+                    ))
+                    : [];
+                unset($cell[$rawKey]);
+            }
+            $key = (string)$cell['configuration_id'] . "\0"
+                . (string)$cell['target_ref'] . "\0"
+                . (string)$cell['test_version_id'];
+            $varianceEvidence = $modelVariance[$key] ?? null;
+            $cell['sample_count'] = $varianceEvidence === null ? 0 : (int)$varianceEvidence['sample_count'];
+            $cell['pass_count'] = $varianceEvidence === null ? 0 : (int)$varianceEvidence['pass_count'];
+            $cell['fail_count'] = $varianceEvidence === null ? 0 : (int)$varianceEvidence['fail_count'];
+            $cell['pf_score'] = $varianceEvidence === null ? null : (float)$varianceEvidence['pf_score'];
+            $cell['variance'] = $varianceEvidence === null ? null : (float)$varianceEvidence['variance'];
+            $cell['compatibility_status'] = $varianceEvidence === null
+                ? 'unknown'
+                : (((int)$cell['pass_count']) > 0 ? 'pass' : 'fail');
+            $cell['telemetry'] = $telemetryByCell[$key] ?? [];
+            $configurationMap[(string)$cell['configuration_id']] = [
+                'configuration_id' => (string)$cell['configuration_id'],
+                'label' => (string)$cell['configuration_label'],
+                'order_status' => (string)$cell['order_status'],
+            ];
+            $modelDrilldown['target_label'] = (string)$cell['target_label'];
+        }
+        unset($cell);
+
+        ksort($metricOptions, SORT_STRING);
+        $configurations = array_values($configurationMap);
+        usort($configurations, static function(array $left, array $right): int {
+            $label = strcmp((string)$left['label'], (string)$right['label']);
+            return $label !== 0 ? $label : strcmp((string)$left['configuration_id'], (string)$right['configuration_id']);
+        });
+        $modelDrilldown = [
+            'target_ref' => $selectedTargetId,
+            'target_label' => $modelDrilldown['target_label'] ?? $selectedTargetId,
+            'cells' => $modelCells,
+            'configurations' => $configurations,
+            'metric_options' => array_merge(
+                [
+                    ['value' => 'total_time', 'label' => 'Total time (ms)'],
+                    ['value' => 'ttft', 'label' => 'TTFT (ms)'],
+                    ['value' => 'pf_score', 'label' => 'P/F score'],
+                    ['value' => 'variance', 'label' => 'Variance'],
+                ],
+                array_values($metricOptions),
+            ),
+        ];
+    }
+
     $selectedSql = "SELECT rri.report_id, rri.record_id
         FROM LMTS_report_record_index rri
         JOIN LMTS_reports r ON r.report_id = rri.report_id
@@ -736,6 +913,7 @@ try {
             'ignored_incomplete_configuration_ids' => $ignoredIncompleteConfigurationIds,
             'cells' => $configurationMatrix,
         ],
+        'model_drilldown' => $modelDrilldown,
         'matrix' => $matrix,
         'records' => $records,
         'telemetry' => $telemetry,

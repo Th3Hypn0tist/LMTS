@@ -148,9 +148,9 @@ def test_projection_writes_test_record_and_telemetry(monkeypatch) -> None:
     projection.rebuild_report_projection(_mysql(), _report())
 
     query = captured['query']
-    assert 'INSERT INTO LMTS_test_definitions' in query
-    assert 'INSERT INTO LMTS_test_versions' in query
-    assert 'INSERT INTO LMTS_test_version_telemetry_types' in query
+    assert 'INSERT IGNORE INTO LMTS_test_definitions' in query
+    assert 'INSERT IGNORE INTO LMTS_test_versions' in query
+    assert 'INSERT IGNORE INTO LMTS_test_version_telemetry_types' in query
     assert 'INSERT INTO LMTS_hardware_configurations' in query
     assert 'order_status, order_json' in query
     assert 'INSERT INTO LMTS_systems' in query

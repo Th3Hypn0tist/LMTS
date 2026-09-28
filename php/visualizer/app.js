@@ -42,6 +42,28 @@ function aggregate(values, mode) {
   return mode === 'avg' ? average(values) : median(values);
 }
 
+function level1ViewState(metricOptions) {
+  const params = new URLSearchParams(location.search);
+  const available = new Set((metricOptions ?? []).map(item => item.value));
+  const requested = params.get('l1_metric');
+  const metric = requested && available.has(requested) ? requested : 'pf_score';
+  const aggregation = ['avg', 'med'].includes(params.get('l1_agg'))
+    ? params.get('l1_agg')
+    : 'med';
+  const direction = ['asc', 'desc'].includes(params.get('l1_dir'))
+    ? params.get('l1_dir')
+    : (metric === 'pf_score' || metric === 'coverage' ? 'desc' : 'asc');
+  return { metric, aggregation, direction };
+}
+
+function updateLevel1View(next) {
+  const params = new URLSearchParams(location.search);
+  params.set('l1_metric', next.metric);
+  params.set('l1_agg', next.aggregation);
+  params.set('l1_dir', next.direction);
+  load(params);
+}
+
 function level2ViewState() {
   const params = new URLSearchParams(location.search);
   const metric = ['total_time', 'ttft', 'pf_score'].includes(params.get('l2_metric'))

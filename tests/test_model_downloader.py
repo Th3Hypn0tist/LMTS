@@ -15,7 +15,7 @@ from lmts.core.model_downloader import (
     ModelDownloaderRegistry,
 )
 from lmts.tools.ollama_downloader import OllamaModelDownloader
-from lmts.view.model_downloader_page import ModelDownloaderPage
+from lmts.view.model_explorer_page import ModelExplorerPage
 
 
 def _wait_for(predicate, *, timeout: float = 2.0) -> None:
@@ -237,7 +237,7 @@ def test_queue_clear_finished_keeps_only_live_items() -> None:
 
 def test_page_accepts_injected_downloader_registry() -> None:
     downloader = ControlledDownloader('custom')
-    page = ModelDownloaderPage(ModelDownloaderRegistry((downloader,)))
+    page = ModelExplorerPage(ModelDownloaderRegistry((downloader,)))
     assert page.module_id == 'custom'
     lines = page.lines()
     assert 'Module    : Fake (custom)' in lines

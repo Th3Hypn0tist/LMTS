@@ -95,6 +95,8 @@ def test_saved_profile_contains_empty_reference_contract(tmp_path: Path) -> None
     assert references["memory"] is None
     assert references["gpu"] is None
     assert references["npu"] is None
+    assert payload["hardware_order"]["status"] == "incomplete"
+    assert "cpu.single_thread_bytes_per_second" in payload["hardware_order"]["missing"]
 
 
 def test_reference_suite_survives_same_hardware_rescan(tmp_path: Path) -> None:
@@ -110,6 +112,7 @@ def test_reference_suite_survives_same_hardware_rescan(tmp_path: Path) -> None:
     cpu_suite = payload["reference_benchmarks"]["cpu"]
     assert cpu_suite["suite_id"] == "lmts.reference.cpu"
     assert cpu_suite["tests"][0]["benchmark_id"] == "lmts.reference.cpu.sha256_stream_1t"
+    assert payload["hardware_order"]["status"] == "incomplete"
 
 
 def test_system_fingerprint_ignores_software_and_driver_state() -> None:

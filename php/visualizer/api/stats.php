@@ -28,7 +28,7 @@ function stats_time(?string $value): ?string {
     }
 }
 
-function stats_scope(bool $includeConfiguration = true): array {
+function stats_scope(bool $includeConfiguration = true, bool $includeOutcome = true): array {
     $conditions = [];
     $params = [];
 
@@ -58,7 +58,7 @@ function stats_scope(bool $includeConfiguration = true): array {
     }
 
     $outcome = stats_param('outcome');
-    if ($outcome !== null) {
+    if ($includeOutcome && $outcome !== null) {
         if (!in_array($outcome, ['pass', 'fail'], true)) {
             stats_fail(400, 'outcome must be pass or fail');
         }
@@ -316,26 +316,146 @@ try {
 
     $records = stats_query($pdo, $recordSql, $params)->fetchAll();
 
-    $overviewWhere = $where === ''
-        ? "WHERE rri.target_kind = 'model'"
-        : $where . " AND rri.target_kind = 'model'";
-    $configurationOverviewSql = "SELECT
+    [$rankingWhere, $rankingParams] = stats_scope(true, false);
+    $rankingWhere = stats_add_condition($rankingWhere, "rri.target_kind = 'model'");
+    $configurationRankingSql = "SELECT
         hc.configuration_id,
         hc.label AS configuration_name,
         hc.fingerprint AS configuration_fingerprint,
-        COUNT(DISTINCT rri.target_ref) AS models_tested_count,
-        NULL AS leading_model,
-        NULL AS leading_model_pf_score,
-        NULL AS leading_model_time_ms,
-        'ranking_contract_unresolved' AS ranking_status
-     FROM LMTS_report_record_index rri
+        rri.target_ref,
+        COALESCE(MAX(rri.target_label), rri.target_ref) AS target_label,
+        vs.test_version_id,
+        COUNT(*) AS sample_count,
+        SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) AS pass_count,
+        SUM(CASE WHEN vs.outcome = 'fail' THEN 1 ELSE 0 END) AS fail_count,
+        (100.0 * SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) / COUNT(*)) AS test_pf_score
+     FROM LMTS_variance_samples vs
+     JOIN LMTS_report_record_index rri
+       ON rri.report_id = vs.source_report_id AND rri.record_id = vs.source_record_id
      JOIN LMTS_reports r ON r.report_id = rri.report_id
      JOIN LMTS_systems s ON s.system_id = rri.system_id
-     JOIN LMTS_hardware_configurations hc ON hc.configuration_id = s.configuration_id
-     $overviewWhere
-     GROUP BY hc.configuration_id, hc.label, hc.fingerprint
-     ORDER BY hc.label, hc.configuration_id";
-    $configurationOverview = stats_query($pdo, $configurationOverviewSql, $params)->fetchAll();
+     JOIN LMTS_hardware_configurations hc ON hc.configuration_id = vs.configuration_id
+     $rankingWhere
+       AND s.configuration_id = vs.configuration_id
+     GROUP BY hc.configuration_id, hc.label, hc.fingerprint,
+              rri.target_ref, vs.test_version_id
+     ORDER BY hc.label, hc.configuration_id, target_label, vs.test_version_id";
+    $configurationRankingRows = stats_query(
+        $pdo,
+        $configurationRankingSql,
+        $rankingParams,
+    )->fetchAll();
+
+    $configurationRanking = [];
+    foreach ($configurationRankingRows as $row) {
+        $configurationId = (string)$row['configuration_id'];
+        $targetRef = (string)$row['target_ref'];
+        if (!isset($configurationRanking[$configurationId])) {
+            $configurationRanking[$configurationId] = [
+                'configuration_id' => $configurationId,
+                'configuration_name' => (string)$row['configuration_name'],
+                'configuration_fingerprint' => (string)$row['configuration_fingerprint'],
+                'tests' => [],
+                'models' => [],
+            ];
+        }
+        $configurationRanking[$configurationId]['tests'][(string)$row['test_version_id']] = true;
+        if (!isset($configurationRanking[$configurationId]['models'][$targetRef])) {
+            $configurationRanking[$configurationId]['models'][$targetRef] = [
+                'target_ref' => $targetRef,
+                'target_label' => (string)$row['target_label'],
+                'tests' => [],
+                'sample_count' => 0,
+            ];
+        }
+        $configurationRanking[$configurationId]['models'][$targetRef]['tests'][(string)$row['test_version_id']] = [
+            'pf_score' => (float)$row['test_pf_score'],
+            'sample_count' => (int)$row['sample_count'],
+        ];
+        $configurationRanking[$configurationId]['models'][$targetRef]['sample_count'] += (int)$row['sample_count'];
+    }
+
+    $configurationOverview = [];
+    foreach ($configurationRanking as $configuration) {
+        $testUniverseCount = count($configuration['tests']);
+        $models = [];
+        foreach ($configuration['models'] as $model) {
+            $testedCount = count($model['tests']);
+            $perTestScores = array_map(
+                static fn(array $test): float => (float)$test['pf_score'],
+                array_values($model['tests']),
+            );
+            $pfScore = $perTestScores === []
+                ? 0.0
+                : array_sum($perTestScores) / count($perTestScores);
+            $coverage = $testUniverseCount > 0
+                ? (100.0 * $testedCount / $testUniverseCount)
+                : 0.0;
+            $models[] = [
+                'target_ref' => $model['target_ref'],
+                'target_label' => $model['target_label'],
+                'pf_score' => round($pfScore, 6),
+                'coverage' => round($coverage, 6),
+                'tests_covered' => $testedCount,
+                'tests_available' => $testUniverseCount,
+                'sample_count' => $model['sample_count'],
+            ];
+        }
+
+        usort($models, static function(array $left, array $right): int {
+            $pf = $right['pf_score'] <=> $left['pf_score'];
+            if ($pf !== 0) return $pf;
+            $coverage = $right['coverage'] <=> $left['coverage'];
+            if ($coverage !== 0) return $coverage;
+            return strcmp((string)$left['target_ref'], (string)$right['target_ref']);
+        });
+
+        $rankedModels = [];
+        $previousPf = null;
+        $previousCoverage = null;
+        $previousRank = 0;
+        foreach ($models as $index => $model) {
+            $sameRank = $previousPf !== null
+                && $model['pf_score'] === $previousPf
+                && $model['coverage'] === $previousCoverage;
+            $rank = $sameRank ? $previousRank : $index + 1;
+            $model['rank'] = $rank;
+            $rankedModels[] = $model;
+            $previousPf = $model['pf_score'];
+            $previousCoverage = $model['coverage'];
+            $previousRank = $rank;
+        }
+
+        $leaders = array_values(array_filter(
+            $rankedModels,
+            static fn(array $model): bool => $model['rank'] === 1,
+        ));
+        $configurationOverview[] = [
+            'configuration_id' => $configuration['configuration_id'],
+            'configuration_name' => $configuration['configuration_name'],
+            'configuration_fingerprint' => $configuration['configuration_fingerprint'],
+            'models_tested_count' => count($rankedModels),
+            'leading_model' => $leaders === []
+                ? null
+                : implode(' · ', array_map(
+                    static fn(array $model): string => (string)$model['target_label'],
+                    $leaders,
+                )),
+            'leading_models' => $leaders,
+            'leading_model_pf_score' => $leaders[0]['pf_score'] ?? null,
+            'leading_model_coverage' => $leaders[0]['coverage'] ?? null,
+            'leading_model_time_ms' => null,
+            'ranking_status' => 'ranked_exact_pf_coverage',
+            'ranking_contract' => 'exact_hardware:pf_desc:coverage_desc:shared_equal',
+            'models' => $rankedModels,
+        ];
+    }
+    usort($configurationOverview, static function(array $left, array $right): int {
+        $label = strcmp((string)$left['configuration_name'], (string)$right['configuration_name']);
+        return $label !== 0
+            ? $label
+            : strcmp((string)$left['configuration_id'], (string)$right['configuration_id']);
+    });
 
     $matrixSql = "SELECT
         rri.target_kind,

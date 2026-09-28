@@ -16,7 +16,7 @@ from .actions.user import UserActions
 from .controller import LMTSViewController
 from .cw_bench_page import CWBenchPage
 from .lmts_host import LMTSInteractiveHost
-from .model_downloader_page import ModelDownloaderPage
+from .model_explorer_page import ModelExplorerPage
 from .projector import LMTSViewProjector
 from .registries import TAB_REGISTRY, build_shortcut_registry
 from .tui_render import TUIRenderer
@@ -42,7 +42,7 @@ class TUIApplication:
             controller=controller,
             projector=LMTSViewProjector(controller.state),
             cw_bench_page=CWBenchPage(controller),
-            model_explorer_page=ModelDownloaderPage(controller=controller),
+            model_explorer_page=ModelExplorerPage(controller=controller),
             settings=settings,
             settings_service=settings_service,
             shortcut_overrides=shortcut_overrides,

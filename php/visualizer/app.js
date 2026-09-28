@@ -108,6 +108,42 @@ function summaryCard(label, value) {
   ]);
 }
 
+function configurationOverviewTable(rows) {
+  const table = h('table', { className: 'results-table' });
+  table.append(h('thead', {}, [
+    h('tr', {}, [
+      h('th', { text: 'Hardware configuration' }),
+      h('th', { text: 'Models tested' }),
+      h('th', { text: 'Leading model' }),
+      h('th', { text: 'P/F score' }),
+      h('th', { text: 'Time ms' }),
+    ]),
+  ]));
+
+  const body = h('tbody');
+  for (const row of rows ?? []) {
+    const params = new URLSearchParams(location.search);
+    params.set('configuration_id', text(row.configuration_id, ''));
+    const href = '?' + params.toString();
+    const unresolved = row.ranking_status === 'ranking_contract_unresolved';
+    body.append(h('tr', {}, [
+      h('td', {}, [
+        h('a', {
+          href,
+          text: text(row.configuration_name || row.configuration_id),
+          title: text(row.configuration_fingerprint),
+        }),
+      ]),
+      h('td', { text: number(row.models_tested_count, 0) }),
+      h('td', { text: unresolved ? 'Ranking contract unresolved' : text(row.leading_model) }),
+      h('td', { text: unresolved ? '—' : number(row.leading_model_pf_score) }),
+      h('td', { text: unresolved ? '—' : number(row.leading_model_time_ms) }),
+    ]));
+  }
+  table.append(body);
+  return h('div', { className: 'scroll' }, [table]);
+}
+
 function option(value, label, selected) {
   return gui.option(value, label, { selected: String(value) === String(selected ?? '') });
 }
@@ -304,6 +340,7 @@ function render(payload) {
     throw new Error('Unsupported LMTS statistics payload');
   }
   const summary = payload.summary ?? {};
+  const configurationOverview = payload.configuration_overview ?? [];
   const matrix = payload.matrix ?? [];
   const records = payload.records ?? [];
   const series = numericSeries(payload.telemetry);
@@ -324,6 +361,18 @@ function render(payload) {
       summaryCard('Pass', summary.pass),
       summaryCard('Fail', summary.fail),
       summaryCard('Telemetry values', summary.telemetry_values),
+    ]),
+    h('section', { className: 'panel' }, [
+      h('div', { className: 'section-title' }, [
+        h('div', {}, [
+          h('h2', { text: 'Hardware configurations' }),
+          h('div', { className: 'subtle', text: 'Level 1 landing. Rows are canonical LMTS hardware configurations.' }),
+        ]),
+        h('span', { className: 'subtle', text: String(configurationOverview.length) + ' configuration(s)' }),
+      ]),
+      configurationOverview.length
+        ? configurationOverviewTable(configurationOverview)
+        : h('p', { className: 'empty', text: 'No hardware configurations have benchmark evidence.' }),
     ]),
     h('section', { className: 'panel' }, [
       h('div', { className: 'section-title' }, [

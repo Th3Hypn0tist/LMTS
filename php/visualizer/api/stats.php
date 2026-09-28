@@ -415,10 +415,6 @@ try {
             rri.test_version_id,
             CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
                    CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS test_label,
-            COUNT(*) AS sample_count,
-            SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END) AS pass_count,
-            SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END) AS fail_count,
-            (100.0 * SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END) / COUNT(*)) AS pf_score,
             JSON_ARRAYAGG(rri.duration_ms) AS total_time_samples_json
          FROM LMTS_report_record_index rri
          JOIN LMTS_reports r ON r.report_id = rri.report_id
@@ -435,6 +431,34 @@ try {
             $level2Params,
         )->fetchAll();
 
+        [$varianceWhere, $varianceParams] = stats_scope(false);
+        $varianceWhere = stats_add_condition($varianceWhere, 'vs.configuration_id = ?');
+        $varianceWhere = stats_add_condition($varianceWhere, "vs.target_kind = 'model'");
+        $varianceParams[] = $selectedConfigurationId;
+        $configurationVarianceSql = "SELECT
+            vs.target_ref,
+            vs.test_version_id,
+            COUNT(*) AS sample_count,
+            SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) AS pass_count,
+            SUM(CASE WHEN vs.outcome = 'fail' THEN 1 ELSE 0 END) AS fail_count,
+            (100.0 * SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) / COUNT(*)) AS pf_score
+         FROM LMTS_variance_samples vs
+         JOIN LMTS_report_record_index rri
+           ON rri.report_id = vs.source_report_id AND rri.record_id = vs.source_record_id
+         JOIN LMTS_reports r ON r.report_id = rri.report_id
+         $varianceWhere
+         GROUP BY vs.target_ref, vs.test_version_id";
+        $configurationVarianceRows = stats_query(
+            $pdo,
+            $configurationVarianceSql,
+            $varianceParams,
+        )->fetchAll();
+        $configurationVariance = [];
+        foreach ($configurationVarianceRows as $varianceRow) {
+            $varianceKey = (string)$varianceRow['target_ref'] . "\0" . (string)$varianceRow['test_version_id'];
+            $configurationVariance[$varianceKey] = $varianceRow;
+        }
+
         $cellIndex = [];
         foreach ($configurationMatrix as &$configurationCell) {
             $rawSamples = $configurationCell['total_time_samples_json'] ?? '[]';
@@ -446,12 +470,17 @@ try {
                 ))
                 : [];
             unset($configurationCell['total_time_samples_json']);
+            $key = (string)$configurationCell['target_ref'] . "\0" . (string)$configurationCell['test_version_id'];
+            $varianceEvidence = $configurationVariance[$key] ?? null;
+            $configurationCell['sample_count'] = $varianceEvidence === null ? 0 : (int)$varianceEvidence['sample_count'];
+            $configurationCell['pass_count'] = $varianceEvidence === null ? 0 : (int)$varianceEvidence['pass_count'];
+            $configurationCell['fail_count'] = $varianceEvidence === null ? 0 : (int)$varianceEvidence['fail_count'];
+            $configurationCell['pf_score'] = $varianceEvidence === null ? null : (float)$varianceEvidence['pf_score'];
             $configurationCell['evidence_scope'] = 'exact';
             $configurationCell['compatibility_status'] =
-                ((int)($configurationCell['pass_count'] ?? 0)) > 0 ? 'pass' : 'fail';
+                ((int)$configurationCell['pass_count']) > 0 ? 'pass' : 'fail';
             $configurationCell['source_configuration_ids'] = [$selectedConfigurationId];
             $configurationCell['performance_scope'] = 'exact';
-            $key = (string)$configurationCell['target_ref'] . "\0" . (string)$configurationCell['test_version_id'];
             $cellIndex[$key] = true;
         }
         unset($configurationCell);
@@ -459,28 +488,29 @@ try {
         if ($hardwareCeilingStatus === 'ready' && $lighterConfigurationIds !== []) {
             [$lighterWhere, $lighterParams] = stats_scope(false);
             $placeholders = implode(',', array_fill(0, count($lighterConfigurationIds), '?'));
-            $lighterWhere = stats_add_condition($lighterWhere, "s.configuration_id IN ($placeholders)");
-            $lighterWhere = stats_add_condition($lighterWhere, "rri.target_kind = 'model'");
-            $lighterWhere = stats_add_condition($lighterWhere, "rri.outcome IN ('pass','fail')");
+            $lighterWhere = stats_add_condition($lighterWhere, "vs.configuration_id IN ($placeholders)");
+            $lighterWhere = stats_add_condition($lighterWhere, "vs.target_kind = 'model'");
+            $lighterWhere = stats_add_condition($lighterWhere, "vs.outcome IN ('pass','fail')");
             $lighterParams = array_merge($lighterParams, $lighterConfigurationIds);
 
             $lighterSql = "SELECT
-                rri.target_kind,
-                rri.target_ref,
-                COALESCE(MAX(rri.target_label), rri.target_ref) AS target_label,
-                rri.test_version_id,
-                CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
+                vs.target_kind,
+                vs.target_ref,
+                COALESCE(MAX(rri.target_label), vs.target_ref) AS target_label,
+                vs.test_version_id,
+                CONCAT(COALESCE(td.name, td.namespace, vs.test_version_id),
                        CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS test_label,
-                SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END) AS source_pass_count,
-                SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END) AS source_fail_count,
-                GROUP_CONCAT(DISTINCT s.configuration_id ORDER BY s.configuration_id SEPARATOR ',') AS source_configuration_ids_csv
-             FROM LMTS_report_record_index rri
+                SUM(CASE WHEN vs.outcome = 'pass' THEN 1 ELSE 0 END) AS source_pass_count,
+                SUM(CASE WHEN vs.outcome = 'fail' THEN 1 ELSE 0 END) AS source_fail_count,
+                GROUP_CONCAT(DISTINCT vs.configuration_id ORDER BY vs.configuration_id SEPARATOR ',') AS source_configuration_ids_csv
+             FROM LMTS_variance_samples vs
+             JOIN LMTS_report_record_index rri
+               ON rri.report_id = vs.source_report_id AND rri.record_id = vs.source_record_id
              JOIN LMTS_reports r ON r.report_id = rri.report_id
-             JOIN LMTS_systems s ON s.system_id = rri.system_id
-             LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
+             LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = vs.test_version_id
              LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
              $lighterWhere
-             GROUP BY rri.target_kind, rri.target_ref, rri.test_version_id,
+             GROUP BY vs.target_kind, vs.target_ref, vs.test_version_id,
                       td.name, td.namespace, tv.version
              ORDER BY target_label, test_label";
             $lighterRows = stats_query($pdo, $lighterSql, $lighterParams)->fetchAll();

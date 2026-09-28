@@ -28,6 +28,11 @@ class TUIActions:
             'suite_repeats': controller_state.suite_repeats,
             'selected_target_ids': sorted(controller_state.selected_target_ids),
             'selected_test_refs': sorted(controller_state.selected_test_refs),
+            'model_explorer_variance_threshold': (
+                self.state.model_explorer_page.variance_threshold
+                if self.state.model_explorer_page is not None
+                else None
+            ),
             'configured_tests': [
                 {
                     'type_ref': getattr(test, 'type_ref', ''),

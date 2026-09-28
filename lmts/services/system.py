@@ -28,12 +28,13 @@ class SystemService:
         self.repository = repository
         self.profile_service = profile_service
 
-    def _profile_identity(self) -> tuple[str, int, dict[str, object], dict[str, object]]:
+    def _profile_identity(self) -> tuple[str, int, dict[str, object], dict[str, object], dict[str, object]]:
         context = self.profile_service.context()
         fingerprint = str(context.get('fingerprint') or '').strip()
         schema_version = context.get('schema_version')
         identity = context.get('identity')
         profile = context.get('profile')
+        hardware_order = context.get('hardware_order')
         if not fingerprint:
             raise ValueError('system profile has no fingerprint')
         if isinstance(schema_version, bool) or not isinstance(schema_version, int):
@@ -42,10 +43,12 @@ class SystemService:
             raise ValueError('system profile has no canonical identity')
         if not isinstance(profile, dict):
             raise ValueError('system profile has no profile payload')
-        return fingerprint, schema_version, identity, profile
+        if not isinstance(hardware_order, dict):
+            raise ValueError('system profile has no hardware ordering evidence')
+        return fingerprint, schema_version, identity, profile, hardware_order
 
     def build_run_provenance(self, user_id: str) -> RunProvenance:
-        fingerprint, _schema_version, _identity, _profile = self._profile_identity()
+        fingerprint, _schema_version, _identity, _profile, _hardware_order = self._profile_identity()
         return RunProvenance(
             tester_user_id=user_id,
             system_id=system_id_for(user_id, fingerprint),
@@ -55,13 +58,14 @@ class SystemService:
     def ensure_current(self, user_id: str) -> SystemRecord:
         if self.repository is None:
             raise RuntimeError('local system persistence is not configured')
-        fingerprint, schema_version, identity, profile = self._profile_identity()
+        fingerprint, schema_version, identity, profile, hardware_order = self._profile_identity()
         return self.repository.ensure_system(
             user_id=user_id,
             fingerprint=fingerprint,
             profile_schema_version=schema_version,
             identity=identity,
             profile=profile,
+            hardware_order=hardware_order,
         )
 
     def run_provenance(self, user_id: str) -> RunProvenance:

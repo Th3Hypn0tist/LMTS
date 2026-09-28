@@ -415,7 +415,8 @@ try {
             rri.test_version_id,
             CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
                    CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS test_label,
-            JSON_ARRAYAGG(rri.duration_ms) AS total_time_samples_json
+            JSON_ARRAYAGG(rri.duration_ms) AS total_time_samples_json,
+            JSON_ARRAYAGG(rri.ttft_ms) AS ttft_samples_json
          FROM LMTS_report_record_index rri
          JOIN LMTS_reports r ON r.report_id = rri.report_id
          JOIN LMTS_systems s ON s.system_id = rri.system_id
@@ -469,7 +470,15 @@ try {
                     static fn($value): bool => is_int($value) || is_float($value) || is_numeric($value)
                 ))
                 : [];
-            unset($configurationCell['total_time_samples_json']);
+            $rawTtft = $configurationCell['ttft_samples_json'] ?? '[]';
+            $decodedTtft = json_decode((string)$rawTtft, true);
+            $configurationCell['ttft_samples_ms'] = is_array($decodedTtft)
+                ? array_values(array_filter(
+                    $decodedTtft,
+                    static fn($value): bool => is_int($value) || is_float($value) || is_numeric($value)
+                ))
+                : [];
+            unset($configurationCell['total_time_samples_json'], $configurationCell['ttft_samples_json']);
             $key = (string)$configurationCell['target_ref'] . "\0" . (string)$configurationCell['test_version_id'];
             $varianceEvidence = $configurationVariance[$key] ?? null;
             $configurationCell['sample_count'] = $varianceEvidence === null ? 0 : (int)$varianceEvidence['sample_count'];
@@ -540,6 +549,7 @@ try {
                     'fail_count' => null,
                     'pf_score' => null,
                     'total_time_samples_ms' => [],
+                    'ttft_samples_ms' => [],
                     'evidence_scope' => $inferredPass ? 'inferred_lighter_pass' : 'lower_fail_only',
                     'compatibility_status' => $inferredPass ? 'pass' : 'unknown',
                     'source_configuration_ids' => $sourceIds,

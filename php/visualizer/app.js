@@ -18,6 +18,18 @@ function number(value, digits = 2) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(parsed);
 }
 
+function median(values) {
+  const numeric = (values ?? [])
+    .map(value => Number(value))
+    .filter(value => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (!numeric.length) return null;
+  const middle = Math.floor(numeric.length / 2);
+  return numeric.length % 2
+    ? numeric[middle]
+    : (numeric[middle - 1] + numeric[middle]) / 2;
+}
+
 function targetLabel(record) {
   if (record.target_label) return record.target_label;
   const id = record.target_id ? ' · ' + record.target_id : '';
@@ -106,6 +118,51 @@ function summaryCard(label, value) {
     h('strong', { text: number(value, 0) }),
     h('span', { text: label }),
   ]);
+}
+
+function configurationComparison(matrix) {
+  const cells = matrix?.cells ?? [];
+  const targets = new Map();
+  const tests = new Map();
+  const index = new Map();
+
+  for (const cell of cells) {
+    const targetKey = text(cell.target_ref, 'unresolved');
+    const testKey = text(cell.test_version_id, 'unresolved');
+    if (!targets.has(targetKey)) targets.set(targetKey, cell.target_label || cell.target_ref || 'Unresolved model');
+    if (!tests.has(testKey)) tests.set(testKey, cell.test_label || cell.test_version_id || 'Unresolved test');
+    index.set(targetKey + '\u0001' + testKey, cell);
+  }
+
+  const targetEntries = [...targets.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }));
+  const testEntries = [...tests.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), undefined, { numeric: true }));
+  const table = h('table', { className: 'matrix' });
+  const head = h('tr', {}, [h('th', { text: 'Model / test' })]);
+  for (const [, label] of testEntries) head.append(h('th', { text: label }));
+  table.append(h('thead', {}, [head]));
+
+  const body = h('tbody');
+  for (const [targetKey, targetLabelValue] of targetEntries) {
+    const row = h('tr', {}, [h('th', { className: 'row-label', text: targetLabelValue })]);
+    for (const [testKey] of testEntries) {
+      const cell = index.get(targetKey + '\u0001' + testKey);
+      if (!cell) {
+        row.append(h('td', { className: 'matrix-empty', text: 'NaN' }));
+        continue;
+      }
+      const med = median(cell.total_time_samples_ms);
+      row.append(h('td', {}, [
+        h('div', { className: 'matrix-cell matrix-cell-' + (Number(cell.pass_count ?? 0) > 0 ? 'pass' : 'fail') }, [
+          h('strong', { text: med == null ? 'NaN' : number(med) + ' ms' }),
+          h('span', { className: 'matrix-runs', text: 'P/F ' + number(cell.pf_score) + ' · N=' + number(cell.sample_count, 0) }),
+          h('span', { className: 'subtle', text: 'exact evidence' }),
+        ]),
+      ]));
+    }
+    body.append(row);
+  }
+  table.append(body);
+  return h('div', { className: 'scroll' }, [table]);
 }
 
 function configurationOverviewTable(rows) {
@@ -341,6 +398,7 @@ function render(payload) {
   }
   const summary = payload.summary ?? {};
   const configurationOverview = payload.configuration_overview ?? [];
+  const configurationMatrix = payload.configuration_matrix ?? {};
   const matrix = payload.matrix ?? [];
   const records = payload.records ?? [];
   const series = numericSeries(payload.telemetry);
@@ -362,6 +420,23 @@ function render(payload) {
       summaryCard('Fail', summary.fail),
       summaryCard('Telemetry values', summary.telemetry_values),
     ]),
+    configurationMatrix.configuration_id ? h('section', { className: 'panel' }, [
+      h('div', { className: 'section-title' }, [
+        h('div', {}, [
+          h('h2', { text: 'Configuration comparison' }),
+          h('div', { className: 'subtle', text: 'Level 2 foundation. Exact selected-configuration evidence only; cells show median total time.' }),
+        ]),
+        h('span', { className: 'subtle', text: text(configurationMatrix.configuration_id) }),
+      ]),
+      h('div', { className: 'subtle', text:
+        configurationMatrix.hardware_ceiling_status === 'ordering_contract_unresolved'
+          ? 'Hardware ceiling inference is disabled until canonical lighter/heavier ordering is defined.'
+          : 'Hardware ceiling enabled.'
+      }),
+      (configurationMatrix.cells ?? []).length
+        ? configurationComparison(configurationMatrix)
+        : h('p', { className: 'empty', text: 'No exact model/test evidence exists for this configuration.' }),
+    ]) : null,
     h('section', { className: 'panel' }, [
       h('div', { className: 'section-title' }, [
         h('div', {}, [
@@ -404,7 +479,7 @@ function render(payload) {
         : h('p', { className: 'empty', text: 'No numeric telemetry samples exist for the visible result records.' }),
     ]),
   ];
-  gui.replace(app, blocks);
+  gui.replace(app, blocks.filter(Boolean));
 }
 
 async function load(params = new URLSearchParams(location.search)) {

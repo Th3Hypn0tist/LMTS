@@ -3,11 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from lmts.reporting import REPORT_FORMAT, REPORT_VERSION, project_matrix_bundle
 from lmts.tools.report_contract_php import REPORT_CONTRACT_VALIDATOR_PHP
-from lmts.tools.web_deploy import APP_JS, REPORT_CONTRACT_NAME, REPORT_PHP, web_root_files
+from lmts.tools.web_deploy import php_package_files
 
 
 SCHEMA = Path('lmts/reporting/LMTS_Benchmark_Report_Template_v1.1.schema.json')
@@ -102,24 +100,27 @@ def test_projector_keeps_distinct_system_profiles_with_same_id() -> None:
     ]
 
 
-def test_results_server_and_dvs_share_report_v11_contract() -> None:
-    files = web_root_files()
-    contract_path = f'contracts/{REPORT_CONTRACT_NAME}'
-    validator_path = 'lib/report_contract.php'
+def test_results_server_uses_report_v11_contract() -> None:
+    files = php_package_files()
+    contract_path = 'storage/contracts/LMTS_Benchmark_Report_Template_v1.1.schema.json'
+    validator_path = 'storage/lib/report_contract.php'
+    upload_path = 'upload.php'
+    store_path = 'storage/lib/report_store.php'
+
     assert contract_path in files
     assert validator_path in files
-    assert files[validator_path] == REPORT_CONTRACT_VALIDATOR_PHP
-    assert "require_once dirname(__DIR__) . '/lib/report_contract.php'" in REPORT_PHP
-    assert 'lmts_validate_report_document' in REPORT_PHP
-    assert "report?.version !== '1.1'" in APP_JS
-    assert 'report id already exists with different content' in REPORT_PHP
-    assert 'ON DUPLICATE KEY UPDATE' not in REPORT_PHP
-    assert '"const": "1.1"' in files[contract_path]
-    assert all(not path.startswith('public/') for path in files)
+    assert upload_path in files
+    assert store_path in files
 
+    validator = files[validator_path].decode('utf-8')
+    upload = files[upload_path].decode('utf-8')
+    store = files[store_path].decode('utf-8')
+    contract = files[contract_path].decode('utf-8')
 
-def test_result_viewer_consumes_report_system_profile_index() -> None:
-    assert 'report.summary?.system_profiles' in APP_JS
-    assert "text: 'System Profiles'" in APP_JS
-    assert "['Systems', systemProfiles.length]" in APP_JS
-    assert "JSON.stringify(profile, null, 2)" in APP_JS
+    assert validator == REPORT_CONTRACT_VALIDATOR_PHP
+    assert "require_once __DIR__ . '/storage/lib/report_contract.php'" in upload
+    assert 'lmts_validate_report_document' in upload
+    assert 'report id already exists with different content' in store
+    assert 'ON DUPLICATE KEY UPDATE' not in store
+    assert '"const": "1.1"' in contract
+    assert 'config.php' not in files

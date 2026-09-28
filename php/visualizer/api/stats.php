@@ -346,6 +346,74 @@ try {
         $rankingParams,
     )->fetchAll();
 
+    $configurationTelemetrySql = "SELECT
+        s.configuration_id,
+        rri.target_ref,
+        tv.telemetry_type_id,
+        tt.canonical_key,
+        tt.name AS telemetry_name,
+        COALESCE(tv.unit_snapshot, tt.unit) AS unit,
+        JSON_ARRAYAGG(tv.value_number) AS samples_json
+     FROM LMTS_telemetry_values tv
+     JOIN LMTS_report_record_index rri
+       ON rri.report_id = tv.report_id AND rri.record_id = tv.record_id
+     JOIN LMTS_reports r ON r.report_id = rri.report_id
+     JOIN LMTS_systems s ON s.system_id = rri.system_id
+     JOIN LMTS_telemetry_types tt ON tt.telemetry_type_id = tv.telemetry_type_id
+     $rankingWhere
+       AND s.configuration_id = (
+           SELECT configuration_id
+           FROM LMTS_systems telemetry_system
+           WHERE telemetry_system.system_id = tv.system_id
+           LIMIT 1
+       )
+       AND tv.value_number IS NOT NULL
+     GROUP BY s.configuration_id, rri.target_ref, tv.telemetry_type_id,
+              tt.canonical_key, tt.name, COALESCE(tv.unit_snapshot, tt.unit)
+     ORDER BY s.configuration_id, rri.target_ref, tt.canonical_key";
+    $configurationTelemetryRows = stats_query(
+        $pdo,
+        $configurationTelemetrySql,
+        $rankingParams,
+    )->fetchAll();
+
+    $configurationTelemetry = [];
+    $level1MetricOptions = [
+        ['value' => 'pf_score', 'label' => 'P/F score', 'unit' => null],
+        ['value' => 'coverage', 'label' => 'Coverage', 'unit' => 'percent'],
+    ];
+    $seenLevel1Metrics = ['pf_score' => true, 'coverage' => true];
+    foreach ($configurationTelemetryRows as $row) {
+        $configurationId = (string)$row['configuration_id'];
+        $targetRef = (string)$row['target_ref'];
+        $typeId = (string)$row['telemetry_type_id'];
+        $samples = json_decode((string)$row['samples_json'], true);
+        if (!is_array($samples)) $samples = [];
+        $numericSamples = [];
+        foreach ($samples as $sample) {
+            if (is_int($sample) || is_float($sample)) {
+                $numericSamples[] = (float)$sample;
+            } elseif (is_numeric($sample)) {
+                $numericSamples[] = (float)$sample;
+            }
+        }
+        $configurationTelemetry[$configurationId][$targetRef][$typeId] = [
+            'canonical_key' => (string)$row['canonical_key'],
+            'label' => (string)$row['telemetry_name'],
+            'unit' => $row['unit'] === null ? null : (string)$row['unit'],
+            'samples' => $numericSamples,
+        ];
+        $metricValue = 'telemetry:' . $typeId;
+        if (!isset($seenLevel1Metrics[$metricValue])) {
+            $level1MetricOptions[] = [
+                'value' => $metricValue,
+                'label' => (string)$row['telemetry_name'],
+                'unit' => $row['unit'] === null ? null : (string)$row['unit'],
+            ];
+            $seenLevel1Metrics[$metricValue] = true;
+        }
+    }
+
     $configurationRanking = [];
     foreach ($configurationRankingRows as $row) {
         $configurationId = (string)$row['configuration_id'];
@@ -399,6 +467,7 @@ try {
                 'tests_covered' => $testedCount,
                 'tests_available' => $testUniverseCount,
                 'sample_count' => $model['sample_count'],
+                'telemetry' => $configurationTelemetry[$configuration['configuration_id']][$model['target_ref']] ?? [],
             ];
         }
 
@@ -1025,6 +1094,7 @@ try {
             'telemetry_values' => (int)$telemetryCount,
         ],
         'configuration_overview' => $configurationOverview,
+        'level1_metric_options' => $level1MetricOptions,
         'configuration_matrix' => [
             'configuration_id' => $selectedConfigurationId,
             'evidence_scope' => $selectedConfigurationId === null ? null : 'exact_plus_compatibility',

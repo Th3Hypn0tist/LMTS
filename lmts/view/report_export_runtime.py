@@ -143,12 +143,18 @@ class ReportExportController(LMTSViewController):
         self._next_publish_targets = ()
         if not targets:
             return None
-        def publish(run: dict[str, object]) -> None:
-            _publish_many(project_run_result(run), targets)
+
+        def publish(bundle: dict[str, object]) -> None:
+            _publish_many(project_matrix_bundle(bundle), targets)
+
         return publish
 
     def _launch(self, targets, tests) -> bool:
-        return self._start_run(list(targets), list(tests), on_run_completed=self._consume_publish_callback())
+        return self._start_run(
+            list(targets),
+            list(tests),
+            on_target_completed=self._consume_publish_callback(),
+        )
 
     def run_selected(self, *, on_run_completed=None) -> bool:
         if on_run_completed is not None:

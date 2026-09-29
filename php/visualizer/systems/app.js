@@ -93,17 +93,16 @@ function render(payload) {
   const selected = payload.systems?.[0] && state.selectedSystem ? payload.systems[0] : null;
 
   replaceRoot([
-    topbar('systems'),
+    topbar('systems', 'Systems'),
     h('main', { className: 'page explorer-page' }, [
-      h('section', { className: 'explorer-head' }, [
-        h('span', { className: 'eyebrow', text: 'LMTS SYSTEMS' }),
-        h('h1', { text: selected ? selected.label : 'Systems' }),
+      h('section', { className: 'explorer-head compact-explorer-head' }, [
+        selected ? h('h1', { text: selected.label }) : null,
         h('p', {
           text: selected
             ? 'Hardware identity, contributor and benchmark evidence for this system.'
             : 'Browse systems that have contributed valid PASS/FAIL benchmark evidence.',
         }),
-        selected ? h('a', { className: 'workflow-back link-button', href: './', text: '← All systems' }) : null,
+        selected ? h('a', { className: 'workflow-back link-button', href: '/lmts/systems/', text: '← All systems' }) : null,
       ].filter(Boolean)),
       selected
         ? h('div', {}, [
@@ -144,6 +143,6 @@ async function load() {
 }
 
 load().catch(error => replaceRoot([
-  topbar('systems'),
+  topbar('systems', 'Systems'),
   h('pre', { className: 'fatal', text: error?.stack || String(error) }),
 ]));

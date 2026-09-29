@@ -20,7 +20,6 @@ try {
 
     $config = require __DIR__ . '/config.php';
     require_once __DIR__ . '/storage/lib/publish_auth.php';
-    require_once __DIR__ . '/storage/lib/report_projection.php';
 
     $iam = lmts_auth_require_iam_user($config);
     if ($iam['ok'] !== true) {
@@ -41,28 +40,54 @@ try {
         lmts_provision_fail(400, 'system_id and system_context are required');
     }
 
+    $fingerprint = trim((string)($context['fingerprint'] ?? ''));
+    $schemaVersion = $context['schema_version'] ?? null;
+    $profile = $context['profile'] ?? null;
+    if ($fingerprint === '' || !is_int($schemaVersion) || !is_array($profile)) {
+        lmts_provision_fail(400, 'invalid system_context');
+    }
+
+    $expectedSystemId = 'sys_' . substr(
+        hash('sha256', $userId . "\0" . $fingerprint),
+        0,
+        40,
+    );
+    if (!hash_equals($expectedSystemId, $systemId)) {
+        lmts_provision_fail(400, 'system_id does not match authenticated user and fingerprint');
+    }
+
+    $label = trim((string)($context['system_label'] ?? ''));
+    if ($label === '') $label = 'System ' . substr($fingerprint, 0, 12);
+    $probeVersion = 'profile-v' . $schemaVersion;
+
     $pdo->beginTransaction();
     try {
-        // This validates deterministic system identity and ownership. It also
-        // bootstraps a never-before-published machine, avoiding a first-publish
-        // authentication deadlock.
-        lmts_projection_ensure_system_identity($pdo, $userId, $systemId, $context);
-        $profile = $context['profile'] ?? null;
-        if (!is_array($profile)) {
-            throw new InvalidArgumentException('system_context.profile is required');
-        }
-        lmts_projection_project_system_profile($pdo, $systemId, $profile);
+        // Provisioning owns only machine identity + credential issuance.
+        // Hardware/resource projection belongs to report commit, not this path.
+        $ensure = $pdo->prepare(
+            'INSERT INTO LMTS_systems (
+                system_id, user_id, label, system_class, probe_version, last_probed_at
+             ) VALUES (?, ?, ?, ?, ?, NULL)
+             ON DUPLICATE KEY UPDATE
+                label = VALUES(label),
+                probe_version = VALUES(probe_version)'
+        );
+        $ensure->execute([$systemId, $userId, $label, 'local', $probeVersion]);
 
         $lock = $pdo->prepare(
-            'SELECT system_id FROM LMTS_systems WHERE system_id = ? AND user_id = ? FOR UPDATE'
+            'SELECT user_id
+             FROM LMTS_systems
+             WHERE system_id = ?
+             FOR UPDATE'
         );
-        $lock->execute([$systemId, $userId]);
-        if ($lock->fetchColumn() === false) {
+        $lock->execute([$systemId]);
+        $owner = $lock->fetchColumn();
+        if ($owner === false || !hash_equals((string)$owner, $userId)) {
             throw new RuntimeException('system ownership validation failed');
         }
 
-        // Exactly one current credential per user + system. Reprovisioning is
-        // rotation: previous credentials for only this machine are revoked.
+        // Rotate only this machine. Other machines for the same IAM user are
+        // completely independent.
         $revoke = $pdo->prepare(
             'UPDATE LMTS_publish_keys
              SET revoked_at = CURRENT_TIMESTAMP(6)

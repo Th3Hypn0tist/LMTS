@@ -397,7 +397,8 @@ function lmts_projection_ensure_system_identity(
     $check->execute([$systemId]);
     $existingUser = $check->fetchColumn();
 
-    $label = 'System ' . substr($fingerprint, 0, 12);
+    $contextLabel = trim((string)($context['system_label'] ?? ''));
+    $label = $contextLabel !== '' ? $contextLabel : ('System ' . substr($fingerprint, 0, 12));
     $probeVersion = 'profile-v' . $schemaVersion;
     $profiledAt = lmts_projection_mysql_datetime($context['profiled_at'] ?? null);
 
@@ -425,21 +426,23 @@ function lmts_projection_ensure_system_identity(
     if ($profiledAt === null) {
         $update = $pdo->prepare(
             'UPDATE LMTS_systems
-             SET probe_version = ?
+             SET label = ?,
+                 probe_version = ?
              WHERE system_id = ?'
         );
-        $update->execute([$probeVersion, $systemId]);
+        $update->execute([$label, $probeVersion, $systemId]);
     } else {
         $update = $pdo->prepare(
             'UPDATE LMTS_systems
-             SET probe_version = ?,
+             SET label = ?,
+                 probe_version = ?,
                  last_probed_at = CASE
                      WHEN last_probed_at IS NULL OR last_probed_at < ? THEN ?
                      ELSE last_probed_at
                  END
              WHERE system_id = ?'
         );
-        $update->execute([$probeVersion, $profiledAt, $profiledAt, $systemId]);
+        $update->execute([$label, $probeVersion, $profiledAt, $profiledAt, $systemId]);
     }
 }
 

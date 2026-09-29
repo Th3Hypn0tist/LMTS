@@ -10,6 +10,7 @@ const state = {
     npu: null,
   },
   targetKey: null,
+  modelFamilyKey: null,
   search: '',
   status: 'all',
   metric: 'total_time',

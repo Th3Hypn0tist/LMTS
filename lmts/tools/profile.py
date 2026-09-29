@@ -253,11 +253,29 @@ def _existing_reference_benchmarks(target: Path, fingerprint: str) -> dict[str, 
     return references if validate_reference_benchmarks(references) else None
 
 
-def save_system_profile(profile: SystemProfile, path: Path = DEFAULT_PROFILE_PATH, *, reference_benchmarks: dict[str, object] | None = None) -> Path:
+def save_system_profile(
+    profile: SystemProfile,
+    path: Path = DEFAULT_PROFILE_PATH,
+    *,
+    reference_benchmarks: dict[str, object] | None = None,
+    system_label: str | None = None,
+) -> Path:
     target = path.expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
     fingerprint = system_fingerprint(profile)
     references = reference_benchmarks
+    existing_label = None
+    if target.is_file():
+        try:
+            existing_payload = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing_payload = None
+        if isinstance(existing_payload, dict):
+            value = existing_payload.get("system_label")
+            if isinstance(value, str) and value.strip():
+                existing_label = value.strip()
+    resolved_label = (system_label or existing_label or platform.node() or "LMTS system").strip()
+
     if references is None:
         references = _existing_reference_benchmarks(target, fingerprint) or empty_reference_benchmarks()
     if not validate_reference_benchmarks(references):
@@ -266,6 +284,7 @@ def save_system_profile(profile: SystemProfile, path: Path = DEFAULT_PROFILE_PAT
         "schema_version": PROFILE_SCHEMA_VERSION,
         "profiled_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "fingerprint": fingerprint,
+        "system_label": resolved_label,
         "profile": profile.to_dict(),
         "reference_benchmarks": references,
     }

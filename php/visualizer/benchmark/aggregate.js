@@ -4,6 +4,21 @@ function targetKey(cell) {
   return String(cell?.target_kind || 'unknown') + ':' + String(cell?.target_ref || '');
 }
 
+function modelFamilyRef(value) {
+  const text = String(value || '').trim();
+  const split = text.lastIndexOf(':');
+  return split > 0 ? text.slice(0, split) : text;
+}
+
+function modelFamilyKey(cell) {
+  const kind = String(cell?.target_kind || 'model');
+  return kind + ':' + modelFamilyRef(cell?.target_ref || cell?.target_label || '');
+}
+
+function modelFamilyLabel(cell) {
+  return modelFamilyRef(cell?.target_label || cell?.target_ref || 'Unknown model');
+}
+
 function configurationKey(cell) {
   return String(cell?.system_id || '') + ':' + String(cell?.compute_profile_id || '');
 }
@@ -92,6 +107,8 @@ export {
   configurationKey,
   groupBy,
   metricLabel,
+  modelFamilyKey,
+  modelFamilyLabel,
   targetKey,
   testGroup,
 };

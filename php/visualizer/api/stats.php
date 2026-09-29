@@ -239,8 +239,8 @@ try {
         COUNT(*) AS runs,
         COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
         COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
-        COALESCE(AVG(CASE WHEN rri.outcome = 'pass' THEN rri.duration_ms END), 0) AS avg_total_time_ms,
-        COALESCE(AVG(CASE WHEN rri.outcome = 'pass' THEN rri.ttft_ms END), 0) AS avg_ttft_ms,
+        AVG(CASE WHEN rri.outcome = 'pass' THEN rri.duration_ms END) AS avg_total_time_ms,
+        AVG(CASE WHEN rri.outcome = 'pass' THEN rri.ttft_ms END) AS avg_ttft_ms,
         MAX(COALESCE(rri.started_at, r.created_at)) AS latest_at
      FROM LMTS_report_record_index rri
      JOIN LMTS_reports r ON r.report_id = rri.report_id

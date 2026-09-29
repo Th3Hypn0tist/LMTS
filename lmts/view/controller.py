@@ -10,7 +10,7 @@ from lmts.repositories.stats import StatsRepository
 from lmts.repositories.system import SystemRepository
 from lmts.repositories.user import UserRepository
 from lmts.services.auth import AuthService
-from lmts.services.evaluation import EvaluationService, RunCompletedCallback
+from lmts.services.evaluation import EvaluationService, RunCompletedCallback, TargetCompletedCallback
 from lmts.services.profile import DEFAULT_PROFILE_PATH, SystemProfileService
 from lmts.services.results import ResultService
 from lmts.services.run_lifecycle import RunLifecycleService
@@ -154,6 +154,7 @@ class LMTSViewController:
         tests: list[TestModule],
         *,
         on_run_completed: RunCompletedCallback | None = None,
+        on_target_completed: TargetCompletedCallback | None = None,
     ) -> bool:
         if self.state.running:
             self.state.message = 'test matrix already running'
@@ -178,7 +179,14 @@ class LMTSViewController:
         self.last_publish_errors = []
         self.evaluation_view.prepare(targets, tests)
         started = self.lifecycle.start(
-            lambda control: self._run_matrix(targets, tests, control, on_run_completed, provenance),
+            lambda control: self._run_matrix(
+                targets,
+                tests,
+                control,
+                on_run_completed,
+                on_target_completed,
+                provenance,
+            ),
         )
         if started:
             return True
@@ -192,6 +200,7 @@ class LMTSViewController:
         tests: list[TestModule],
         control: RunControl,
         on_run_completed: RunCompletedCallback | None,
+        on_target_completed: TargetCompletedCallback | None,
         provenance: dict[str, object],
     ) -> None:
         try:
@@ -201,6 +210,7 @@ class LMTSViewController:
                 control,
                 progress=self.evaluation_view.progress,
                 on_run_completed=on_run_completed,
+                on_target_completed=on_target_completed,
                 provenance=provenance,
             )
             self.last_errors = list(outcome.run_errors)

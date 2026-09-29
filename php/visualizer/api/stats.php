@@ -357,6 +357,12 @@ try {
             GROUP_CONCAT(DISTINCT sr.system_id ORDER BY sr.system_id SEPARATOR ',') AS system_ids
          FROM LMTS_system_resources sr
          JOIN LMTS_hardware_nodes hn ON hn.hardware_id = sr.hardware_id
+         JOIN (
+            SELECT DISTINCT system_id
+            FROM LMTS_report_record_index
+            WHERE outcome IN ('pass','fail')
+              AND system_id IS NOT NULL
+         ) tested ON tested.system_id = sr.system_id
          WHERE sr.resource_kind IN ('cpu','gpu','npu')
          GROUP BY sr.resource_kind, hn.hardware_id, hn.label
          ORDER BY sr.resource_kind, hn.label"
@@ -370,13 +376,19 @@ try {
     $memoryRows = $pdo->query(
         "SELECT
             'memory' AS kind,
-            CAST(capacity_bytes AS CHAR) AS value,
-            CONCAT(ROUND(capacity_bytes / 1073741824, 2), ' GB') AS label,
-            GROUP_CONCAT(DISTINCT system_id ORDER BY system_id SEPARATOR ',') AS system_ids
-         FROM LMTS_system_memory_pools
-         WHERE pool_kind = 'system'
-         GROUP BY capacity_bytes
-         ORDER BY capacity_bytes"
+            CAST(mp.capacity_bytes AS CHAR) AS value,
+            CONCAT(ROUND(mp.capacity_bytes / 1073741824, 2), ' GB') AS label,
+            GROUP_CONCAT(DISTINCT mp.system_id ORDER BY mp.system_id SEPARATOR ',') AS system_ids
+         FROM LMTS_system_memory_pools mp
+         JOIN (
+            SELECT DISTINCT system_id
+            FROM LMTS_report_record_index
+            WHERE outcome IN ('pass','fail')
+              AND system_id IS NOT NULL
+         ) tested ON tested.system_id = mp.system_id
+         WHERE mp.pool_kind = 'system'
+         GROUP BY mp.capacity_bytes
+         ORDER BY mp.capacity_bytes"
     )->fetchAll();
 
     foreach ($memoryRows as $row) {
@@ -399,6 +411,12 @@ try {
             GROUP_CONCAT(DISTINCT sr.system_id ORDER BY sr.system_id SEPARATOR ',') AS system_ids
          FROM LMTS_system_resources sr
          JOIN LMTS_hardware_nodes hn ON hn.hardware_id = sr.hardware_id
+         JOIN (
+            SELECT DISTINCT system_id
+            FROM LMTS_report_record_index
+            WHERE outcome IN ('pass','fail')
+              AND system_id IS NOT NULL
+         ) tested ON tested.system_id = sr.system_id
          WHERE sr.resource_kind = 'gpu'
            AND JSON_EXTRACT(hn.identity_json, '$.vram_bytes') IS NOT NULL
          GROUP BY JSON_UNQUOTE(JSON_EXTRACT(hn.identity_json, '$.vram_bytes'))

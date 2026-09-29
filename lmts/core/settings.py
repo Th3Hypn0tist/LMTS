@@ -11,6 +11,7 @@ from .paths import SETTINGS_PATH
 SETTINGS_SCHEMA_VERSION = 7
 DEFAULT_SETTINGS_PATH = SETTINGS_PATH
 DEFAULT_OUTPUT_FOLDER = 'exports'
+PUBLIC_PHP_API_TARGET_ID = 'php_api:public'
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +107,7 @@ class LMTSSettings:
         available = {
             *(mysql_target_id(item.id) for item in self.mysql_connections),
             *(php_api_target_id(item.id) for item in self.php_api_connections),
+            PUBLIC_PHP_API_TARGET_ID,
         }
         if len(self.auto_publish_targets) != len(set(self.auto_publish_targets)):
             raise ValueError('auto-publish targets must not contain duplicates')

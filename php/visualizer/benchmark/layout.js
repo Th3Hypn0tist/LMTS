@@ -1,4 +1,4 @@
-import { targetKey } from './aggregate.js';
+import { groupBy, modelFamilyKey, modelFamilyLabel } from './aggregate.js';
 import { renderMatrix } from './matrix.js';
 import { topbarRoot } from './nav.js';
 import { renderHardwareRanking, renderModelRanking } from './ranking.js';
@@ -63,7 +63,7 @@ function workflowHero(state, primaryControl = null) {
       h('p', {
         text: state.mode === 'hardware-model'
           ? 'Select hardware parts independently. Presets only fill these selections for you.'
-          : 'Compare one model across hardware that has actually tested it.',
+          : 'Compare one model family and its tested variants across hardware.',
       }),
     ]),
     primaryControl ? h('div', { className: 'workflow-control' }, [primaryControl]) : null,
@@ -221,9 +221,28 @@ function hardwareSummary(payload, state) {
   };
 }
 
+function modelFamilyOptions(cells) {
+  return [...groupBy(
+    cells.filter(cell => String(cell.target_kind || '') === 'model'),
+    modelFamilyKey,
+  ).entries()]
+    .map(([value, items]) => ({
+      value,
+      label: modelFamilyLabel(items[0]),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+}
+
 function renderBenchmark(payload, state, rerender) {
-  const targets = payload.filters?.options?.targets || [];
   const cells = payload.cells || [];
+  const families = modelFamilyOptions(cells);
+  if (
+    state.mode === 'model-hardware'
+    && (!state.modelFamilyKey || !families.some(item => item.value === state.modelFamilyKey))
+    && families.length
+  ) {
+    state.modelFamilyKey = families[0].value;
+  }
   const header = topbarRoot('benchmark', 'Benchmark');
 
   if (!state.mode) {
@@ -239,10 +258,10 @@ function renderBenchmark(payload, state, rerender) {
     ? hardwarePresetControl(payload, state, rerender)
     : selectControl(
         'Model',
-        state.targetKey,
-        targets.map(item => ({ value: item.value, label: item.label })),
+        state.modelFamilyKey,
+        families,
         value => {
-          state.targetKey = value;
+          state.modelFamilyKey = value;
           state.rawCell = null;
           rerender();
         },
@@ -253,13 +272,17 @@ function renderBenchmark(payload, state, rerender) {
     ? cells.filter(cell => selectedSystemIds.has(String(cell.system_id)))
     : cells;
 
+  const familyCells = state.mode === 'model-hardware'
+    ? cells.filter(cell => modelFamilyKey(cell) === state.modelFamilyKey)
+    : [];
+
   const matrixCells = state.mode === 'hardware-model'
     ? hardwareCells
-    : cells.filter(cell => targetKey(cell) === state.targetKey);
+    : familyCells;
 
   const mainContent = state.mode === 'hardware-model'
     ? renderModelRanking(payload, hardwareCells, hardwareFacets, state, rerender)
-    : renderHardwareRanking(payload, cells, state);
+    : renderHardwareRanking(payload, familyCells, state);
 
   replaceRoot([
     header,

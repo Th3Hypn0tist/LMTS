@@ -39,9 +39,9 @@ class SystemProfileService:
             profiled_at=str(payload.get('profiled_at') or '') if payload is not None else '',
         )
 
-    def scan(self) -> ProfileResult:
+    def scan(self, *, system_label: str | None = None) -> ProfileResult:
         profile = scan_system_profile()
-        path = save_system_profile(profile, self.profile_path)
+        path = save_system_profile(profile, self.profile_path, system_label=system_label)
         data = profile.to_dict()
         status = self.status()
         return ProfileResult(path=path, data=data, status=status)

@@ -495,23 +495,29 @@ def system_identity(profile: SystemProfile) -> dict[str, object]:
     memory = data.get("memory") if isinstance(data.get("memory"), dict) else {}
     gpu = data.get("gpu") if isinstance(data.get("gpu"), list) else []
     npu = data.get("npu") if isinstance(data.get("npu"), list) else []
-    gpu_identity = sorted(
-        (
-            str(item.get("vendor") or ""),
-            str(item.get("model") or ""),
-            item.get("vram_bytes"),
-            item.get("memory_type"),
+    gpu_identity = [
+        list(item)
+        for item in sorted(
+            (
+                str(item.get("vendor") or ""),
+                str(item.get("model") or ""),
+                item.get("vram_bytes"),
+                item.get("memory_type"),
+            )
+            for item in gpu if isinstance(item, dict)
         )
-        for item in gpu if isinstance(item, dict)
-    )
-    npu_identity = sorted(
-        (
-            str(item.get("class") or ""), str(item.get("vendor_id") or ""), str(item.get("device_id") or ""),
-            str(item.get("subsystem_vendor_id") or ""), str(item.get("subsystem_device_id") or ""),
-            str(item.get("modalias") or ""),
+    ]
+    npu_identity = [
+        list(item)
+        for item in sorted(
+            (
+                str(item.get("class") or ""), str(item.get("vendor_id") or ""), str(item.get("device_id") or ""),
+                str(item.get("subsystem_vendor_id") or ""), str(item.get("subsystem_device_id") or ""),
+                str(item.get("modalias") or ""),
+            )
+            for item in npu if isinstance(item, dict)
         )
-        for item in npu if isinstance(item, dict)
-    )
+    ]
     return {
         "cpu": {
             "architecture": cpu.get("architecture"), "model_name": cpu.get("model_name"), "model_names": cpu.get("model_names"),
@@ -525,20 +531,23 @@ def system_identity(profile: SystemProfile) -> dict[str, object]:
             "ecc": memory.get("ecc"),
             "speed_mt_s": memory.get("speed_mt_s"),
             "form_factor": memory.get("form_factor"),
-            "modules": sorted(
-                (
-                    module.get("capacity_bytes"),
-                    module.get("memory_type"),
-                    module.get("ecc"),
-                    module.get("speed_mt_s"),
-                    module.get("form_factor"),
-                    str(module.get("manufacturer") or ""),
-                    str(module.get("part_number") or ""),
-                    module.get("rank"),
+            "modules": [
+                list(item)
+                for item in sorted(
+                    (
+                        module.get("capacity_bytes"),
+                        module.get("memory_type"),
+                        module.get("ecc"),
+                        module.get("speed_mt_s"),
+                        module.get("form_factor"),
+                        str(module.get("manufacturer") or ""),
+                        str(module.get("part_number") or ""),
+                        module.get("rank"),
+                    )
+                    for module in memory.get("modules", [])
+                    if isinstance(module, dict)
                 )
-                for module in memory.get("modules", [])
-                if isinstance(module, dict)
-            ),
+            ],
         },
         "gpu": gpu_identity,
         "npu": npu_identity,

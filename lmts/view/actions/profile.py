@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import platform
+
 from lmts.tools.profile import benchmark_system_reference
 from lmts.tools.reference_benchmark import REFERENCE_BENCHMARK_DOMAINS
 
@@ -12,7 +14,19 @@ class ProfileActions(TUIActions):
         self.state.profile_console.clear()
         self.state.profile_console.append('System profile scan started')
         self.host.draw(self.stdscr)
-        self.controller.profile()
+        suggested = (platform.node() or 'LMTS system').strip()
+        label = self.host.input_text(
+            self.stdscr,
+            'System name',
+            default=suggested,
+            maximum=255,
+        )
+        if label is None:
+            self.state.profile_console.append('System profiling cancelled')
+            self.host.draw(self.stdscr)
+            self.set_message('system profiling cancelled')
+            return
+        self.controller.profile(system_label=label)
         self.state.profile_console.append('System profile scan completed')
         self.host.draw(self.stdscr)
         for domain in REFERENCE_BENCHMARK_DOMAINS:

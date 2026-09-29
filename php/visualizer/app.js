@@ -10,17 +10,25 @@ function rerender() {
   renderBenchmark(payload, state, rerender);
 }
 
-async function start() {
-  replaceRoot([
-    h('p', { className: 'loading', text: 'Loading benchmark evidence…' }),
-  ]);
+async function loadBenchmark({ initial = false } = {}) {
+  if (initial) {
+    replaceRoot([
+      h('p', { className: 'loading', text: 'Loading benchmark evidence…' }),
+    ]);
+  }
 
   payload = await fetchBenchmark();
   initializeState(payload);
   rerender();
 }
 
-start().catch(error => {
+window.addEventListener('lmts:refresh', () => {
+  loadBenchmark().catch(error => {
+    console.error('LMTS refresh failed', error);
+  });
+});
+
+loadBenchmark({ initial: true }).catch(error => {
   replaceRoot([
     h('pre', {
       className: 'fatal',

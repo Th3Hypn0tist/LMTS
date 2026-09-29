@@ -1,5 +1,8 @@
 async function fetchBenchmark() {
-  const response = await fetch('./api/stats.php?limit=500', { cache: 'no-store' });
+  const response = await fetch(
+    './api/stats.php?limit=500&_=' + Date.now(),
+    { cache: 'no-store' },
+  );
   if (!response.ok) {
     let detail = 'HTTP ' + response.status;
     try {

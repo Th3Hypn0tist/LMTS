@@ -5,6 +5,7 @@ return [
     'dsn' => 'mysql:host=127.0.0.1;dbname=lmts;charset=utf8mb4',
     'user' => 'lmts',
     'password' => 'CHANGE_ME',
+    // Temporary migration fallback only. Machine-scoped LMTS keys are the normal publish auth.
     'publish_key' => 'CHANGE_ME',
 
     // Optional. Must be a private directory outside the public web root.

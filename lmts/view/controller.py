@@ -259,11 +259,11 @@ class LMTSViewController:
         self.state.message = f'error log exported: {path}'
         return path
 
-    def profile(self) -> Path | None:
+    def profile(self, *, system_label: str | None = None) -> Path | None:
         if self.state.running:
             self.state.message = 'cannot profile while test matrix is running'
             return None
-        result = self.profile_service.scan()
+        result = self.profile_service.scan(system_label=system_label)
         self.state.profile_required = result.status.required
         self.state.profiled_at = result.status.profiled_at
         self.state.last_result = {

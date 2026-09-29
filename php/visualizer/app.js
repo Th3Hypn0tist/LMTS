@@ -213,7 +213,7 @@ function rankingView(payload, cells, selectedSystem) {
     type: 'search',
     placeholder: 'Search models…',
     value: state.search,
-    on: { input: event => {
+    on: { change: event => {
       state.search = event.target.value;
       render(window.__LMTS_PAYLOAD__);
     } },
@@ -600,6 +600,7 @@ function render(payload) {
   window.__LMTS_PAYLOAD__ = payload;
 
   const systems = payload.filters?.options?.systems || [];
+  const configurations = payload.filters?.options?.configurations || [];
   const targets = payload.filters?.options?.targets || [];
   const cells = payload.cells || [];
 

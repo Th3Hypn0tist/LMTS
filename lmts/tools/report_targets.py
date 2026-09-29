@@ -3,12 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from lmts.core.settings import LMTSSettings, MySQLSettings, mysql_target_id
+from lmts.core.settings import (
+    LMTSSettings,
+    MySQLSettings,
+    PUBLIC_PHP_API_TARGET_ID,
+    mysql_target_id,
+)
 from .report_profiles import ReportProfile
 
 ReportTransport = Literal['mysql', 'php_api']
 
-PUBLIC_REPORT_TARGET_ID = 'php_api:public'
 PUBLIC_REPORT_LABEL = 'PHP API  AIGM.fi public'
 PUBLIC_REPORT_ENDPOINT = 'https://aigm.fi/lmts-report/report.php'
 
@@ -35,11 +39,11 @@ def configured_report_targets(settings: LMTSSettings) -> tuple[ReportTarget, ...
         ))
 
     targets.append(ReportTarget(
-        id=PUBLIC_REPORT_TARGET_ID,
+        id=PUBLIC_PHP_API_TARGET_ID,
         label=PUBLIC_REPORT_LABEL,
         transport='php_api',
         profile=ReportProfile(
-            name=PUBLIC_REPORT_TARGET_ID,
+            name=PUBLIC_PHP_API_TARGET_ID,
             kind='php_api',
             endpoint=PUBLIC_REPORT_ENDPOINT,
             publish_key='',

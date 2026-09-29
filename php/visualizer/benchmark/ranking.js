@@ -2,7 +2,7 @@ import { aggregateTarget, configurationKey, groupBy, targetKey } from './aggrega
 import { milliseconds, number } from './format.js';
 import { h, stat, statusPill } from './ui.js';
 
-function renderModelRanking(payload, cells, selectedConfiguration, state, rerender) {
+function renderModelRanking(payload, cells, hardwareControls, state, rerender) {
   const tests = new Set(cells.map(cell => cell.test_version_id));
   const byTarget = groupBy(cells, targetKey);
   const rows = [];
@@ -107,14 +107,8 @@ function renderModelRanking(payload, cells, selectedConfiguration, state, rerend
   table.append(body);
 
   return h('div', {}, [
-    h('div', { className: 'stats-strip' }, [
-      h('div', { className: 'system-summary' }, [
-        h('span', { className: 'system-icon', text: '▣' }),
-        h('div', {}, [
-          h('strong', { text: selectedConfiguration?.label || 'Hardware configuration' }),
-          h('span', { text: selectedConfiguration?.value || '' }),
-        ]),
-      ]),
+    h('div', { className: 'stats-strip hardware-stats-strip' }, [
+      h('div', { className: 'hardware-strip-controls' }, [hardwareControls]),
       stat(rows.length, 'models tested'),
       stat(compatible, 'compatible', 'good'),
       stat(partial, 'partial / fails', 'bad'),

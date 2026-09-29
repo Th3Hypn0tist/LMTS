@@ -66,7 +66,18 @@ img { display: block; max-width: 100%; }
   height: 25px;
   background: var(--line-strong);
 }
-.breadcrumb { color: var(--muted); }
+.brand-section {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -.015em;
+}
+.brand-lmts {
+  color: #dbe4ef;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 .nav { display: flex; align-items: center; gap: 28px; }
 .nav a {
@@ -850,4 +861,15 @@ img { display: block; max-width: 100%; }
   .hardware-stats-strip {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+.compact-explorer-head {
+  margin-bottom: 20px;
+}
+.compact-explorer-head > p {
+  margin-top: 0;
+}
+.compact-explorer-head h1 {
+  margin-bottom: 10px;
+  font-size: clamp(28px, 3vw, 42px);
 }

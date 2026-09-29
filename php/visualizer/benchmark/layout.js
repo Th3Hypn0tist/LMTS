@@ -70,8 +70,8 @@ function landing(state, rerender) {
   ]);
 }
 
-function workflowHero(state, rerender, primaryControl) {
-  return h('section', { className: 'workflow-head' }, [
+function workflowHero(state, rerender, primaryControl = null) {
+  return h('section', { className: 'workflow-head' + (primaryControl ? '' : ' no-control') }, [
     h('div', { className: 'workflow-title' }, [
       backButton(state, rerender),
       h('span', { className: 'eyebrow', text: 'LMTS BENCHMARK' }),
@@ -86,8 +86,8 @@ function workflowHero(state, rerender, primaryControl) {
           : 'Compare one model across hardware that has actually tested it.',
       }),
     ]),
-    h('div', { className: 'workflow-control' }, [primaryControl]),
-  ]);
+    primaryControl ? h('div', { className: 'workflow-control' }, [primaryControl]) : null,
+  ].filter(Boolean));
 }
 
 function hardwareForSystem(hardware, systemId, kind) {
@@ -249,9 +249,12 @@ function renderBenchmark(payload, state, rerender) {
     return;
   }
 
-  const primaryControl = state.mode === 'hardware-model'
+  const hardwareControl = state.mode === 'hardware-model'
     ? hardwareControls(payload, state, rerender)
-    : selectControl(
+    : null;
+
+  const primaryControl = state.mode === 'model-hardware'
+    ? selectControl(
         'Model',
         state.targetKey,
         targets.map(item => ({ value: item.value, label: item.label })),
@@ -260,7 +263,8 @@ function renderBenchmark(payload, state, rerender) {
           state.rawCell = null;
           rerender();
         },
-      );
+      )
+    : null;
 
   const selectedSystemIds = matchingSystemIds(payload, state);
   const hardwareCells = state.mode === 'hardware-model'
@@ -272,7 +276,7 @@ function renderBenchmark(payload, state, rerender) {
     : cells.filter(cell => targetKey(cell) === state.targetKey);
 
   const mainContent = state.mode === 'hardware-model'
-    ? renderModelRanking(payload, hardwareCells, hardwareSummary(payload, state), state, rerender)
+    ? renderModelRanking(payload, hardwareCells, hardwareControl, state, rerender)
     : renderHardwareRanking(payload, cells, state);
 
   replaceRoot([

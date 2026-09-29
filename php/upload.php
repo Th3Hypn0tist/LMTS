@@ -22,7 +22,7 @@ function lmts_upload_bearer_token(): ?string {
     return $token === '' ? null : $token;
 }
 
-function lmts_upload_authorized(array $config): bool {
+function lmts_upload_authenticated_user_id(array $config): string|false|null {
     $bearer = lmts_upload_bearer_token();
     if ($bearer !== null) {
         $pdo = new PDO($config['dsn'], $config['user'], $config['password'], [
@@ -31,7 +31,7 @@ function lmts_upload_authorized(array $config): bool {
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
         $stmt = $pdo->prepare(
-            "SELECT 1
+            "SELECT s.user_id
              FROM IAM_sessions s
              JOIN IAM_users u ON u.user_id = s.user_id
              JOIN IAM_user_accounts a ON a.user_id = s.user_id
@@ -47,14 +47,20 @@ function lmts_upload_authorized(array $config): bool {
              LIMIT 1"
         );
         $stmt->execute([hash('sha256', $bearer)]);
-        if ($stmt->fetchColumn() !== false) return true;
+        $userId = $stmt->fetchColumn();
+        if ($userId !== false) return (string)$userId;
     }
 
     $configuredKey = trim((string)($config['publish_key'] ?? ''));
     $suppliedKey = trim((string)($_SERVER['HTTP_X_LMTS_KEY'] ?? ''));
-    return $configuredKey !== ''
+    if (
+        $configuredKey !== ''
         && $suppliedKey !== ''
-        && hash_equals($configuredKey, $suppliedKey);
+        && hash_equals($configuredKey, $suppliedKey)
+    ) {
+        return null;
+    }
+    return false;
 }
 
 try {
@@ -64,7 +70,8 @@ try {
     require_once __DIR__ . '/storage/lib/report_store.php';
     require_once __DIR__ . '/storage/lib/report_upload.php';
 
-    if (!lmts_upload_authorized($config)) {
+    $authenticatedUserId = lmts_upload_authenticated_user_id($config);
+    if ($authenticatedUserId === false) {
         lmts_upload_fail(403, 'authentication required');
     }
 
@@ -156,6 +163,24 @@ try {
                 if ($pdo->inTransaction()) $pdo->rollBack();
                 throw $projectionError;
             }
+
+            $submissionId = 'sub_' . substr(hash('sha256', $uploadId), 0, 40);
+            $submission = $pdo->prepare(
+                'INSERT INTO LMTS_report_submissions (
+                    submission_id, report_id, submitter_user_id, source, verification_status
+                 ) VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE
+                    submitter_user_id = VALUES(submitter_user_id),
+                    source = VALUES(source),
+                    verification_status = VALUES(verification_status)'
+            );
+            $submission->execute([
+                $submissionId,
+                $reportId,
+                $authenticatedUserId,
+                'php_api',
+                $authenticatedUserId === null ? 'shared_key' : 'authenticated',
+            ]);
 
             http_response_code($stored['created'] ? 201 : 200);
             echo json_encode([

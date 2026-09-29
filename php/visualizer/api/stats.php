@@ -1126,5 +1126,11 @@ try {
 } catch (JsonException $e) {
     stats_fail(500, 'statistics serialization failed');
 } catch (Throwable $e) {
+    error_log(
+        '[LMTS stats] '
+        . get_class($e)
+        . ': '
+        . $e->getMessage()
+    );
     stats_fail(500, 'server error');
 }

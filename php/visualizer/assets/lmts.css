@@ -80,6 +80,26 @@ img { display: block; max-width: 100%; }
 }
 
 .nav { display: flex; align-items: center; gap: 28px; }
+.nav-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.nav-refresh:hover { color: var(--text); }
+.nav-refresh:active .nav-refresh-icon { transform: rotate(45deg); }
+.nav-refresh-icon {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+  transition: transform .12s ease;
+}
 .nav a {
   position: relative;
   padding: 24px 0 21px;

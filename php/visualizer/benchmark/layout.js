@@ -1,4 +1,4 @@
-import { configurationKey, targetKey } from './aggregate.js';
+import { targetKey } from './aggregate.js';
 import { renderMatrix } from './matrix.js';
 import { topbarRoot } from './nav.js';
 import { renderHardwareRanking, renderModelRanking } from './ranking.js';
@@ -41,21 +41,21 @@ function landing(state, rerender) {
     h('section', { className: 'landing-hero' }, [
       h('span', { className: 'eyebrow', text: 'LMTS BENCHMARK' }),
       h('h1', { text: 'Find what actually works.' }),
-      h('p', { text: 'Start from the hardware you have, or from the model you want to run.' }),
+      h('p', { text: 'Start from tested hardware, or from the model you want to run.' }),
       h('div', { className: 'mode-grid landing-modes' }, [
         modeButton(
           state,
           rerender,
           'hardware-model',
           'Hardware → Model',
-          'Choose a tested system and compare models against its benchmark evidence.',
+          'Choose tested hardware and compare models against its benchmark evidence.',
         ),
         modeButton(
           state,
           rerender,
           'model-hardware',
           'Model → Hardware',
-          'Choose a model and compare it across tested systems.',
+          'Choose a model and compare it across tested hardware.',
         ),
       ]),
     ]),
@@ -74,17 +74,64 @@ function workflowHero(state, rerender, primaryControl) {
       }),
       h('p', {
         text: state.mode === 'hardware-model'
-          ? 'Compare models using evidence measured on the selected system.'
-          : 'Compare one model across systems that have actually tested it.',
+          ? 'Compare models using evidence from systems containing the selected tested hardware.'
+          : 'Compare one model across hardware that has actually tested it.',
       }),
     ]),
     h('div', { className: 'workflow-control' }, [primaryControl]),
   ]);
 }
 
+function hardwareControls(payload, state, rerender) {
+  const hardware = payload.filters?.options?.hardware || [];
+  const kinds = [...new Set(hardware.map(item => String(item.kind)))];
+
+  if (!kinds.includes(String(state.hardwareKind)) && kinds.length) {
+    state.hardwareKind = kinds[0];
+  }
+
+  const options = hardware.filter(item => String(item.kind) === String(state.hardwareKind));
+  if (!options.some(item => String(item.value) === String(state.hardwareValue)) && options.length) {
+    state.hardwareValue = String(options[0].value);
+  }
+
+  const labels = {
+    cpu: 'CPU',
+    memory: 'Memory',
+    gpu: 'GPU',
+    gpu_memory: 'GPU Memory',
+    npu: 'NPU',
+  };
+
+  return h('div', { className: 'hardware-picker' }, [
+    selectControl(
+      'Hardware type',
+      state.hardwareKind,
+      kinds.map(kind => ({ value: kind, label: labels[kind] || kind })),
+      value => {
+        state.hardwareKind = value;
+        const first = hardware.find(item => String(item.kind) === String(value));
+        state.hardwareValue = first ? String(first.value) : null;
+        state.rawCell = null;
+        rerender();
+      },
+    ),
+    selectControl(
+      'Tested hardware',
+      state.hardwareValue,
+      options.map(item => ({ value: item.value, label: item.label || item.value })),
+      value => {
+        state.hardwareValue = value;
+        state.rawCell = null;
+        rerender();
+      },
+    ),
+  ]);
+}
+
 function renderBenchmark(payload, state, rerender) {
-  const configurations = payload.filters?.options?.configurations || [];
   const targets = payload.filters?.options?.targets || [];
+  const hardware = payload.filters?.options?.hardware || [];
   const cells = payload.cells || [];
   const header = topbarRoot('benchmark');
 
@@ -93,21 +140,13 @@ function renderBenchmark(payload, state, rerender) {
     return;
   }
 
-  const selectedConfiguration = configurations.find(
-    item => String(item.value) === String(state.configurationKey)
+  const selectedHardware = hardware.find(
+    item => String(item.kind) === String(state.hardwareKind)
+      && String(item.value) === String(state.hardwareValue)
   );
 
   const primaryControl = state.mode === 'hardware-model'
-    ? selectControl(
-        'System / compute profile',
-        state.configurationKey,
-        configurations.map(item => ({ value: item.value, label: item.label || item.value })),
-        value => {
-          state.configurationKey = value;
-          state.rawCell = null;
-          rerender();
-        },
-      )
+    ? hardwareControls(payload, state, rerender)
     : selectControl(
         'Model',
         state.targetKey,
@@ -119,16 +158,25 @@ function renderBenchmark(payload, state, rerender) {
         },
       );
 
-  const configurationCells = state.mode === 'hardware-model'
-    ? cells.filter(cell => configurationKey(cell) === String(state.configurationKey))
+  const selectedSystemIds = new Set((selectedHardware?.system_ids || []).map(String));
+  const hardwareCells = state.mode === 'hardware-model'
+    ? cells.filter(cell => selectedSystemIds.has(String(cell.system_id)))
     : cells;
 
   const matrixCells = state.mode === 'hardware-model'
-    ? configurationCells
+    ? hardwareCells
     : cells.filter(cell => targetKey(cell) === state.targetKey);
 
+  const selectedHardwareSummary = selectedHardware
+    ? {
+        label: (state.hardwareKind === 'gpu_memory' ? 'GPU Memory' : String(state.hardwareKind || '').toUpperCase())
+          + ' · ' + (selectedHardware.label || selectedHardware.value),
+        value: selectedHardware.value,
+      }
+    : null;
+
   const mainContent = state.mode === 'hardware-model'
-    ? renderModelRanking(payload, configurationCells, selectedConfiguration, state, rerender)
+    ? renderModelRanking(payload, hardwareCells, selectedHardwareSummary, state, rerender)
     : renderHardwareRanking(payload, cells, state);
 
   replaceRoot([

@@ -39,10 +39,19 @@ try {
         COUNT(DISTINCT CASE WHEN rri.outcome IN ('pass','fail') THEN rri.record_id END) AS test_executions,
         COUNT(DISTINCT CASE WHEN rri.outcome IN ('pass','fail') THEN rri.test_version_id END) AS unique_tests,
         COUNT(DISTINCT CASE WHEN rri.outcome IN ('pass','fail') THEN CONCAT(rri.target_kind, ':', rri.target_ref) END) AS unique_targets,
-        COUNT(DISTINCT CASE WHEN rri.outcome IN ('pass','fail') THEN rri.tester_user_id END) AS contributors
+        COUNT(DISTINCT CASE
+            WHEN rri.outcome IN ('pass','fail')
+            THEN COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id)
+        END) AS contributors
      FROM LMTS_systems s
      LEFT JOIN IAM_users u ON u.user_id = s.user_id
-     LEFT JOIN LMTS_report_record_index rri ON rri.system_id = s.system_id";
+     LEFT JOIN LMTS_report_record_index rri ON rri.system_id = s.system_id
+     LEFT JOIN (
+        SELECT report_id, MAX(submitter_user_id) AS submitter_user_id
+        FROM LMTS_report_submissions
+        WHERE submitter_user_id IS NOT NULL
+        GROUP BY report_id
+     ) rs ON rs.report_id = rri.report_id";
 
     $params = [];
     if ($systemId !== '') {
@@ -110,8 +119,8 @@ try {
                 rri.target_kind,
                 rri.target_ref,
                 COALESCE(MAX(rri.target_label), rri.target_ref, rri.target_kind) AS target_label,
-                rri.tester_user_id,
-                COALESCE(iu.username, rri.tester_user_id) AS username,
+                COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id) AS tester_user_id,
+                COALESCE(iu.username, COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id)) AS username,
                 COUNT(*) AS runs,
                 SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END) AS pass,
                 SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END) AS fail,
@@ -120,13 +129,21 @@ try {
              JOIN LMTS_reports r ON r.report_id = rri.report_id
              LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
              LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
-             LEFT JOIN IAM_users iu ON iu.user_id = rri.tester_user_id
+             LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
+             LEFT JOIN (
+                SELECT report_id, MAX(submitter_user_id) AS submitter_user_id
+                FROM LMTS_report_submissions
+                WHERE submitter_user_id IS NOT NULL
+                GROUP BY report_id
+             ) rs ON rs.report_id = rri.report_id
+             LEFT JOIN IAM_users iu
+               ON iu.user_id = COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id)
              WHERE rri.system_id = ?
                AND rri.outcome IN ('pass','fail')
              GROUP BY
                 rri.test_version_id, td.namespace, td.name, tv.version,
                 rri.target_kind, rri.target_ref,
-                rri.tester_user_id, iu.username
+                COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id), iu.username
              ORDER BY latest_at DESC, test_name, target_label"
         );
         $detail->execute([$systemId]);

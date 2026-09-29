@@ -4,11 +4,17 @@ This directory is the **single source of truth (SSOT)** for the LMTS database ba
 
 ## Canonical file
 
-- `schema_v1.sql` — canonical MariaDB/MySQL schema for LMTS shared data, user-owned data, immutable report storage, and rebuildable report indexes.
+- `init.sql` — canonical current-state MariaDB/MySQL schema for creating LMTS from an empty database.
 
 Do not introduce new database semantics first in installers, service-local SQL, or report-server code. Those are consumers/projections of this schema.
 
-There is no compatibility or legacy database schema. Installers and services must consume this directory's canonical schema directly.
+There is no compatibility or legacy database schema. Installers and services must consume `schema/init.sql` as the canonical current-state schema directly.
+
+## Migrations
+
+- `migrations/` contains explicit incremental SQL upgrades for already-existing databases.
+- Migrations are not part of normal LMTS deployment.
+- Migration execution/orchestration is owned by the shared Homebrain deploy primitive, not LMTS.
 
 ## Ownership model
 

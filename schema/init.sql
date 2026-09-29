@@ -1,5 +1,5 @@
 -- LMTS canonical database schema
--- SSOT location: /schema/schema_v1.sql
+-- SSOT location: /schema/init.sql
 -- Schema version: 1
 -- Target: MariaDB / MySQL
 --

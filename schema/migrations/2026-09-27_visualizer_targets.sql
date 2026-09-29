@@ -5,7 +5,7 @@
 -- Apply before deploying report projection code that writes target_ref/target_label:
 --   sudo mariadb lmts < schema/2026-09-27_visualizer_targets.sql
 --
--- /schema/schema_v1.sql remains the database SSOT for fresh databases.
+-- /schema/init.sql remains the database SSOT for fresh databases.
 --
 -- target_ref and target_label are derived observations copied from immutable
 -- lmts.report/1.1 evidence. They are not canonical model-resolution fields.

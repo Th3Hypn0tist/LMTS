@@ -6,7 +6,7 @@
 --   sudo mariadb lmts < schema/2026-09-19_telemetry.sql
 --
 -- This is a forward-only development convergence script. It does not drop data.
--- /schema/schema_v1.sql remains the database SSOT for fresh databases.
+-- /schema/init.sql remains the database SSOT for fresh databases.
 
 ALTER TABLE LMTS_test_definitions
     ADD COLUMN IF NOT EXISTS description TEXT NULL AFTER name;

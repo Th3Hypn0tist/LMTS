@@ -7,7 +7,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SCHEMA_FILE="${SCRIPT_DIR}/../../schema/schema_v1.sql"
+SCHEMA_FILE="${SCRIPT_DIR}/../../schema/init.sql"
 SCHEMA_VERSION=1
 
 DB_NAME="lmts"

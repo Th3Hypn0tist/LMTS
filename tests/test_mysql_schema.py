@@ -9,7 +9,7 @@ from lmts.tools import mysql_schema
 
 
 def test_schema_path_points_to_canonical_ssot() -> None:
-    assert mysql_schema.SCHEMA_PATH == Path('schema/schema_v1.sql').resolve()
+    assert mysql_schema.SCHEMA_PATH == Path('schema/init.sql').resolve()
 
 
 def test_schema_file_contains_canonical_database_tables() -> None:

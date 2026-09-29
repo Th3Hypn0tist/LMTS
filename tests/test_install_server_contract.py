@@ -12,7 +12,7 @@ def _text() -> str:
 
 def test_installer_uses_canonical_schema_file() -> None:
     text = _text()
-    assert 'SCHEMA_FILE="${SCRIPT_DIR}/../../schema/schema_v1.sql"' in text
+    assert 'SCHEMA_FILE="${SCRIPT_DIR}/../../schema/init.sql"' in text
     assert 'mariadb --protocol=socket "${DB_NAME}" < "${SCHEMA_FILE}"' in text
     assert 'CREATE TABLE IF NOT EXISTS reports' not in text
 

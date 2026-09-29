@@ -28,8 +28,8 @@ try {
 
     $rows = $pdo->query(
         "SELECT
-            rri.tester_user_id AS user_id,
-            COALESCE(u.username, rri.tester_user_id) AS username,
+            COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id) AS user_id,
+            COALESCE(u.username, COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id)) AS username,
             COUNT(*) AS test_executions,
             COUNT(DISTINCT rri.report_id) AS reports,
             COUNT(DISTINCT rri.test_version_id) AS unique_tests,
@@ -43,10 +43,20 @@ try {
             MAX(COALESCE(rri.started_at, r.created_at)) AS latest_at
          FROM LMTS_report_record_index rri
          JOIN LMTS_reports r ON r.report_id = rri.report_id
-         LEFT JOIN IAM_users u ON u.user_id = rri.tester_user_id
+         LEFT JOIN (
+            SELECT report_id, MAX(submitter_user_id) AS submitter_user_id
+            FROM LMTS_report_submissions
+            WHERE submitter_user_id IS NOT NULL
+            GROUP BY report_id
+         ) rs ON rs.report_id = rri.report_id
+         LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
+         LEFT JOIN IAM_users u
+           ON u.user_id = COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id)
          WHERE rri.outcome IN ('pass','fail')
-           AND rri.tester_user_id IS NOT NULL
-         GROUP BY rri.tester_user_id, u.username
+           AND COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id) IS NOT NULL
+         GROUP BY
+            COALESCE(rs.submitter_user_id, rri.tester_user_id, s.user_id),
+            u.username
          ORDER BY test_executions DESC, unique_tests DESC, username"
     )->fetchAll();
 

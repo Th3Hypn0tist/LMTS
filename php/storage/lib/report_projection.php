@@ -731,8 +731,16 @@ function lmts_project_report(PDO $pdo, array $report): void {
         if (!is_string($testRef) || !is_array($entity)) continue;
         $tests[$testRef] = lmts_projection_test_spec($testRef, $entity);
     }
-    foreach ($tests as $test) {
-        lmts_projection_ensure_test($pdo, $test);
+    foreach ($tests as $testRef => $test) {
+        try {
+            lmts_projection_ensure_test($pdo, $test);
+        } catch (Throwable $error) {
+            throw new RuntimeException(
+                'test projection failed [' . $testRef . ']: ' . $error->getMessage(),
+                0,
+                $error,
+            );
+        }
     }
 
     $targets = isset($entities['target']) && is_array($entities['target']) ? $entities['target'] : [];
@@ -765,6 +773,7 @@ function lmts_project_report(PDO $pdo, array $report): void {
         $recordId = trim((string)($record['id'] ?? ''));
         if ($recordId === '') continue;
 
+        try {
         $coordinates = isset($record['coordinates']) && is_array($record['coordinates']) ? $record['coordinates'] : [];
         $testRef = trim((string)($coordinates['test'] ?? ''));
         $test = $tests[$testRef] ?? null;
@@ -819,6 +828,14 @@ function lmts_project_report(PDO $pdo, array $report): void {
 
         if ($test !== null) {
             lmts_projection_record_telemetry($pdo, $reportId, $record, $test);
+        }
+        } catch (Throwable $error) {
+            $testContext = isset($testRef) && $testRef !== '' ? $testRef : 'unknown-test';
+            throw new RuntimeException(
+                'record projection failed [' . $recordId . ' / ' . $testContext . ']: ' . $error->getMessage(),
+                0,
+                $error,
+            );
         }
     }
 }

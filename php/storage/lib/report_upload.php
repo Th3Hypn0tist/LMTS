@@ -110,7 +110,7 @@ function lmts_upload_gc(array $config): void {
     }
 }
 
-function lmts_upload_init(array $config, array $request): array {
+function lmts_upload_init(array $config, array $request, ?array $authBinding = null): array {
     lmts_upload_gc($config);
 
     $reportId = trim((string)($request['report_id'] ?? ''));
@@ -159,6 +159,7 @@ function lmts_upload_init(array $config, array $request): array {
         'sha256' => $sha256,
         'created_at_epoch' => $now,
         'expires_at_epoch' => $now + LMTS_UPLOAD_TTL_SECONDS,
+        'auth_binding' => $authBinding,
     ];
     lmts_upload_write_meta($dir, $meta);
 
@@ -182,8 +183,16 @@ function lmts_upload_get_active(array $config, string $uploadId): array {
     return [$dir, $meta];
 }
 
-function lmts_upload_put_chunk(array $config, string $uploadId, int $index, string $bytes): array {
+function lmts_upload_assert_auth_binding(array $meta, array $authBinding): void {
+    $expected = $meta['auth_binding'] ?? null;
+    if (!is_array($expected) || !lmts_auth_binding_matches($expected, $authBinding)) {
+        throw new RuntimeException('upload authentication binding mismatch');
+    }
+}
+
+function lmts_upload_put_chunk(array $config, string $uploadId, int $index, string $bytes, ?array $authBinding = null): array {
     [$dir, $meta] = lmts_upload_get_active($config, $uploadId);
+    if ($authBinding !== null) lmts_upload_assert_auth_binding($meta, $authBinding);
     $chunkCount = (int)$meta['chunk_count'];
     if ($index < 0 || $index >= $chunkCount) {
         throw new InvalidArgumentException('chunk index out of range');
@@ -221,8 +230,9 @@ function lmts_upload_put_chunk(array $config, string $uploadId, int $index, stri
     ];
 }
 
-function lmts_upload_assemble(array $config, string $uploadId): array {
+function lmts_upload_assemble(array $config, string $uploadId, ?array $authBinding = null): array {
     [$dir, $meta] = lmts_upload_get_active($config, $uploadId);
+    if ($authBinding !== null) lmts_upload_assert_auth_binding($meta, $authBinding);
     $chunkCount = (int)$meta['chunk_count'];
     $buffer = '';
     $hash = hash_init('sha256');

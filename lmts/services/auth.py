@@ -14,7 +14,7 @@ from lmts.core.paths import AUTH_SESSION_PATH
 IAM_BASE_URL = 'https://aigm.fi/iam'
 IAM_DOMAIN = 'lmts'
 IAM_CONTRACT = 'iam.light'
-IAM_VERSION = '1.0'
+IAM_VERSION = '1.1'
 SESSION_SCHEMA_VERSION = 1
 DEFAULT_TIMEOUT_SECONDS = 15
 
@@ -187,7 +187,9 @@ class IAMHTTPClient:
         return self._session(payload)
 
     def me(self, token: str) -> UserIdentity:
-        return self._identity(self._request('GET', '/api/me.php', token=token))
+        return self._identity(
+            self._request('GET', f'/api/me.php?domain={IAM_DOMAIN}', token=token)
+        )
 
     def logout(self, token: str) -> None:
         self._request('POST', '/api/logout.php', token=token)

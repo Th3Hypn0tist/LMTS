@@ -266,8 +266,7 @@ function renderBenchmark(payload, state, rerender) {
           state.rawCell = null;
           rerender();
         },
-      )
-    : null;
+      );
 
   const selectedSystemIds = matchingSystemIds(payload, state);
   const hardwareCells = state.mode === 'hardware-model'

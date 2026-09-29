@@ -109,6 +109,39 @@ function applyPreset(payload, state, systemId) {
   }
 }
 
+function normalizeHardwareSelections(payload, state, preferredKind) {
+  const hardware = payload.filters?.options?.hardware || [];
+  const preferredValue = state.hardwareSelections[preferredKind];
+  if (!preferredValue) return;
+
+  const preferred = hardware.find(item =>
+    String(item.kind) === preferredKind
+    && String(item.value) === String(preferredValue)
+  );
+  if (!preferred) return;
+
+  let compatibleSystems = new Set((preferred.system_ids || []).map(String));
+
+  for (const [kind] of HARDWARE_KINDS) {
+    if (kind === preferredKind) continue;
+    const value = state.hardwareSelections[kind];
+    if (!value) continue;
+
+    const option = hardware.find(item =>
+      String(item.kind) === kind
+      && String(item.value) === String(value)
+    );
+    const optionSystems = new Set((option?.system_ids || []).map(String));
+    const intersection = new Set([...compatibleSystems].filter(id => optionSystems.has(id)));
+
+    if (!intersection.size) {
+      state.hardwareSelections[kind] = null;
+      continue;
+    }
+    compatibleSystems = intersection;
+  }
+}
+
 function hardwareControls(payload, state, rerender) {
   const hardware = payload.filters?.options?.hardware || [];
   const systems = payload.filters?.options?.systems || [];
@@ -130,6 +163,7 @@ function hardwareControls(payload, state, rerender) {
       value => {
         state.hardwareSelections[kind] = value || null;
         state.hardwarePreset = null;
+        normalizeHardwareSelections(payload, state, kind);
         state.rawCell = null;
         rerender();
       },

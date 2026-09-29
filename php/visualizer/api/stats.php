@@ -1,14 +1,19 @@
 <?php
 
 declare(strict_types=1);
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
+
 $config = require dirname(__DIR__, 2) . '/lmts-report/config.php';
 
 function stats_fail(int $status, string $message): never {
     http_response_code($status);
-    echo json_encode(['ok' => false, 'error' => $message], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    echo json_encode(
+        ['ok' => false, 'error' => $message],
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+    );
     exit;
 }
 
@@ -29,7 +34,9 @@ function stats_time(?string $value): ?string {
 }
 
 function stats_scope(): array {
-    $conditions = [];
+    // ERROR and CANCELLED are rejected benchmark material. They are excluded
+    // unconditionally here so old/legacy rows can never leak into statistics.
+    $conditions = ["rri.outcome IN ('pass','fail')"];
     $params = [];
 
     $simple = [
@@ -39,6 +46,7 @@ function stats_scope(): array {
         'report_id' => 'rri.report_id',
         'target_kind' => 'rri.target_kind',
     ];
+
     foreach ($simple as $param => $column) {
         $value = stats_param($param);
         if ($value !== null) {
@@ -48,9 +56,10 @@ function stats_scope(): array {
     }
 
     $outcome = stats_param('outcome');
-    if ($outcome === 'unknown') {
-        $conditions[] = "(rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled'))";
-    } elseif ($outcome !== null) {
+    if ($outcome !== null) {
+        if (!in_array($outcome, ['pass', 'fail'], true)) {
+            stats_fail(400, 'outcome must be pass or fail');
+        }
         $conditions[] = 'rri.outcome = ?';
         $params[] = $outcome;
     }
@@ -76,10 +85,7 @@ function stats_scope(): array {
         $params[] = $to;
     }
 
-    return [
-        $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '',
-        $params,
-    ];
+    return ['WHERE ' . implode(' AND ', $conditions), $params];
 }
 
 function stats_query(PDO $pdo, string $sql, array $params = []): PDOStatement {
@@ -88,9 +94,30 @@ function stats_query(PDO $pdo, string $sql, array $params = []): PDOStatement {
     return $stmt;
 }
 
-function stats_iso(?string $value): ?string {
-    if ($value === null || $value === '') return null;
-    return (new DateTimeImmutable($value, new DateTimeZone('UTC')))->format('Y-m-d\TH:i:s.u\Z');
+function stats_median(array $values): ?float {
+    $values = array_values(array_filter(
+        array_map(
+            static fn($value) => is_numeric($value) ? (float)$value : null,
+            $values
+        ),
+        static fn($value) => $value !== null
+    ));
+
+    $count = count($values);
+    if ($count === 0) return null;
+
+    sort($values, SORT_NUMERIC);
+    $middle = intdiv($count, 2);
+
+    if ($count % 2 === 1) return $values[$middle];
+    return ($values[$middle - 1] + $values[$middle]) / 2.0;
+}
+
+function stats_cell_key(array $row): string {
+    return (string)($row['system_id'] ?? '')
+        . "\0" . (string)($row['target_kind'] ?? '')
+        . "\0" . (string)($row['target_ref'] ?? '')
+        . "\0" . (string)($row['test_version_id'] ?? '');
 }
 
 try {
@@ -125,28 +152,12 @@ try {
             END) AS targets,
             COUNT(DISTINCT rri.system_id) AS systems,
             COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
-            COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
-            COALESCE(SUM(CASE WHEN rri.outcome = 'error' THEN 1 ELSE 0 END), 0) AS error,
-            COALESCE(SUM(CASE WHEN rri.outcome = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
-            COALESCE(SUM(CASE
-                WHEN rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled')
-                THEN 1 ELSE 0 END), 0) AS unknown
+            COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail
          FROM LMTS_report_record_index rri
          JOIN LMTS_reports r ON r.report_id = rri.report_id
          $where",
         $params,
     )->fetch() ?: [];
-
-    $telemetryCount = stats_query(
-        $pdo,
-        "SELECT COUNT(*)
-         FROM LMTS_telemetry_values tv
-         JOIN LMTS_report_record_index rri
-           ON rri.report_id = tv.report_id AND rri.record_id = tv.record_id
-         JOIN LMTS_reports r ON r.report_id = rri.report_id
-         $where",
-        $params,
-    )->fetchColumn();
 
     $recordSql = "SELECT
         rri.report_id,
@@ -158,14 +169,13 @@ try {
         rri.target_label,
         rri.model_node_id,
         rri.composition_id,
-        rri.target_ref AS target_id,
         rri.test_version_id,
         td.test_definition_id,
         td.namespace AS test_namespace,
         td.name AS test_name,
         tv.version AS test_version,
         rri.system_id,
-        s.label AS system_label,
+        COALESCE(s.label, rri.system_id) AS system_label,
         rri.compute_profile_id,
         DATE_FORMAT(rri.started_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS started_at,
         DATE_FORMAT(rri.completed_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS completed_at,
@@ -202,72 +212,89 @@ try {
 
     $records = stats_query($pdo, $recordSql, $params)->fetchAll();
 
-    $matrixSql = "SELECT
+    $cellSql = "SELECT
+        rri.system_id,
+        COALESCE(MAX(s.label), rri.system_id) AS system_label,
         rri.target_kind,
         rri.target_ref,
         COALESCE(MAX(rri.target_label), rri.target_ref, rri.target_kind) AS target_label,
         rri.test_version_id,
-        CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
-               CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS test_label,
+        td.namespace AS test_namespace,
+        td.name AS test_name,
+        tv.version AS test_version,
+        CONCAT(
+            COALESCE(td.name, td.namespace, rri.test_version_id),
+            CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END
+        ) AS test_label,
         COUNT(*) AS runs,
         COALESCE(SUM(CASE WHEN rri.outcome = 'pass' THEN 1 ELSE 0 END), 0) AS pass,
         COALESCE(SUM(CASE WHEN rri.outcome = 'fail' THEN 1 ELSE 0 END), 0) AS fail,
-        COALESCE(SUM(CASE WHEN rri.outcome = 'error' THEN 1 ELSE 0 END), 0) AS error,
-        COALESCE(SUM(CASE WHEN rri.outcome = 'cancelled' THEN 1 ELSE 0 END), 0) AS cancelled,
-        COALESCE(SUM(CASE
-            WHEN rri.outcome IS NULL OR rri.outcome NOT IN ('pass','fail','error','cancelled')
-            THEN 1 ELSE 0 END), 0) AS unknown,
+        COALESCE(AVG(CASE WHEN rri.outcome = 'pass' THEN rri.duration_ms END), 0) AS avg_total_time_ms,
+        COALESCE(AVG(CASE WHEN rri.outcome = 'pass' THEN rri.ttft_ms END), 0) AS avg_ttft_ms,
         MAX(COALESCE(rri.started_at, r.created_at)) AS latest_at
      FROM LMTS_report_record_index rri
      JOIN LMTS_reports r ON r.report_id = rri.report_id
      LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
      LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
+     LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
      $where
-     GROUP BY rri.target_kind, rri.target_ref, rri.test_version_id, td.name, td.namespace, tv.version
-     ORDER BY target_label, test_label";
-    $matrix = stats_query($pdo, $matrixSql, $params)->fetchAll();
+     GROUP BY
+        rri.system_id,
+        rri.target_kind,
+        rri.target_ref,
+        rri.test_version_id,
+        td.namespace,
+        td.name,
+        tv.version
+     ORDER BY system_label, target_label, test_label";
 
-    $selectedSql = "SELECT rri.report_id, rri.record_id
-        FROM LMTS_report_record_index rri
-        JOIN LMTS_reports r ON r.report_id = rri.report_id
-        $where
-        ORDER BY COALESCE(rri.started_at, r.created_at) DESC, rri.report_id, rri.record_id
-        LIMIT $limit";
+    $cells = stats_query($pdo, $cellSql, $params)->fetchAll();
 
-    $telemetrySql = "SELECT
-        tv.telemetry_value_id,
-        tv.report_id,
-        tv.record_id,
-        tv.user_id,
-        tv.system_id,
-        tv.compute_profile_id,
-        tv.system_resource_id,
-        tv.test_definition_id,
-        tv.test_version_id,
-        tv.telemetry_type_id,
-        tt.canonical_key,
-        tt.name AS telemetry_name,
-        tt.value_kind,
-        COALESCE(tv.unit_snapshot, tt.unit) AS unit,
-        tv.sample_ordinal,
-        DATE_FORMAT(tv.observed_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS observed_at,
-        tv.value_number,
-        tv.value_text,
-        tv.value_boolean,
-        tv.value_json
-     FROM LMTS_telemetry_values tv
-     JOIN LMTS_telemetry_types tt ON tt.telemetry_type_id = tv.telemetry_type_id
-     JOIN ($selectedSql) selected
-       ON selected.report_id = tv.report_id AND selected.record_id = tv.record_id
-     ORDER BY tt.canonical_key, COALESCE(tv.unit_snapshot, tt.unit), tv.report_id, tv.record_id,
-              tv.sample_ordinal, tv.telemetry_value_id";
+    // MariaDB deployments differ in percentile support. Keep the query portable:
+    // fetch successful timing samples and calculate medians in PHP.
+    $timingSql = "SELECT
+        rri.system_id,
+        rri.target_kind,
+        rri.target_ref,
+        rri.test_version_id,
+        rri.duration_ms,
+        rri.ttft_ms
+     FROM LMTS_report_record_index rri
+     JOIN LMTS_reports r ON r.report_id = rri.report_id
+     $where
+       AND rri.outcome = 'pass'
+       AND (rri.duration_ms IS NOT NULL OR rri.ttft_ms IS NOT NULL)";
 
-    $telemetry = stats_query($pdo, $telemetrySql, $params)->fetchAll();
+    $timingRows = stats_query($pdo, $timingSql, $params)->fetchAll();
+    $timings = [];
+
+    foreach ($timingRows as $row) {
+        $key = stats_cell_key($row);
+        if (!isset($timings[$key])) {
+            $timings[$key] = ['duration' => [], 'ttft' => []];
+        }
+        if ($row['duration_ms'] !== null) $timings[$key]['duration'][] = $row['duration_ms'];
+        if ($row['ttft_ms'] !== null) $timings[$key]['ttft'][] = $row['ttft_ms'];
+    }
+
+    foreach ($cells as &$cell) {
+        $key = stats_cell_key($cell);
+        $samples = $timings[$key] ?? ['duration' => [], 'ttft' => []];
+        $cell['median_total_time_ms'] = stats_median($samples['duration']);
+        $cell['median_ttft_ms'] = stats_median($samples['ttft']);
+        $cell['pass'] = (int)$cell['pass'];
+        $cell['fail'] = (int)$cell['fail'];
+        $cell['runs'] = (int)$cell['runs'];
+        $cell['avg_total_time_ms'] = $cell['avg_total_time_ms'] === null ? null : (float)$cell['avg_total_time_ms'];
+        $cell['avg_ttft_ms'] = $cell['avg_ttft_ms'] === null ? null : (float)$cell['avg_ttft_ms'];
+    }
+    unset($cell);
 
     $users = $pdo->query(
         "SELECT DISTINCT tester_user_id AS user_id
          FROM LMTS_report_record_index
          WHERE tester_user_id IS NOT NULL
+           AND outcome IN ('pass','fail')
          ORDER BY tester_user_id"
     )->fetchAll();
 
@@ -276,46 +303,45 @@ try {
          FROM LMTS_report_record_index rri
          LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
          WHERE rri.system_id IS NOT NULL
+           AND rri.outcome IN ('pass','fail')
          ORDER BY label, rri.system_id"
     )->fetchAll();
 
     $tests = $pdo->query(
-        "SELECT DISTINCT rri.test_version_id,
-                CONCAT(COALESCE(td.name, td.namespace, rri.test_version_id),
-                       CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END) AS label
+        "SELECT DISTINCT
+            rri.test_version_id,
+            td.namespace AS test_namespace,
+            td.name AS test_name,
+            tv.version AS test_version,
+            CONCAT(
+                COALESCE(td.name, td.namespace, rri.test_version_id),
+                CASE WHEN tv.version IS NULL THEN '' ELSE CONCAT(' @ ', tv.version) END
+            ) AS label
          FROM LMTS_report_record_index rri
          LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
          LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
          WHERE rri.test_version_id IS NOT NULL
+           AND rri.outcome IN ('pass','fail')
          ORDER BY label, rri.test_version_id"
     )->fetchAll();
-
-    $reports = $pdo->query(
-        "SELECT report_id, DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS created_at
-         FROM LMTS_reports
-         ORDER BY created_at DESC, imported_at DESC
-         LIMIT 500"
-    )->fetchAll();
-
-    $outcomes = array_map(
-        static fn(array $row): string => (string)$row['outcome'],
-        $pdo->query(
-            "SELECT DISTINCT COALESCE(outcome, 'unknown') AS outcome
-             FROM LMTS_report_record_index
-             ORDER BY outcome"
-        )->fetchAll(),
-    );
 
     $targets = $pdo->query(
         "SELECT DISTINCT
             rri.target_kind,
             rri.target_ref AS target_id,
-            COALESCE(rri.target_label, rri.target_ref, CONCAT(rri.target_kind, ' (unresolved)')) AS label
+            COALESCE(
+                rri.target_label,
+                rri.target_ref,
+                CONCAT(rri.target_kind, ' (unresolved)')
+            ) AS label
          FROM LMTS_report_record_index rri
+         WHERE rri.outcome IN ('pass','fail')
          ORDER BY label, rri.target_kind"
     )->fetchAll();
+
     foreach ($targets as &$target) {
-        $target['value'] = (string)$target['target_kind'] . ':' . (string)($target['target_id'] ?? '');
+        $target['value'] = (string)$target['target_kind']
+            . ':' . (string)($target['target_id'] ?? '');
     }
     unset($target);
 
@@ -324,7 +350,6 @@ try {
         'system_id' => stats_param('system_id'),
         'test_version_id' => stats_param('test_version_id'),
         'outcome' => stats_param('outcome'),
-        'report_id' => stats_param('report_id'),
         'target' => stats_param('target_kind') === null
             ? null
             : stats_param('target_kind') . ':' . (stats_param('target_id') ?? ''),
@@ -335,7 +360,7 @@ try {
 
     $payload = [
         'format' => 'lmts.statistics',
-        'version' => 1,
+        'version' => 2,
         'summary' => [
             'reports' => (int)($summary['reports'] ?? 0),
             'result_records' => (int)($summary['result_records'] ?? 0),
@@ -344,14 +369,11 @@ try {
             'systems' => (int)($summary['systems'] ?? 0),
             'pass' => (int)($summary['pass'] ?? 0),
             'fail' => (int)($summary['fail'] ?? 0),
-            'error' => (int)($summary['error'] ?? 0),
-            'cancelled' => (int)($summary['cancelled'] ?? 0),
-            'unknown' => (int)($summary['unknown'] ?? 0),
-            'telemetry_values' => (int)$telemetryCount,
         ],
-        'matrix' => $matrix,
+        'cells' => $cells,
+        // Keep matrix as an alias during the visualizer transition.
+        'matrix' => $cells,
         'records' => $records,
-        'telemetry' => $telemetry,
         'filters' => [
             'selected' => $selected,
             'options' => [
@@ -359,15 +381,17 @@ try {
                 'systems' => $systems,
                 'targets' => $targets,
                 'tests' => $tests,
-                'outcomes' => $outcomes,
-                'reports' => $reports,
             ],
         ],
     ];
 
-    echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    echo json_encode(
+        $payload,
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
+    );
 } catch (JsonException $e) {
     stats_fail(500, 'statistics serialization failed');
 } catch (Throwable $e) {
+    error_log('[LMTS stats] ' . get_class($e) . ': ' . $e->getMessage());
     stats_fail(500, 'server error');
 }

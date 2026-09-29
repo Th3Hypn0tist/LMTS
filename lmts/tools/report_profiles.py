@@ -33,8 +33,6 @@ class ReportProfile:
                 raise ValueError('PHP API report endpoint must not be empty')
             if not endpoint.startswith(('http://', 'https://')):
                 raise ValueError('PHP API report endpoint must use http:// or https://')
-            if not publish_key:
-                raise ValueError('PHP API report publish key must not be empty')
             return
         if endpoint:
             raise ValueError('MySQL report target uses LMTS MySQL settings and must not define an HTTP endpoint')

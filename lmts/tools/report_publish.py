@@ -76,22 +76,36 @@ def _validate_report_document(report: dict[str, Any]) -> str:
     return report_id
 
 
-def _php_headers(profile: ReportProfile, content_type: str | None = None) -> dict[str, str]:
-    headers = {
-        'Accept': 'application/json',
-        'X-LMTS-Key': profile.publish_key,
-    }
+def _php_headers(
+    profile: ReportProfile,
+    content_type: str | None = None,
+    *,
+    bearer_token: str | None = None,
+) -> dict[str, str]:
+    headers = {'Accept': 'application/json'}
+    if bearer_token:
+        headers['Authorization'] = f'Bearer {bearer_token}'
+    elif profile.publish_key:
+        headers['X-LMTS-Key'] = profile.publish_key
+    else:
+        raise ValueError('PHP API publishing requires IAM bearer authentication')
     if content_type is not None:
         headers['Content-Type'] = content_type
     return headers
 
 
-def _abort_upload(profile: ReportProfile, upload_id: str, *, timeout: float) -> None:
+def _abort_upload(
+    profile: ReportProfile,
+    upload_id: str,
+    *,
+    timeout: float,
+    bearer_token: str | None = None,
+) -> None:
     request = Request(
         _upload_url(profile.endpoint, action='abort', upload_id=upload_id),
         data=b'',
         method='POST',
-        headers=_php_headers(profile),
+        headers=_php_headers(profile, bearer_token=bearer_token),
     )
     try:
         _read_json_response(request, timeout=timeout)
@@ -104,6 +118,7 @@ def _publish_php_chunked(
     profile: ReportProfile,
     *,
     timeout: float,
+    bearer_token: str | None = None,
 ) -> str:
     report_id = _validate_report_document(report)
     body = json.dumps(report, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
@@ -127,7 +142,7 @@ def _publish_php_chunked(
         _upload_url(profile.endpoint, action='init'),
         data=init_payload,
         method='POST',
-        headers=_php_headers(profile, 'application/json; charset=utf-8'),
+        headers=_php_headers(profile, 'application/json; charset=utf-8', bearer_token=bearer_token),
     )
     status, init_response = _read_json_response(init_request, timeout=timeout)
     if status not in {200, 201} or init_response.get('ok') is not True:
@@ -140,7 +155,7 @@ def _publish_php_chunked(
     server_chunk_size = init_response.get('chunk_size')
     server_chunk_count = init_response.get('chunk_count')
     if server_chunk_size != chunk_size or server_chunk_count != chunk_count:
-        _abort_upload(profile, upload_id, timeout=timeout)
+        _abort_upload(profile, upload_id, timeout=timeout, bearer_token=bearer_token)
         raise RuntimeError('LMTS upload server returned unexpected chunk geometry')
 
     try:
@@ -151,7 +166,7 @@ def _publish_php_chunked(
                 _upload_url(profile.endpoint, action='chunk', upload_id=upload_id, chunk=index),
                 data=chunk_body,
                 method='PUT',
-                headers=_php_headers(profile, 'application/octet-stream'),
+                headers=_php_headers(profile, 'application/octet-stream', bearer_token=bearer_token),
             )
             chunk_status, payload = _read_json_response(request, timeout=timeout)
             if chunk_status != 200 or payload.get('ok') is not True:
@@ -165,7 +180,7 @@ def _publish_php_chunked(
             _upload_url(profile.endpoint, action='commit', upload_id=upload_id),
             data=b'',
             method='POST',
-            headers=_php_headers(profile),
+            headers=_php_headers(profile, bearer_token=bearer_token),
         )
         commit_status, payload = _read_json_response(commit_request, timeout=timeout)
         if commit_status not in {200, 201}:
@@ -188,6 +203,7 @@ def publish_report(
     timeout: float = 20.0,
     verify: bool = True,
     mysql: MySQLSettings | None = None,
+    bearer_token: str | None = None,
 ) -> str:
     report_id = _validate_report_document(report)
 
@@ -199,7 +215,12 @@ def publish_report(
     if profile.kind != 'php_api':
         raise ValueError(f'unsupported report target kind: {profile.kind}')
 
-    returned_id = _publish_php_chunked(report, profile, timeout=timeout)
+    returned_id = _publish_php_chunked(
+        report,
+        profile,
+        timeout=timeout,
+        bearer_token=bearer_token,
+    )
 
     if verify:
         verify_request = Request(

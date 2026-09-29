@@ -30,7 +30,6 @@ try {
         "SELECT
             rri.tester_user_id AS user_id,
             COALESCE(u.username, rri.tester_user_id) AS username,
-            u.display_name,
             COUNT(*) AS test_executions,
             COUNT(DISTINCT rri.report_id) AS reports,
             COUNT(DISTINCT rri.test_version_id) AS unique_tests,
@@ -47,7 +46,7 @@ try {
          LEFT JOIN IAM_users u ON u.user_id = rri.tester_user_id
          WHERE rri.outcome IN ('pass','fail')
            AND rri.tester_user_id IS NOT NULL
-         GROUP BY rri.tester_user_id, u.username, u.display_name
+         GROUP BY rri.tester_user_id, u.username
          ORDER BY test_executions DESC, unique_tests DESC, username"
     )->fetchAll();
 

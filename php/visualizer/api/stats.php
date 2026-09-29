@@ -347,6 +347,69 @@ try {
     }
     unset($configuration);
 
+    $hardwareOptions = [];
+
+    $componentRows = $pdo->query(
+        "SELECT
+            sr.resource_kind AS kind,
+            hn.hardware_id AS value,
+            hn.label,
+            GROUP_CONCAT(DISTINCT sr.system_id ORDER BY sr.system_id SEPARATOR ',') AS system_ids
+         FROM LMTS_system_resources sr
+         JOIN LMTS_hardware_nodes hn ON hn.hardware_id = sr.hardware_id
+         WHERE sr.resource_kind IN ('cpu','gpu','npu')
+         GROUP BY sr.resource_kind, hn.hardware_id, hn.label
+         ORDER BY sr.resource_kind, hn.label"
+    )->fetchAll();
+
+    foreach ($componentRows as $row) {
+        $row['system_ids'] = array_values(array_filter(explode(',', (string)($row['system_ids'] ?? ''))));
+        $hardwareOptions[] = $row;
+    }
+
+    $memoryRows = $pdo->query(
+        "SELECT
+            'memory' AS kind,
+            CAST(capacity_bytes AS CHAR) AS value,
+            CONCAT(ROUND(capacity_bytes / 1073741824, 2), ' GB') AS label,
+            GROUP_CONCAT(DISTINCT system_id ORDER BY system_id SEPARATOR ',') AS system_ids
+         FROM LMTS_system_memory_pools
+         WHERE pool_kind = 'system'
+         GROUP BY capacity_bytes
+         ORDER BY capacity_bytes"
+    )->fetchAll();
+
+    foreach ($memoryRows as $row) {
+        $row['system_ids'] = array_values(array_filter(explode(',', (string)($row['system_ids'] ?? ''))));
+        $hardwareOptions[] = $row;
+    }
+
+    $gpuMemoryRows = $pdo->query(
+        "SELECT
+            'gpu_memory' AS kind,
+            JSON_UNQUOTE(JSON_EXTRACT(hn.identity_json, '$.vram_bytes')) AS value,
+            CONCAT(
+                ROUND(
+                    CAST(JSON_UNQUOTE(JSON_EXTRACT(hn.identity_json, '$.vram_bytes')) AS UNSIGNED)
+                    / 1073741824,
+                    2
+                ),
+                ' GB'
+            ) AS label,
+            GROUP_CONCAT(DISTINCT sr.system_id ORDER BY sr.system_id SEPARATOR ',') AS system_ids
+         FROM LMTS_system_resources sr
+         JOIN LMTS_hardware_nodes hn ON hn.hardware_id = sr.hardware_id
+         WHERE sr.resource_kind = 'gpu'
+           AND JSON_EXTRACT(hn.identity_json, '$.vram_bytes') IS NOT NULL
+         GROUP BY JSON_UNQUOTE(JSON_EXTRACT(hn.identity_json, '$.vram_bytes'))
+         ORDER BY CAST(JSON_UNQUOTE(JSON_EXTRACT(hn.identity_json, '$.vram_bytes')) AS UNSIGNED)"
+    )->fetchAll();
+
+    foreach ($gpuMemoryRows as $row) {
+        $row['system_ids'] = array_values(array_filter(explode(',', (string)($row['system_ids'] ?? ''))));
+        $hardwareOptions[] = $row;
+    }
+
     $tests = $pdo->query(
         "SELECT DISTINCT
             rri.test_version_id,
@@ -420,6 +483,7 @@ try {
                 'users' => $users,
                 'systems' => $systems,
                 'configurations' => $configurations,
+                'hardware' => $hardwareOptions,
                 'targets' => $targets,
                 'tests' => $tests,
             ],

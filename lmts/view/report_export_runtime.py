@@ -131,6 +131,7 @@ class ReportExportController(LMTSViewController):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._next_publish_targets: tuple[ReportTarget, ...] = ()
+        self._published_during_current_run = False
         global _ACTIVE_CONTROLLER
         _ACTIVE_CONTROLLER = self
 
@@ -144,11 +145,32 @@ class ReportExportController(LMTSViewController):
             return None
 
         def publish(bundle: dict[str, object]) -> None:
-            _publish_many(project_matrix_bundle(bundle), targets)
+            report = project_matrix_bundle(bundle)
+            target_ids = list(report.get('report', {}).get('benchmark', {}).get('target_ids', []))
+            target_label = ', '.join(str(value) for value in target_ids) or 'target'
+            try:
+                _publish_many(report, targets)
+            except Exception as exc:
+                self.response_monitor.append_lines(
+                    '========================================',
+                    '          PUBLISH FAILED',
+                    '========================================',
+                    target_label,
+                    f'{type(exc).__name__}: {exc}',
+                )
+                raise
+            self._published_during_current_run = True
+            self.response_monitor.append_lines(
+                '========================================',
+                '             PUBLISHED',
+                '========================================',
+                target_label,
+            )
 
         return publish
 
     def _launch(self, targets, tests) -> bool:
+        self._published_during_current_run = False
         return self._start_run(
             list(targets),
             list(tests),
@@ -199,7 +221,12 @@ class ReportExportHost(LMTSInteractiveHost):
         matrix_path = Path(matrix_path_text)
         matrix_data = MatrixRunStore(controller.results_root).load(matrix_path)
         target_ids = [str(value) for value in (matrix_data.get('target_ids') or [])]
-        if len(target_ids) != 1 or str(matrix_data.get('status') or '') == 'cancelled' or _auto_publish_targets():
+        if (
+            len(target_ids) != 1
+            or str(matrix_data.get('status') or '') == 'cancelled'
+            or _auto_publish_targets()
+            or controller._published_during_current_run
+        ):
             return
         report = self._completed_report(controller, matrix_path)
         action = self.choose(stdscr, 'Test complete', ['Export to server', 'Export to file', 'Keep local'], 0)
@@ -236,9 +263,12 @@ class ReportExportBenchmarkActions(BenchmarkActions):
             controller.configure_next_publish(auto_targets)
             self.set_message(f'auto-publish enabled: {len(auto_targets)} output(s)')
             return True
-        if self._run_target_count(choice) <= 1:
-            return True
-        publish_choice = self.host.choose(self.stdscr, 'Export reports to server as they complete?', ['Yes', 'No'], 0)
+        publish_choice = self.host.choose(
+            self.stdscr,
+            'Export report after each target test suite completes?',
+            ['Yes', 'No'],
+            0,
+        )
         if publish_choice is None:
             return False
         if publish_choice == 1:

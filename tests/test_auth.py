@@ -29,7 +29,7 @@ def _success_payload(*, token: bool = True) -> dict[str, object]:
     payload: dict[str, object] = {
         'ok': True,
         'contract': 'iam.light',
-        'version': '1.0',
+        'version': '1.1',
         'auth_level': 'light',
         'user': {
             'id': '0',
@@ -120,7 +120,7 @@ def test_logout_revokes_remote_session_and_deletes_local_token(tmp_path: Path) -
         return {
             'ok': True,
             'contract': 'iam.light',
-            'version': '1.0',
+            'version': '1.1',
         }
 
     store = IAMTokenStore(tmp_path / 'auth-session.json')

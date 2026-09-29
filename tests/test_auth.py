@@ -7,6 +7,7 @@ import pytest
 
 from lmts.services.auth import (
     IAM_BASE_URL,
+    IAM_DOMAIN,
     AuthService,
     AuthenticationError,
     IAMHTTPClient,
@@ -67,7 +68,7 @@ def test_login_uses_iam_http_contract_and_stores_only_token(tmp_path: Path) -> N
     assert calls == [(
         'POST',
         IAM_BASE_URL + '/api/login.php',
-        {'username': 'origin', 'password': 'secret-password'},
+        {'username': 'origin', 'password': 'secret-password', 'domain': IAM_DOMAIN},
         None,
     )]
     raw = (tmp_path / 'auth-session.json').read_text(encoding='utf-8')

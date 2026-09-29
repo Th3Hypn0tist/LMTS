@@ -59,6 +59,18 @@ class LMTSInteractiveHost(RegistrySplitCursesViewHost):
             ),
         )
 
+    def input_text(self, stdscr, title, *, default="", maximum=255):
+        parent = super()
+        return self._modal(
+            'input_text',
+            lambda: parent.input_text(
+                stdscr,
+                title,
+                default=default,
+                maximum=maximum,
+            ),
+        )
+
     def input_integer(self, stdscr, title, *, default=1, minimum=1, maximum=999):
         parent = super()
         return self._modal(

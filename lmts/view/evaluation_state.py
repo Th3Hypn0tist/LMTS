@@ -48,7 +48,6 @@ class EvaluationViewState:
         self.state.progress_target_id = event.target_id
         self.state.progress_test_ref = event.test_ref
         if event.phase == 'starting':
-            self.response_monitor.reset(event.target_id)
             self.state.live_cells[(event.target_id, event.test_ref)] = 'RUN'
             if not self.state.cancel_requested:
                 self.state.progress_phase = 'starting'

@@ -224,12 +224,7 @@ function hardwareSummary(payload, state) {
 function renderBenchmark(payload, state, rerender) {
   const targets = payload.filters?.options?.targets || [];
   const cells = payload.cells || [];
-  const breadcrumb = state.mode === 'hardware-model'
-    ? 'Hardware → Model'
-    : state.mode === 'model-hardware'
-      ? 'Model → Hardware'
-      : 'Benchmark';
-  const header = topbarRoot('benchmark', breadcrumb);
+  const header = topbarRoot('benchmark', 'Benchmark');
 
   if (!state.mode) {
     replaceRoot([header, landing(state, rerender)]);

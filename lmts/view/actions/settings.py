@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from lmts.core.settings import MySQLSettings, PHPAPISettings, mysql_target_id, php_api_target_id
+from lmts.core.settings import MySQLSettings, mysql_target_id
 from lmts.core.shortcut_settings import normalise_sequence_text
 from lmts.tools.mysql_reports import test_mysql_connection
 from lmts.tools.mysql_schema import install_mysql_schema
@@ -136,69 +136,6 @@ class SettingsActions(TUIActions):
                 )
                 self._save_core()
 
-    def _edit_php_api_connection(self, current: PHPAPISettings | None = None) -> PHPAPISettings | None:
-        connection_id = single_line(self.host, self.stdscr, 'PHP API connection id', initial=current.id if current else '')
-        if connection_id is None:
-            return None
-        label = single_line(self.host, self.stdscr, 'PHP API connection label', initial=current.label if current else connection_id)
-        if label is None:
-            return None
-        base_url = single_line(self.host, self.stdscr, 'PHP API report endpoint', initial=current.base_url if current else '')
-        if base_url is None:
-            return None
-        publish_key = single_line(self.host, self.stdscr, 'PHP API publish key', initial=current.publish_key if current else '')
-        if publish_key is None:
-            return None
-        return PHPAPISettings(id=connection_id, label=label, base_url=base_url, publish_key=publish_key)
-
-    def manage_php_api_connections(self) -> None:
-        while True:
-            connections = self.state.settings.php_api_connections
-            options = ['New PHP API connection', *(f'{item.label}  {item.base_url}' for item in connections)]
-            chosen = self.host.choose(self.stdscr, 'PHP API connections', options)
-            if chosen is None:
-                return
-            if chosen == 0:
-                created = self._edit_php_api_connection()
-                if created is None:
-                    continue
-                if any(item.id == created.id for item in connections):
-                    self.set_message(f'PHP API connection id already exists: {created.id}')
-                    continue
-                self.state.settings = replace(self.state.settings, php_api_connections=tuple(sorted((*connections, created), key=lambda item: item.id.casefold())))
-                self._save_core()
-                continue
-            current = connections[chosen - 1]
-            action = self.host.choose(self.stdscr, current.label, ['Edit connection', 'Delete'])
-            if action is None:
-                continue
-            if action == 0:
-                updated = self._edit_php_api_connection(current)
-                if updated is None:
-                    continue
-                if updated.id != current.id and any(item.id == updated.id for item in connections):
-                    self.set_message(f'PHP API connection id already exists: {updated.id}')
-                    continue
-                old_ref = php_api_target_id(current.id)
-                new_ref = php_api_target_id(updated.id)
-                values = tuple(item for item in connections if item.id != current.id) + (updated,)
-                self.state.settings = replace(
-                    self.state.settings,
-                    php_api_connections=tuple(sorted(values, key=lambda item: item.id.casefold())),
-                    auto_publish_targets=self._replace_auto_target(old_ref, new_ref),
-                )
-                self._save_core()
-                continue
-            confirm = self.host.choose(self.stdscr, f'Delete PHP API connection {current.label}?', ['No', 'Yes'], 0)
-            if confirm == 1:
-                ref = php_api_target_id(current.id)
-                self.state.settings = replace(
-                    self.state.settings,
-                    php_api_connections=tuple(item for item in connections if item.id != current.id),
-                    auto_publish_targets=self._replace_auto_target(ref, None),
-                )
-                self._save_core()
-
     def edit_auto_publish_targets(self) -> None:
         targets = configured_report_targets(self.state.settings)
         selected = {index for index, target in enumerate(targets) if target.id in self.state.settings.auto_publish_targets}
@@ -227,7 +164,6 @@ class SettingsActions(TUIActions):
             options = [
                 'Server setup',
                 f'MySQL connections  {len(settings.mysql_connections)}',
-                f'PHP API connections  {len(settings.php_api_connections)}',
                 f'Auto-publish outputs  {len(settings.auto_publish_targets)}',
                 'FTP',
             ]
@@ -239,8 +175,6 @@ class SettingsActions(TUIActions):
             elif chosen == 1:
                 self.manage_mysql_connections()
             elif chosen == 2:
-                self.manage_php_api_connections()
-            elif chosen == 3:
                 self.edit_auto_publish_targets()
             else:
                 self.ftp_settings(self.stdscr)

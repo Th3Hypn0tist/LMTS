@@ -52,8 +52,11 @@ class ColdWarmPerformanceTest:
             if item.performance.prompt_tokens_per_second is not None
         ]
 
+        valid_outputs = all(item.text.strip() == "PERF_OK" for item in responses)
+        complete_timing = cold.timing.total_ms is not None and len(warm_total) == self.warm_repeats
+
         return TestResult(
-            passed=None,
+            passed=valid_outputs and complete_timing,
             metrics={
                 "cold": {
                     "total_ms": cold.timing.total_ms,
@@ -95,8 +98,11 @@ class RepeatVarianceTest:
             for item in responses
             if item.performance.generation_tokens_per_second is not None
         ]
+        valid_outputs = all(item.text.strip() == "VAR_OK" for item in responses)
+        complete_timing = len(totals) == self.repeats
+
         return TestResult(
-            passed=None,
+            passed=valid_outputs and complete_timing,
             metrics={
                 "total_ms": _series(totals),
                 "ttft_ms": _series(ttfts),

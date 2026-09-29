@@ -41,11 +41,9 @@ function rankingsTable(rows) {
 function render(payload) {
   const total = (payload.rows || []).reduce((sum, row) => sum + Number(row.test_executions || 0), 0);
   replaceRoot([
-    topbar('rankings'),
+    topbar('rankings', 'Rankings'),
     h('main', { className: 'page explorer-page' }, [
-      h('section', { className: 'explorer-head ranking-head' }, [
-        h('span', { className: 'eyebrow', text: 'LMTS CONTRIBUTORS' }),
-        h('h1', { text: 'Rankings' }),
+      h('section', { className: 'explorer-head ranking-head compact-explorer-head' }, [
         h('p', { text: 'Who has contributed the most valid benchmark evidence?' }),
       ]),
       h('div', { className: 'ranking-summary' }, [
@@ -70,6 +68,6 @@ async function load() {
 }
 
 load().catch(error => replaceRoot([
-  topbar('rankings'),
+  topbar('rankings', 'Rankings'),
   h('pre', { className: 'fatal', text: error?.stack || String(error) }),
 ]));

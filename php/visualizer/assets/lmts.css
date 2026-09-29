@@ -519,3 +519,175 @@ img { display: block; max-width: 100%; }
   .modal-summary { grid-template-columns: 1fr 1fr; }
   .modal-summary .stat:last-child { grid-column: 1 / -1; }
 }
+
+
+/* Benchmark landing + explorers */
+.landing-page {
+  display: grid;
+  min-height: calc(100vh - 68px);
+  align-items: center;
+}
+.landing-hero {
+  width: min(980px, 100%);
+  margin: 0 auto;
+  padding: 80px 0 120px;
+}
+.landing-hero h1,
+.explorer-head h1,
+.workflow-title h1 {
+  margin: 0;
+  letter-spacing: -.045em;
+}
+.landing-hero h1 {
+  max-width: 760px;
+  font-size: clamp(48px, 7vw, 92px);
+  line-height: .95;
+}
+.landing-hero > p,
+.explorer-head > p,
+.workflow-title > p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.landing-hero > p {
+  max-width: 660px;
+  margin: 18px 0 34px;
+  font-size: 17px;
+}
+.landing-modes {
+  max-width: 980px;
+}
+.landing-modes .mode-card {
+  min-height: 116px;
+}
+.workflow-head {
+  display: grid;
+  grid-template-columns: minmax(280px, .8fr) minmax(360px, 1.2fr);
+  gap: 50px;
+  align-items: end;
+  padding: 24px 0 28px;
+}
+.workflow-back {
+  display: inline-flex;
+  width: max-content;
+  margin-bottom: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.workflow-back:hover { color: var(--text); }
+.workflow-title h1 { font-size: clamp(34px, 4vw, 58px); }
+.workflow-title > p { max-width: 620px; margin: 10px 0 0; }
+.workflow-control .control > span {
+  font-size: 10px;
+  letter-spacing: .02em;
+}
+.workflow-control .control select {
+  min-height: 38px;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.explorer-page { padding-top: 54px; }
+.explorer-head {
+  max-width: 920px;
+  margin-bottom: 30px;
+}
+.explorer-head h1 {
+  font-size: clamp(42px, 5vw, 72px);
+  line-height: .98;
+}
+.explorer-head > p {
+  max-width: 720px;
+  margin: 12px 0 0;
+}
+.link-button {
+  margin-top: 20px;
+  text-decoration: none;
+}
+.entity-link {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+}
+.entity-link:hover { color: var(--accent); }
+.systems-table { min-width: 1180px; }
+.system-hardware {
+  max-width: 520px;
+  color: #cbd6e2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.system-detail-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #0d1319;
+  overflow: hidden;
+}
+.system-detail-summary > div {
+  display: grid;
+  gap: 5px;
+  min-height: 88px;
+  padding: 16px 18px;
+  border-right: 1px solid var(--line);
+  align-content: center;
+}
+.system-detail-summary > div:last-child { border-right: 0; }
+.system-detail-summary span {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.system-detail-summary strong {
+  font-size: 14px;
+  line-height: 1.4;
+}
+.system-detail-table { min-width: 980px; }
+.ranking-head { margin-bottom: 20px; }
+.ranking-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 18px 0 22px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.ranking-summary strong {
+  font-size: 34px;
+  letter-spacing: -.03em;
+}
+.ranking-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.contributor-table { min-width: 900px; }
+.contributor-rank {
+  font-size: 15px;
+  font-weight: 800;
+}
+.contributor-name { font-size: 14px; }
+
+@media (max-width: 900px) {
+  .workflow-head { grid-template-columns: 1fr; gap: 22px; }
+  .system-detail-summary { grid-template-columns: 1fr 1fr; }
+  .system-detail-summary > div:nth-child(2) { border-right: 0; }
+  .system-detail-summary > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+}
+
+@media (max-width: 620px) {
+  .landing-hero { padding: 46px 0 72px; }
+  .landing-hero h1 { font-size: 48px; }
+  .system-detail-summary { grid-template-columns: 1fr; }
+  .system-detail-summary > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .system-detail-summary > div:last-child { border-bottom: 0; }
+  .ranking-summary { align-items: flex-start; flex-direction: column; gap: 2px; }
+}

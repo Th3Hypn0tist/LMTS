@@ -30,7 +30,7 @@ def _success_payload(*, token: bool = True) -> dict[str, object]:
     payload: dict[str, object] = {
         'ok': True,
         'contract': 'iam.light',
-        'version': '1.0',
+        'version': '1.1',
         'auth_level': 'light',
         'user': {
             'id': '0',
@@ -93,7 +93,7 @@ def test_current_identity_restores_session_through_me(tmp_path: Path) -> None:
     assert identity == _identity()
     assert calls == [(
         'GET',
-        IAM_BASE_URL + '/api/me.php',
+        IAM_BASE_URL + '/api/me.php?domain=' + IAM_DOMAIN,
         None,
         'opaque-token',
     )]

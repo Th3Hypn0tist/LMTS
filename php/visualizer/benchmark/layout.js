@@ -142,9 +142,8 @@ function normalizeHardwareSelections(payload, state, preferredKind) {
   }
 }
 
-function hardwareControls(payload, state, rerender) {
+function hardwareFacetControls(payload, state, rerender) {
   const hardware = payload.filters?.options?.hardware || [];
-  const systems = payload.filters?.options?.systems || [];
 
   const facetControls = HARDWARE_KINDS.map(([kind, label]) => {
     const options = hardware.filter(item => String(item.kind) === kind);
@@ -170,31 +169,34 @@ function hardwareControls(payload, state, rerender) {
     );
   }).filter(Boolean);
 
-  const presetControl = selectControl(
-    'Preset',
-    state.hardwarePreset,
-    [
-      { value: '', label: 'Custom' },
-      ...systems.map(item => ({
-        value: String(item.system_id),
-        label: item.label || String(item.system_id),
-      })),
-    ],
-    value => {
-      if (!value) {
-        state.hardwarePreset = null;
-        rerender();
-        return;
-      }
-      applyPreset(payload, state, value);
-      state.rawCell = null;
-      rerender();
-    },
-  );
+  return h('div', { className: 'hardware-facet-list' }, facetControls);
+}
 
-  return h('div', { className: 'hardware-facets' }, [
-    h('div', { className: 'hardware-facet-list' }, facetControls),
-    h('div', { className: 'hardware-preset' }, [presetControl]),
+function hardwarePresetControl(payload, state, rerender) {
+  const systems = payload.filters?.options?.systems || [];
+
+  return h('div', { className: 'hardware-preset' }, [
+    selectControl(
+      'Preset',
+      state.hardwarePreset,
+      [
+        { value: '', label: 'Custom' },
+        ...systems.map(item => ({
+          value: String(item.system_id),
+          label: item.label || String(item.system_id),
+        })),
+      ],
+      value => {
+        if (!value) {
+          state.hardwarePreset = null;
+          rerender();
+          return;
+        }
+        applyPreset(payload, state, value);
+        state.rawCell = null;
+        rerender();
+      },
+    ),
   ]);
 }
 
@@ -249,12 +251,13 @@ function renderBenchmark(payload, state, rerender) {
     return;
   }
 
-  const hardwareControl = state.mode === 'hardware-model'
-    ? hardwareControls(payload, state, rerender)
+  const hardwareFacets = state.mode === 'hardware-model'
+    ? hardwareFacetControls(payload, state, rerender)
     : null;
 
-  const primaryControl = state.mode === 'model-hardware'
-    ? selectControl(
+  const primaryControl = state.mode === 'hardware-model'
+    ? hardwarePresetControl(payload, state, rerender)
+    : selectControl(
         'Model',
         state.targetKey,
         targets.map(item => ({ value: item.value, label: item.label })),
@@ -276,7 +279,7 @@ function renderBenchmark(payload, state, rerender) {
     : cells.filter(cell => targetKey(cell) === state.targetKey);
 
   const mainContent = state.mode === 'hardware-model'
-    ? renderModelRanking(payload, hardwareCells, hardwareControl, state, rerender)
+    ? renderModelRanking(payload, hardwareCells, hardwareFacets, state, rerender)
     : renderHardwareRanking(payload, cells, state);
 
   replaceRoot([

@@ -5,7 +5,7 @@ const root = document.querySelector('#app');
 
 const state = {
   mode: 'hardware-model',
-  systemId: null,
+  configurationKey: null,
   targetKey: null,
   search: '',
   status: 'all',
@@ -41,6 +41,10 @@ function pf(pass, fail) {
 
 function targetKey(cell) {
   return String(cell.target_kind || 'unknown') + ':' + String(cell.target_ref || '');
+}
+
+function configurationKey(cell) {
+  return String(cell.system_id || '') + ':' + String(cell.compute_profile_id || '');
 }
 
 function cellState(cell) {
@@ -280,7 +284,7 @@ function rankingView(payload, cells, selectedSystem) {
         h('span', { className: 'system-icon', text: '▣' }),
         h('div', {}, [
           h('strong', { text: selectedSystem?.label || 'Hardware configuration' }),
-          h('span', { text: selectedSystem?.system_id || '' }),
+          h('span', { text: selectedSystem?.value || '' }),
         ]),
       ]),
       stat(rows.length, 'models tested'),
@@ -310,15 +314,15 @@ function rankingView(payload, cells, selectedSystem) {
 function hardwareRankingView(payload, cells) {
   const selectedTarget = state.targetKey;
   const modelCells = cells.filter(cell => targetKey(cell) === selectedTarget);
-  const bySystem = groupBy(modelCells, cell => String(cell.system_id || ''));
+  const bySystem = groupBy(modelCells, configurationKey);
   const allTests = new Set(modelCells.map(cell => cell.test_version_id));
   const rows = [];
 
-  for (const [systemId, systemCells] of bySystem) {
+  for (const [configKey, systemCells] of bySystem) {
     const first = systemCells[0];
     rows.push({
-      systemId,
-      label: first.system_label || systemId,
+      systemId: configKey,
+      label: first.configuration_label || first.system_label || configKey,
       summary: aggregateTarget(systemCells, allTests.size),
     });
   }
@@ -386,8 +390,8 @@ function hardwareRankingView(payload, cells) {
 function matrixView(payload, cells) {
   let visibleCells = cells;
 
-  if (state.mode === 'hardware-model' && state.systemId) {
-    visibleCells = visibleCells.filter(cell => String(cell.system_id) === String(state.systemId));
+  if (state.mode === 'hardware-model' && state.configurationKey) {
+    visibleCells = visibleCells.filter(cell => configurationKey(cell) === String(state.configurationKey));
   }
   if (state.targetKey) {
     visibleCells = visibleCells.filter(cell => targetKey(cell) === state.targetKey);
@@ -519,6 +523,7 @@ function rawPopup(payload) {
 
   const matching = (payload.records || []).filter(record =>
     String(record.system_id || '') === String(cell.system_id || '')
+    && String(record.compute_profile_id || '') === String(cell.compute_profile_id || '')
     && String(record.target_kind || '') === String(cell.target_kind || '')
     && String(record.target_ref || '') === String(cell.target_ref || '')
     && String(record.test_version_id || '') === String(cell.test_version_id || '')
@@ -598,18 +603,18 @@ function render(payload) {
   const targets = payload.filters?.options?.targets || [];
   const cells = payload.cells || [];
 
-  if (!state.systemId && systems.length) state.systemId = String(systems[0].system_id);
+  if (!state.configurationKey && configurations.length) state.configurationKey = String(configurations[0].value);
   if (!state.targetKey && targets.length) state.targetKey = String(targets[0].value);
 
-  const selectedSystem = systems.find(item => String(item.system_id) === String(state.systemId));
+  const selectedSystem = configurations.find(item => String(item.value) === String(state.configurationKey));
   const selectedTarget = targets.find(item => String(item.value) === String(state.targetKey));
 
   const primaryControl = state.mode === 'hardware-model'
     ? selectControl(
         'Select hardware configuration',
-        state.systemId,
-        systems.map(item => ({ value: item.system_id, label: item.label || item.system_id })),
-        value => { state.systemId = value; state.rawCell = null; render(payload); },
+        state.configurationKey,
+        configurations.map(item => ({ value: item.value, label: item.label || item.value })),
+        value => { state.configurationKey = value; state.rawCell = null; render(payload); },
       )
     : selectControl(
         'Select model',
@@ -619,7 +624,7 @@ function render(payload) {
       );
 
   const activeCells = state.mode === 'hardware-model'
-    ? cells.filter(cell => String(cell.system_id) === String(state.systemId))
+    ? cells.filter(cell => configurationKey(cell) === String(state.configurationKey))
     : cells;
 
   const header = h('header', { className: 'topbar' }, [

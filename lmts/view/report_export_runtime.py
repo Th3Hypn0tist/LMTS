@@ -318,15 +318,18 @@ class ReportExportBenchmarkActions(BenchmarkActions):
         controller = self.controller
         if not isinstance(controller, ReportExportController):
             raise TypeError('report-aware benchmark actions require ReportExportController')
-        if not _ensure_authenticated(self.host, self.stdscr, controller):
-            self.set_message(controller.state.message)
-            return False
+
         controller.configure_next_publish(())
         auto_targets = _auto_publish_targets()
         if auto_targets:
+            if any(target.transport == 'php_api' for target in auto_targets):
+                if not _ensure_authenticated(self.host, self.stdscr, controller):
+                    self.set_message(controller.state.message)
+                    return False
             controller.configure_next_publish(auto_targets)
             self.set_message(f'auto-publish enabled: {len(auto_targets)} output(s)')
             return True
+
         publish_choice = self.host.choose(
             self.stdscr,
             'Export report after each target test suite completes?',
@@ -337,10 +340,16 @@ class ReportExportBenchmarkActions(BenchmarkActions):
             return False
         if publish_choice == 1:
             return True
+
         target = _select_report_target(self.host, self.stdscr)
         if target is None:
             self.set_message('run cancelled: no report target selected')
             return False
+        if target.transport == 'php_api':
+            if not _ensure_authenticated(self.host, self.stdscr, controller):
+                self.set_message(controller.state.message)
+                return False
+
         controller.configure_next_publish((target,))
         return True
 

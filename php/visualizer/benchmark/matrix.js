@@ -2,6 +2,23 @@ import { cellState, groupBy, metricLabel, targetKey, testGroup } from './aggrega
 import { number, pfScore } from './format.js';
 import { h } from './ui.js';
 
+function groupSlug(value) {
+  return String(value || 'other').toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+}
+
+function setMatrixCategory(section, category) {
+  section.dataset.matrixCategory = category;
+
+  for (const button of section.querySelectorAll('.matrix-category-button')) {
+    button.classList.toggle('active', button.dataset.group === category);
+  }
+
+  for (const cell of section.querySelectorAll('[data-matrix-group]')) {
+    const group = cell.dataset.matrixGroup;
+    cell.classList.toggle('is-hidden', category !== 'all' && group !== category);
+  }
+}
+
 function renderMatrix(cells, state, rerender) {
   const visibleCells = cells;
 
@@ -17,37 +34,27 @@ function renderMatrix(cells, state, rerender) {
     }))
     .sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label, undefined, { numeric: true }));
 
+  const groups = [...new Set(tests.map(test => test.group))];
   const index = new Map();
   for (const cell of visibleCells) {
     index.set(targetKey(cell) + '\u0001' + String(cell.test_version_id), cell);
   }
 
   const table = h('table', { className: 'matrix' });
-  const groupRow = h('tr', { className: 'matrix-groups' }, [
-    h('th', { rowSpan: 2, text: state.mode === 'hardware-model' ? 'Model' : 'Target' }),
-    h('th', { rowSpan: 2, text: 'P/F' }),
+  const head = h('tr', {}, [
+    h('th', { text: state.mode === 'hardware-model' ? 'Model' : 'Target' }),
+    h('th', { text: 'P/F' }),
   ]);
 
-  let currentGroup = null;
-  let groupCell = null;
-  let groupCount = 0;
-
   for (const test of tests) {
-    if (test.group !== currentGroup) {
-      if (groupCell) groupCell.colSpan = groupCount;
-      currentGroup = test.group;
-      groupCount = 1;
-      groupCell = h('th', { text: test.group });
-      groupRow.append(groupCell);
-    } else {
-      groupCount += 1;
-    }
+    const slug = groupSlug(test.group);
+    head.append(h('th', {
+      className: 'test-head matrix-group-' + slug,
+      text: test.label,
+      dataset: { matrixGroup: slug },
+    }));
   }
-  if (groupCell) groupCell.colSpan = groupCount;
-
-  const testRow = h('tr');
-  tests.forEach(test => testRow.append(h('th', { className: 'test-head', text: test.label })));
-  table.append(h('thead', {}, [groupRow, testRow]));
+  table.append(h('thead', {}, [head]));
 
   const body = h('tbody');
   for (const target of targets) {
@@ -62,9 +69,13 @@ function renderMatrix(cells, state, rerender) {
     ]);
 
     for (const test of tests) {
+      const slug = groupSlug(test.group);
       const cell = index.get(target.key + '\u0001' + test.key);
       const status = cellState(cell);
-      row.append(h('td', { className: 'matrix-td' }, [
+      row.append(h('td', {
+        className: 'matrix-td matrix-group-' + slug,
+        dataset: { matrixGroup: slug },
+      }, [
         h('button', {
           type: 'button',
           className: 'matrix-cell cell-' + status,
@@ -86,7 +97,6 @@ function renderMatrix(cells, state, rerender) {
     }
     body.append(row);
   }
-
   table.append(body);
 
   const metric = h('select', {
@@ -115,21 +125,57 @@ function renderMatrix(cells, state, rerender) {
     }),
   ]);
 
-  return h('section', { className: 'section matrix-section', id: 'matrix' }, [
+  const section = h('section', {
+    className: 'section matrix-section',
+    id: 'matrix',
+    dataset: { matrixCategory: state.matrixCategory || 'all' },
+  });
+
+  const categoryNav = h('div', { className: 'matrix-category-nav' }, [
+    h('div', { className: 'matrix-category-list' }, groups.map(group => {
+      const slug = groupSlug(group);
+      return h('button', {
+        type: 'button',
+        className: 'matrix-category-button' + ((state.matrixCategory || 'all') === slug ? ' active' : ''),
+        text: group,
+        dataset: { group: slug },
+        on: { click: () => {
+          state.matrixCategory = slug;
+          setMatrixCategory(section, slug);
+        } },
+      });
+    })),
+    h('button', {
+      type: 'button',
+      className: 'matrix-category-button matrix-category-all' + ((state.matrixCategory || 'all') === 'all' ? ' active' : ''),
+      text: 'All',
+      dataset: { group: 'all' },
+      on: { click: () => {
+        state.matrixCategory = 'all';
+        setMatrixCategory(section, 'all');
+      } },
+    }),
+  ]);
+
+  section.append(
     h('div', { className: 'section-head matrix-head' }, [
       h('div', {}, [
         h('h2', { text: 'Test matrix' }),
-        h('p', { text: 'Click a cell for its contributing PASS/FAIL runs. Individual reports stay out of the primary UI.' }),
+        h('p', { text: 'Click a category to show only that test group. All shows the complete matrix.' }),
       ]),
       h('div', { className: 'matrix-controls' }, [
         h('label', { className: 'mini-control' }, [h('span', { text: 'Metric' }), metric]),
         state.metric === 'pf' ? null : aggregation,
       ].filter(Boolean)),
     ]),
+    categoryNav,
     visibleCells.length
       ? h('div', { className: 'matrix-scroll' }, [table])
       : h('p', { className: 'empty', text: 'No benchmark evidence matches this view.' }),
-  ]);
+  );
+
+  queueMicrotask(() => setMatrixCategory(section, state.matrixCategory || 'all'));
+  return section;
 }
 
 export { renderMatrix };

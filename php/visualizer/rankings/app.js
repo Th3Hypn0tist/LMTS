@@ -60,12 +60,19 @@ function render(payload) {
 }
 
 async function load() {
-  const response = await fetch('../api/rankings.php', { cache: 'no-store' });
+  const response = await fetch(
+    '../api/rankings.php?_=' + Date.now(),
+    { cache: 'no-store' },
+  );
   if (!response.ok) throw new Error('Rankings request failed: HTTP ' + response.status);
   const payload = await response.json();
   if (payload?.format !== 'lmts.rankings' || payload?.version !== 1) throw new Error('Unsupported rankings payload');
   render(payload);
 }
+
+window.addEventListener('lmts:refresh', () => {
+  load().catch(error => console.error('LMTS rankings refresh failed', error));
+});
 
 load().catch(error => replaceRoot([
   topbar('rankings', 'Rankings'),

@@ -60,7 +60,9 @@ function aggregateTarget(cells, totalTests) {
   const observedTests = new Set(cells.map(cell => cell.test_version_id)).size;
 
   const medians = cells
-    .map(cell => Number(cell.median_total_time_ms))
+    .map(cell => cell.median_total_time_ms)
+    .filter(value => value !== null && value !== undefined && value !== '')
+    .map(Number)
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
 

@@ -135,12 +135,20 @@ function render(payload) {
 
 async function load() {
   const query = state.selectedSystem ? '?system_id=' + encodeURIComponent(state.selectedSystem) : '';
-  const response = await fetch('../api/systems.php' + query, { cache: 'no-store' });
+  const separator = query ? '&' : '?';
+  const response = await fetch(
+    '../api/systems.php' + query + separator + '_=' + Date.now(),
+    { cache: 'no-store' },
+  );
   if (!response.ok) throw new Error('Systems request failed: HTTP ' + response.status);
   const payload = await response.json();
   if (payload?.format !== 'lmts.systems' || payload?.version !== 1) throw new Error('Unsupported systems payload');
   render(payload);
 }
+
+window.addEventListener('lmts:refresh', () => {
+  load().catch(error => console.error('LMTS systems refresh failed', error));
+});
 
 load().catch(error => replaceRoot([
   topbar('systems', 'Systems'),

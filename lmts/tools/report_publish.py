@@ -81,9 +81,12 @@ def _php_headers(
     content_type: str | None = None,
     *,
     bearer_token: str | None = None,
+    machine_key: str | None = None,
 ) -> dict[str, str]:
     headers = {'Accept': 'application/json'}
-    if bearer_token:
+    if machine_key:
+        headers['Authorization'] = f'LMTS-Key {machine_key}'
+    elif bearer_token:
         headers['Authorization'] = f'Bearer {bearer_token}'
     elif profile.publish_key:
         headers['X-LMTS-Key'] = profile.publish_key
@@ -100,12 +103,13 @@ def _abort_upload(
     *,
     timeout: float,
     bearer_token: str | None = None,
+    machine_key: str | None = None,
 ) -> None:
     request = Request(
         _upload_url(profile.endpoint, action='abort', upload_id=upload_id),
         data=b'',
         method='POST',
-        headers=_php_headers(profile, bearer_token=bearer_token),
+        headers=_php_headers(profile, bearer_token=bearer_token, machine_key=machine_key),
     )
     try:
         _read_json_response(request, timeout=timeout)
@@ -119,6 +123,7 @@ def _publish_php_chunked(
     *,
     timeout: float,
     bearer_token: str | None = None,
+    machine_key: str | None = None,
 ) -> str:
     report_id = _validate_report_document(report)
     body = json.dumps(report, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
@@ -142,7 +147,12 @@ def _publish_php_chunked(
         _upload_url(profile.endpoint, action='init'),
         data=init_payload,
         method='POST',
-        headers=_php_headers(profile, 'application/json; charset=utf-8', bearer_token=bearer_token),
+        headers=_php_headers(
+            profile,
+            'application/json; charset=utf-8',
+            bearer_token=bearer_token,
+            machine_key=machine_key,
+        ),
     )
     status, init_response = _read_json_response(init_request, timeout=timeout)
     if status not in {200, 201} or init_response.get('ok') is not True:
@@ -155,7 +165,13 @@ def _publish_php_chunked(
     server_chunk_size = init_response.get('chunk_size')
     server_chunk_count = init_response.get('chunk_count')
     if server_chunk_size != chunk_size or server_chunk_count != chunk_count:
-        _abort_upload(profile, upload_id, timeout=timeout, bearer_token=bearer_token)
+        _abort_upload(
+            profile,
+            upload_id,
+            timeout=timeout,
+            bearer_token=bearer_token,
+            machine_key=machine_key,
+        )
         raise RuntimeError('LMTS upload server returned unexpected chunk geometry')
 
     try:
@@ -166,7 +182,12 @@ def _publish_php_chunked(
                 _upload_url(profile.endpoint, action='chunk', upload_id=upload_id, chunk=index),
                 data=chunk_body,
                 method='PUT',
-                headers=_php_headers(profile, 'application/octet-stream', bearer_token=bearer_token),
+                headers=_php_headers(
+                    profile,
+                    'application/octet-stream',
+                    bearer_token=bearer_token,
+                    machine_key=machine_key,
+                ),
             )
             chunk_status, payload = _read_json_response(request, timeout=timeout)
             if chunk_status != 200 or payload.get('ok') is not True:
@@ -180,7 +201,11 @@ def _publish_php_chunked(
             _upload_url(profile.endpoint, action='commit', upload_id=upload_id),
             data=b'',
             method='POST',
-            headers=_php_headers(profile, bearer_token=bearer_token),
+            headers=_php_headers(
+                profile,
+                bearer_token=bearer_token,
+                machine_key=machine_key,
+            ),
         )
         commit_status, payload = _read_json_response(commit_request, timeout=timeout)
         if commit_status not in {200, 201}:
@@ -192,7 +217,13 @@ def _publish_php_chunked(
             raise RuntimeError(f'LMTS upload commit returned unexpected id: {returned_id!r}')
         return returned_id
     except Exception:
-        _abort_upload(profile, upload_id, timeout=timeout)
+        _abort_upload(
+            profile,
+            upload_id,
+            timeout=timeout,
+            bearer_token=bearer_token,
+            machine_key=machine_key,
+        )
         raise
 
 
@@ -204,6 +235,7 @@ def publish_report(
     verify: bool = True,
     mysql: MySQLSettings | None = None,
     bearer_token: str | None = None,
+    machine_key: str | None = None,
 ) -> str:
     report_id = _validate_report_document(report)
 
@@ -220,6 +252,7 @@ def publish_report(
         profile,
         timeout=timeout,
         bearer_token=bearer_token,
+        machine_key=machine_key,
     )
 
     if verify:

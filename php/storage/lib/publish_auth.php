@@ -102,26 +102,33 @@ function lmts_auth_machine_credential(PDO $pdo): ?array {
 
 function lmts_auth_upload(array $config): array|false {
     $pdo = lmts_auth_pdo($config);
+    $header = lmts_auth_header();
 
-    $machine = lmts_auth_machine_credential($pdo);
-    if ($machine !== null) return $machine;
-
-    // Migration fallback: IAM bearer may still publish while clients acquire
-    // machine-scoped credentials.
-    $bearer = lmts_auth_bearer_token();
-    if ($bearer !== null) {
-        $userId = lmts_auth_iam_user($pdo, $bearer);
-        if ($userId !== null) {
-            return [
-                'mode' => 'iam_bearer',
-                'user_id' => $userId,
-                'system_id' => null,
-                'key_id' => null,
-            ];
-        }
+    if (preg_match('/^LMTS-Key\\s+/i', $header) === 1) {
+        $machine = lmts_auth_machine_credential($pdo);
+        return $machine ?? false;
     }
 
-    // Temporary legacy migration fallback only.
+    // Migration fallback: IAM bearer may still publish while clients acquire
+    // machine-scoped credentials. An invalid bearer must not fall through to
+    // the legacy shared-key path.
+    if (preg_match('/^Bearer\\s+/i', $header) === 1) {
+        $bearer = lmts_auth_bearer_token();
+        if ($bearer === null) return false;
+        $userId = lmts_auth_iam_user($pdo, $bearer);
+        if ($userId === null) return false;
+        return [
+            'mode' => 'iam_bearer',
+            'user_id' => $userId,
+            'system_id' => null,
+            'key_id' => null,
+        ];
+    }
+
+    if ($header !== '') return false;
+
+    // Temporary legacy migration fallback only, and only when no Authorization
+    // header was supplied.
     $configuredKey = trim((string)($config['publish_key'] ?? ''));
     $suppliedKey = trim((string)($_SERVER['HTTP_X_LMTS_KEY'] ?? ''));
     if ($configuredKey !== '' && $suppliedKey !== '' && hash_equals($configuredKey, $suppliedKey)) {

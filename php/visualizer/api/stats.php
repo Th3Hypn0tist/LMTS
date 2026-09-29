@@ -214,7 +214,16 @@ try {
 
     $cellSql = "SELECT
         rri.system_id,
+        rri.compute_profile_id,
         COALESCE(MAX(s.label), rri.system_id) AS system_label,
+        COALESCE(MAX(cp.name), rri.compute_profile_id, 'Default') AS compute_profile_name,
+        CONCAT(
+            COALESCE(MAX(s.label), rri.system_id),
+            CASE
+                WHEN rri.compute_profile_id IS NULL THEN ''
+                ELSE CONCAT(' · ', COALESCE(MAX(cp.name), rri.compute_profile_id))
+            END
+        ) AS configuration_label,
         rri.target_kind,
         rri.target_ref,
         COALESCE(MAX(rri.target_label), rri.target_ref, rri.target_kind) AS target_label,
@@ -237,9 +246,11 @@ try {
      LEFT JOIN LMTS_test_versions tv ON tv.test_version_id = rri.test_version_id
      LEFT JOIN LMTS_test_definitions td ON td.test_definition_id = tv.test_definition_id
      LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
+     LEFT JOIN LMTS_compute_profiles cp ON cp.compute_profile_id = rri.compute_profile_id
      $where
      GROUP BY
         rri.system_id,
+        rri.compute_profile_id,
         rri.target_kind,
         rri.target_ref,
         rri.test_version_id,
@@ -254,6 +265,7 @@ try {
     // fetch successful timing samples and calculate medians in PHP.
     $timingSql = "SELECT
         rri.system_id,
+        rri.compute_profile_id,
         rri.target_kind,
         rri.target_ref,
         rri.test_version_id,
@@ -306,6 +318,33 @@ try {
            AND rri.outcome IN ('pass','fail')
          ORDER BY label, rri.system_id"
     )->fetchAll();
+
+    $configurations = $pdo->query(
+        "SELECT DISTINCT
+            rri.system_id,
+            rri.compute_profile_id,
+            COALESCE(s.label, rri.system_id) AS system_label,
+            COALESCE(cp.name, rri.compute_profile_id, 'Default') AS compute_profile_name,
+            CONCAT(
+                COALESCE(s.label, rri.system_id),
+                CASE
+                    WHEN rri.compute_profile_id IS NULL THEN ''
+                    ELSE CONCAT(' · ', COALESCE(cp.name, rri.compute_profile_id))
+                END
+            ) AS label
+         FROM LMTS_report_record_index rri
+         LEFT JOIN LMTS_systems s ON s.system_id = rri.system_id
+         LEFT JOIN LMTS_compute_profiles cp ON cp.compute_profile_id = rri.compute_profile_id
+         WHERE rri.system_id IS NOT NULL
+           AND rri.outcome IN ('pass','fail')
+         ORDER BY label, rri.system_id, rri.compute_profile_id"
+    )->fetchAll();
+
+    foreach ($configurations as &$configuration) {
+        $configuration['value'] = (string)$configuration['system_id']
+            . ':' . (string)($configuration['compute_profile_id'] ?? '');
+    }
+    unset($configuration);
 
     $tests = $pdo->query(
         "SELECT DISTINCT
@@ -379,6 +418,7 @@ try {
             'options' => [
                 'users' => $users,
                 'systems' => $systems,
+                'configurations' => $configurations,
                 'targets' => $targets,
                 'tests' => $tests,
             ],

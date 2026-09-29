@@ -4,7 +4,7 @@ This directory is the **single source of truth (SSOT)** for the LMTS database ba
 
 ## Canonical file
 
-- `schema_v1.sql` — canonical MariaDB/MySQL schema for LMTS shared data, user-owned data, immutable report storage, and rebuildable report indexes.
+- `init.sql` — canonical MariaDB/MySQL schema for LMTS shared data, user-owned data, immutable report storage, and rebuildable report indexes.
 
 Do not introduce new database semantics first in installers, service-local SQL, or report-server code. Those are consumers/projections of this schema.
 

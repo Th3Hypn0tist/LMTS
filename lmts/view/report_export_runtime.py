@@ -7,7 +7,6 @@ from lmts.core.matrix_store import MatrixRunStore
 from lmts.core.result_export import build_matrix_bundle
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
 from lmts.reporting import project_matrix_bundle
-from lmts.reporting.single import project_run_result
 from lmts.services.auth import AuthenticationError
 from lmts.tools.report_export import export_report_json
 from lmts.tools.report_publish import publish_report

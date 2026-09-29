@@ -18,15 +18,31 @@ function topbar(active = 'benchmark', section = 'Benchmark') {
     ['rankings', '/lmts/rankings/', 'Rankings'],
   ];
 
+  const refresh = h('button', {
+    className: 'nav-refresh',
+    type: 'button',
+    title: 'Reload benchmark data from database',
+    'aria-label': 'Refresh benchmark data',
+    on: {
+      click: () => window.dispatchEvent(new CustomEvent('lmts:refresh')),
+    },
+  }, [
+    h('span', { className: 'nav-refresh-icon', text: '↻' }),
+    h('span', { text: 'Refresh' }),
+  ]);
+
   return h('header', { className: 'topbar' }, [
     brand(section),
-    h('nav', { className: 'nav' }, items.map(([id, href, label]) =>
-      h('a', {
-        className: active === id ? 'active' : '',
-        href,
-        text: label,
-      })
-    )),
+    h('nav', { className: 'nav' }, [
+      refresh,
+      ...items.map(([id, href, label]) =>
+        h('a', {
+          className: active === id ? 'active' : '',
+          href,
+          text: label,
+        })
+      ),
+    ]),
   ]);
 }
 

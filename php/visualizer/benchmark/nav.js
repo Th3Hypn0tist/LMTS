@@ -1,6 +1,17 @@
 import { h } from './ui.js';
 
-function topbar(active = 'benchmark') {
+function brand(breadcrumb) {
+  return h('div', { className: 'brand' }, [
+    h('a', { className: 'brand-logo', href: '/', title: 'AIGM' }, [
+      h('img', { src: '/images/AIGM-LOGO.png', alt: 'AIGM' }),
+    ]),
+    h('span', { className: 'brand-divider' }),
+    h('a', { className: 'brand-lmts', href: '/lmts', text: 'LMTS' }),
+    h('span', { className: 'breadcrumb', text: '/ ' + breadcrumb }),
+  ]);
+}
+
+function topbar(active = 'benchmark', breadcrumb = 'Benchmark') {
   const items = [
     ['benchmark', '../', 'Benchmark'],
     ['systems', '../systems/', 'Systems'],
@@ -8,12 +19,7 @@ function topbar(active = 'benchmark') {
   ];
 
   return h('header', { className: 'topbar' }, [
-    h('a', { className: 'brand', href: '/', title: 'AIGM' }, [
-      h('img', { src: '/images/AIGM-LOGO.png', alt: 'AIGM' }),
-      h('span', { className: 'brand-divider' }),
-      h('span', { text: 'LMTS' }),
-      h('span', { className: 'breadcrumb', text: '/ Benchmark' }),
-    ]),
+    brand(breadcrumb),
     h('nav', { className: 'nav' }, items.map(([id, href, label]) =>
       h('a', {
         className: active === id ? 'active' : '',
@@ -24,7 +30,7 @@ function topbar(active = 'benchmark') {
   ]);
 }
 
-function topbarRoot(active = 'benchmark') {
+function topbarRoot(active = 'benchmark', breadcrumb = 'Benchmark') {
   const items = [
     ['benchmark', './', 'Benchmark'],
     ['systems', './systems/', 'Systems'],
@@ -32,12 +38,7 @@ function topbarRoot(active = 'benchmark') {
   ];
 
   return h('header', { className: 'topbar' }, [
-    h('a', { className: 'brand', href: '/', title: 'AIGM' }, [
-      h('img', { src: '/images/AIGM-LOGO.png', alt: 'AIGM' }),
-      h('span', { className: 'brand-divider' }),
-      h('span', { text: 'LMTS' }),
-      h('span', { className: 'breadcrumb', text: '/ Benchmark' }),
-    ]),
+    brand(breadcrumb),
     h('nav', { className: 'nav' }, items.map(([id, href, label]) =>
       h('a', {
         className: active === id ? 'active' : '',

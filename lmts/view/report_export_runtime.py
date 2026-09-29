@@ -138,8 +138,16 @@ def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
                 bearer_token=bearer_token,
                 store=store,
             )
-        except PublishAuthenticationError as exc:
-            raise RuntimeError(f'cannot provision LMTS machine publish credential: {exc}') from exc
+        except PublishAuthenticationError:
+            # Migration safety: provisioning must never block report delivery.
+            # Server-side IAM bearer auth remains a temporary compatibility path.
+            return publish_report(
+                report,
+                target.profile,
+                mysql=target.mysql,
+                bearer_token=bearer_token,
+            )
+
         machine_key = credential.authorization_value
         try:
             return publish_report(
@@ -153,7 +161,8 @@ def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
             if 'HTTP 403:' not in str(exc):
                 raise
             # The local key may have been revoked/rotated server-side. Retry
-            # exactly once with a freshly provisioned credential.
+            # exactly once with a freshly provisioned credential. If rotation
+            # itself fails during migration, fall back to IAM bearer.
             store.clear()
             try:
                 credential = ensure_machine_credential(
@@ -162,10 +171,13 @@ def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
                     bearer_token=bearer_token,
                     store=store,
                 )
-            except PublishAuthenticationError as auth_exc:
-                raise RuntimeError(
-                    f'cannot rotate LMTS machine publish credential: {auth_exc}'
-                ) from auth_exc
+            except PublishAuthenticationError:
+                return publish_report(
+                    report,
+                    target.profile,
+                    mysql=target.mysql,
+                    bearer_token=bearer_token,
+                )
             return publish_report(
                 report,
                 target.profile,

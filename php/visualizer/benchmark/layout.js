@@ -31,19 +31,6 @@ function modeButton(state, rerender, id, title, subtitle) {
   ]);
 }
 
-function backButton(state, rerender) {
-  return h('button', {
-    className: 'workflow-back',
-    type: 'button',
-    text: '← Benchmark',
-    on: { click: () => {
-      state.mode = null;
-      state.rawCell = null;
-      rerender();
-    } },
-  });
-}
-
 function landing(state, rerender) {
   return h('main', { className: 'page landing-page' }, [
     h('section', { className: 'landing-hero' }, [
@@ -70,16 +57,9 @@ function landing(state, rerender) {
   ]);
 }
 
-function workflowHero(state, rerender, primaryControl = null) {
-  return h('section', { className: 'workflow-head' + (primaryControl ? '' : ' no-control') }, [
+function workflowHero(state, primaryControl = null) {
+  return h('section', { className: 'workflow-head compact' }, [
     h('div', { className: 'workflow-title' }, [
-      backButton(state, rerender),
-      h('span', { className: 'eyebrow', text: 'LMTS BENCHMARK' }),
-      h('h1', {
-        text: state.mode === 'hardware-model'
-          ? 'Hardware → Model'
-          : 'Model → Hardware',
-      }),
       h('p', {
         text: state.mode === 'hardware-model'
           ? 'Select hardware parts independently. Presets only fill these selections for you.'
@@ -244,7 +224,12 @@ function hardwareSummary(payload, state) {
 function renderBenchmark(payload, state, rerender) {
   const targets = payload.filters?.options?.targets || [];
   const cells = payload.cells || [];
-  const header = topbarRoot('benchmark');
+  const breadcrumb = state.mode === 'hardware-model'
+    ? 'Hardware → Model'
+    : state.mode === 'model-hardware'
+      ? 'Model → Hardware'
+      : 'Benchmark';
+  const header = topbarRoot('benchmark', breadcrumb);
 
   if (!state.mode) {
     replaceRoot([header, landing(state, rerender)]);
@@ -284,7 +269,7 @@ function renderBenchmark(payload, state, rerender) {
   replaceRoot([
     header,
     h('main', { className: 'page' }, [
-      workflowHero(state, rerender, primaryControl),
+      workflowHero(state, primaryControl),
       mainContent,
       renderMatrix(matrixCells, state, rerender),
     ]),

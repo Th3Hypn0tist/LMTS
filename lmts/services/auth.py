@@ -14,7 +14,7 @@ from lmts.core.paths import AUTH_SESSION_PATH
 IAM_BASE_URL = 'https://aigm.fi/iam'
 IAM_DOMAIN = 'lmts'
 IAM_CONTRACT = 'iam.light'
-IAM_VERSION = '1.0'
+IAM_VERSION = '1.1'
 SESSION_SCHEMA_VERSION = 1
 DEFAULT_TIMEOUT_SECONDS = 15
 

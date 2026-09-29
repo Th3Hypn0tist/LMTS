@@ -11,7 +11,38 @@ function lmts_auth_pdo(array $config): PDO {
 }
 
 function lmts_auth_header(): string {
-    return trim((string)($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
+    foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'] as $key) {
+        $value = trim((string)($_SERVER[$key] ?? ''));
+        if ($value !== '') return $value;
+    }
+    if (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (is_array($headers)) {
+            foreach ($headers as $name => $value) {
+                if (strcasecmp((string)$name, 'Authorization') === 0) {
+                    $resolved = trim((string)$value);
+                    if ($resolved !== '') return $resolved;
+                }
+            }
+        }
+    }
+    return '';
+}
+
+function lmts_auth_log(string $reason, array $context = []): void {
+    $safe = [];
+    foreach ($context as $key => $value) {
+        if ($value === null || is_scalar($value)) {
+            $safe[(string)$key] = $value;
+        }
+    }
+    error_log(
+        '[LMTS auth] ' . $reason
+        . ($safe === [] ? '' : ' ' . json_encode(
+            $safe,
+            JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        ))
+    );
 }
 
 function lmts_auth_bearer_token(): ?string {
@@ -84,8 +115,14 @@ function lmts_auth_machine_credential(PDO $pdo): ?array {
     );
     $stmt->execute([$keyId]);
     $row = $stmt->fetch();
-    if (!is_array($row)) return null;
-    if (!hash_equals((string)$row['key_hash'], hash('sha256', $secret))) return null;
+    if (!is_array($row)) {
+        lmts_auth_log('machine_key_not_found_or_inactive', ['key_id' => $keyId]);
+        return null;
+    }
+    if (!hash_equals((string)$row['key_hash'], hash('sha256', $secret))) {
+        lmts_auth_log('machine_key_secret_mismatch', ['key_id' => $keyId]);
+        return null;
+    }
 
     $touch = $pdo->prepare(
         'UPDATE LMTS_publish_keys SET last_used_at = CURRENT_TIMESTAMP(6) WHERE key_id = ?'
@@ -106,7 +143,11 @@ function lmts_auth_upload(array $config): array|false {
 
     if (preg_match('/^LMTS-Key\\s+/i', $header) === 1) {
         $machine = lmts_auth_machine_credential($pdo);
-        return $machine ?? false;
+        if ($machine === null) {
+            lmts_auth_log('upload_rejected', ['mode' => 'machine_key']);
+            return false;
+        }
+        return $machine;
     }
 
     // Migration fallback: IAM bearer may still publish while clients acquire
@@ -114,9 +155,17 @@ function lmts_auth_upload(array $config): array|false {
     // the legacy shared-key path.
     if (preg_match('/^Bearer\\s+/i', $header) === 1) {
         $bearer = lmts_auth_bearer_token();
-        if ($bearer === null) return false;
+        if ($bearer === null) {
+            lmts_auth_log('bearer_parse_failed');
+            return false;
+        }
         $userId = lmts_auth_iam_user($pdo, $bearer);
-        if ($userId === null) return false;
+        if ($userId === null) {
+            lmts_auth_log('iam_bearer_not_resolved', [
+                'token_hash_prefix' => substr(hash('sha256', $bearer), 0, 12),
+            ]);
+            return false;
+        }
         return [
             'mode' => 'iam_bearer',
             'user_id' => $userId,
@@ -125,7 +174,12 @@ function lmts_auth_upload(array $config): array|false {
         ];
     }
 
-    if ($header !== '') return false;
+    if ($header !== '') {
+        lmts_auth_log('unsupported_authorization_scheme', [
+            'scheme' => strtok($header, " \t") ?: 'unknown',
+        ]);
+        return false;
+    }
 
     // Temporary legacy migration fallback only, and only when no Authorization
     // header was supplied.
@@ -139,6 +193,12 @@ function lmts_auth_upload(array $config): array|false {
             'key_id' => null,
         ];
     }
+
+    lmts_auth_log('no_accepted_auth', [
+        'authorization_header_present' => false,
+        'legacy_header_present' => $suppliedKey !== '',
+        'legacy_key_configured' => $configuredKey !== '',
+    ]);
     return false;
 }
 

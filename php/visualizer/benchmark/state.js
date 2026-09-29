@@ -1,5 +1,5 @@
 const state = {
-  mode: 'hardware-model',
+  mode: null,
   configurationKey: null,
   targetKey: null,
   search: '',

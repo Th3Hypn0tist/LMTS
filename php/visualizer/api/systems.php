@@ -33,7 +33,6 @@ try {
         s.label,
         s.user_id,
         COALESCE(u.username, s.user_id) AS username,
-        u.display_name,
         s.system_class,
         s.probe_version,
         DATE_FORMAT(s.last_probed_at, '%Y-%m-%dT%H:%i:%s.%fZ') AS last_probed_at,
@@ -52,7 +51,7 @@ try {
     }
 
     $systemSql .= "
-     GROUP BY s.system_id, s.label, s.user_id, u.username, u.display_name,
+     GROUP BY s.system_id, s.label, s.user_id, u.username,
               s.system_class, s.probe_version, s.last_probed_at
      ORDER BY test_executions DESC, s.label, s.system_id";
 

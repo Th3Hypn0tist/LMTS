@@ -115,6 +115,7 @@ function stats_median(array $values): ?float {
 
 function stats_cell_key(array $row): string {
     return (string)($row['system_id'] ?? '')
+        . "\0" . (string)($row['compute_profile_id'] ?? '')
         . "\0" . (string)($row['target_kind'] ?? '')
         . "\0" . (string)($row['target_ref'] ?? '')
         . "\0" . (string)($row['test_version_id'] ?? '');

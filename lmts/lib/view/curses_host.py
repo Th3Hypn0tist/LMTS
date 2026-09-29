@@ -122,6 +122,72 @@ class CursesViewHost:
             elif key == "\x1b":
                 return None
 
+    def input_text(
+        self,
+        stdscr: curses.window,
+        title: str,
+        *,
+        default: str = "",
+        maximum: int = 255,
+    ) -> str | None:
+        value = str(default)
+        cursor = len(value)
+        while True:
+            height, width = stdscr.getmaxyx()
+            win_h = 5
+            win_w = max(40, min(width - 4, max(len(title) + 8, min(maximum + 6, 100))))
+            body_w = max(1, win_w - 4)
+            offset = max(0, cursor - body_w + 1)
+            visible = value[offset:offset + body_w]
+
+            win = curses.newwin(
+                win_h,
+                win_w,
+                max(0, (height - win_h) // 2),
+                max(0, (width - win_w) // 2),
+            )
+            win.keypad(True)
+            win.erase()
+            win.box()
+            win.addnstr(0, 2, f" {title} ", max(0, win_w - 4))
+            win.addnstr(2, 2, visible or "_", body_w)
+            win.addnstr(3, 2, "Enter accept  Esc cancel", body_w, curses.A_DIM)
+            try:
+                curses.curs_set(1)
+                win.move(2, 2 + min(cursor - offset, max(0, body_w - 1)))
+            except curses.error:
+                pass
+            win.refresh()
+            key = win.get_wch()
+
+            if key == "\x1b":
+                curses.curs_set(0)
+                return None
+            if key in ("\n", "\r") or key == curses.KEY_ENTER:
+                normalized = value.strip()
+                if normalized:
+                    curses.curs_set(0)
+                    return normalized
+                continue
+            if key == curses.KEY_LEFT:
+                cursor = max(0, cursor - 1)
+            elif key == curses.KEY_RIGHT:
+                cursor = min(len(value), cursor + 1)
+            elif key == curses.KEY_HOME:
+                cursor = 0
+            elif key == curses.KEY_END:
+                cursor = len(value)
+            elif key in (curses.KEY_BACKSPACE, "\b", "\x7f"):
+                if cursor > 0:
+                    value = value[:cursor - 1] + value[cursor:]
+                    cursor -= 1
+            elif key == curses.KEY_DC:
+                if cursor < len(value):
+                    value = value[:cursor] + value[cursor + 1:]
+            elif isinstance(key, str) and key.isprintable() and len(value) < maximum:
+                value = value[:cursor] + key + value[cursor:]
+                cursor += len(key)
+
     def input_integer(
         self,
         stdscr: curses.window,

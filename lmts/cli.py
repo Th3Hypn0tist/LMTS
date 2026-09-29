@@ -315,11 +315,6 @@ def main() -> int:
     user_login = user_sub.add_parser("login", help="Authenticate against IAM")
     user_login.add_argument("username")
 
-    user_register = user_sub.add_parser("register", help="Register through IAM with an invite code")
-    user_register.add_argument("token")
-    user_register.add_argument("username")
-    user_register.add_argument("--email")
-
     user_sub.add_parser("whoami", help="Show the authenticated IAM identity")
     user_sub.add_parser("logout", help="Revoke the current IAM session")
 
@@ -363,8 +358,6 @@ def main() -> int:
 
     if args.command == "user" and args.user_command == "login":
         return _user_login(args.username)
-    if args.command == "user" and args.user_command == "register":
-        return _user_register(args.token, args.username, args.email)
     if args.command == "user" and args.user_command == "whoami":
         return _user_whoami()
     if args.command == "user" and args.user_command == "logout":

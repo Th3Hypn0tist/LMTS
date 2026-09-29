@@ -18,6 +18,7 @@ from lmts.tests.base import TestModule, test_ref
 
 
 RunCompletedCallback = Callable[[dict[str, object]], None]
+TargetCompletedCallback = Callable[[dict[str, object]], None]
 ProgressCallback = Callable[[BenchmarkProgress], None]
 
 
@@ -69,6 +70,43 @@ class EvaluationService:
             return 'FAIL'
         return '?'
 
+    @staticmethod
+    def _target_bundle(
+        target: TestExecutor,
+        *,
+        started_at: str,
+        completed_at: str,
+        status: str,
+        cells: list[MatrixCell],
+        runs: list[dict[str, object]],
+        passed: int,
+        failed: int,
+        errors: int,
+        cancelled: int,
+    ) -> dict[str, object]:
+        report_matrix_id = uuid.uuid4().hex
+        test_refs = list(dict.fromkeys(str(run.get('test_ref') or '') for run in runs if run.get('test_ref')))
+        return {
+            'schema_version': 1,
+            'export_type': 'lmts.matrix_bundle',
+            'exported_at': completed_at,
+            'matrix': {
+                'matrix_id': report_matrix_id,
+                'started_at': started_at,
+                'completed_at': completed_at,
+                'status': status,
+                'target_ids': [target.id],
+                'target_kinds': {target.id: target.kind},
+                'test_refs': test_refs,
+                'cells': [cell.to_dict() for cell in cells],
+                'passed': passed,
+                'failed': failed,
+                'errors': errors,
+                'cancelled': cancelled,
+            },
+            'runs': list(runs),
+        }
+
     def execute(
         self,
         targets: list[TestExecutor],
@@ -77,6 +115,7 @@ class EvaluationService:
         *,
         progress: ProgressCallback | None = None,
         on_run_completed: RunCompletedCallback | None = None,
+        on_target_completed: TargetCompletedCallback | None = None,
         provenance: dict[str, object] | None = None,
     ) -> EvaluationOutcome:
         runner = TestRunner(
@@ -98,21 +137,41 @@ class EvaluationService:
         publish_errors: list[dict[str, str]] = []
         passed = failed = errors = cancelled = completed = 0
 
-        for test in tests:
+        # Target-major execution is intentional:
+        # one target/model runs its complete selected test suite before the next
+        # target starts. This keeps model lifecycle, warm state and report
+        # boundaries aligned.
+        for target in targets:
             if control.cancelled:
                 break
 
-            def on_progress(event: BenchmarkProgress) -> None:
-                nonlocal passed, failed, errors, cancelled, completed
-                if progress is not None:
-                    progress(event)
-                run = event.run
-                if event.phase != 'completed' or run is None:
-                    return
-                completed += 1
-                if event.result_path is not None:
-                    matrix_cells.append(
-                        MatrixCell(
+            target_started_at = utc_now()
+            target_cells: list[MatrixCell] = []
+            target_runs: list[dict[str, object]] = []
+            target_passed = target_failed = target_errors = target_cancelled = 0
+
+            for test in tests:
+                if control.cancelled:
+                    break
+
+                def on_progress(event: BenchmarkProgress) -> None:
+                    nonlocal passed, failed, errors, cancelled, completed
+                    nonlocal target_passed, target_failed, target_errors, target_cancelled
+
+                    if progress is not None:
+                        progress(event)
+
+                    run = event.run
+                    if event.phase != 'completed' or run is None:
+                        return
+
+                    completed += 1
+                    run_dict = run.to_dict()
+                    target_runs.append(run_dict)
+
+                    cell = None
+                    if event.result_path is not None:
+                        cell = MatrixCell(
                             target_id=run.executor_id,
                             target_kind=run.executor_kind,
                             test_ref=run.test_ref,
@@ -121,47 +180,95 @@ class EvaluationService:
                             passed=run.passed,
                             result_path=str(event.result_path),
                         )
-                    )
-                if run.status == 'cancelled':
-                    cancelled += 1
-                elif run.status != 'completed':
-                    errors += 1
-                    if event.result_path is not None:
-                        run_errors.append({
-                            'run_id': run.run_id,
-                            'target_id': run.executor_id,
-                            'target_kind': run.executor_kind,
-                            'test_ref': run.test_ref,
-                            'result_path': str(event.result_path),
-                            'error': run.error,
-                        })
-                elif run.passed is True:
-                    passed += 1
-                elif run.passed is False:
-                    failed += 1
+                        matrix_cells.append(cell)
+                        target_cells.append(cell)
 
-                if on_run_completed is not None and run.status != 'cancelled':
-                    try:
-                        on_run_completed(run.to_dict())
-                    except Exception as exc:
-                        publish_errors.append({
-                            'run_id': run.run_id,
-                            'target_id': run.executor_id,
-                            'test_ref': run.test_ref,
-                            'error': f'{type(exc).__name__}: {exc}',
-                        })
+                    if run.status == 'cancelled':
+                        cancelled += 1
+                        target_cancelled += 1
+                    elif run.status != 'completed':
+                        errors += 1
+                        target_errors += 1
+                        if event.result_path is not None:
+                            run_errors.append({
+                                'run_id': run.run_id,
+                                'target_id': run.executor_id,
+                                'target_kind': run.executor_kind,
+                                'test_ref': run.test_ref,
+                                'result_path': str(event.result_path),
+                                'error': run.error,
+                            })
+                    elif run.passed is True:
+                        passed += 1
+                        target_passed += 1
+                    elif run.passed is False:
+                        failed += 1
+                        target_failed += 1
 
-            batch = benchmark_runner.run(
-                test,
-                targets,
-                self.workspace_root,
-                progress=on_progress,
-                control=control,
-            )
-            if batch.run_ids:
-                path = benchmark_store.append(batch)
-                batch_ids.append(batch.batch_id)
-                batch_paths.append(str(path))
+                    if on_run_completed is not None and run.status != 'cancelled':
+                        try:
+                            on_run_completed(run_dict)
+                        except Exception as exc:
+                            publish_errors.append({
+                                'run_id': run.run_id,
+                                'target_id': run.executor_id,
+                                'test_ref': run.test_ref,
+                                'error': f'{type(exc).__name__}: {exc}',
+                            })
+
+                batch = benchmark_runner.run(
+                    test,
+                    [target],
+                    self.workspace_root,
+                    progress=on_progress,
+                    control=control,
+                )
+                if batch.run_ids:
+                    path = benchmark_store.append(batch)
+                    batch_ids.append(batch.batch_id)
+                    batch_paths.append(str(path))
+
+                if control.cancelled:
+                    break
+
+            target_completed_at = utc_now()
+            target_status = 'cancelled' if control.cancelled else 'completed'
+
+            # Publish/consume one complete target report synchronously before
+            # advancing to the next model. ERROR/CANCELLED-only material is not
+            # eligible benchmark evidence for publication.
+            publishable_runs = [
+                run for run in target_runs
+                if run.get('status') == 'completed' and isinstance(run.get('passed'), bool)
+            ]
+            publishable_run_ids = {str(run.get('run_id') or '') for run in publishable_runs}
+            publishable_cells = [
+                cell for cell in target_cells
+                if cell.run_id in publishable_run_ids
+            ]
+
+            if on_target_completed is not None and publishable_runs:
+                bundle = self._target_bundle(
+                    target,
+                    started_at=target_started_at,
+                    completed_at=target_completed_at,
+                    status=target_status,
+                    cells=publishable_cells,
+                    runs=publishable_runs,
+                    passed=target_passed,
+                    failed=target_failed,
+                    errors=0,
+                    cancelled=0,
+                )
+                try:
+                    on_target_completed(bundle)
+                except Exception as exc:
+                    publish_errors.append({
+                        'run_id': '',
+                        'target_id': target.id,
+                        'test_ref': '',
+                        'error': f'{type(exc).__name__}: {exc}',
+                    })
 
         status = 'cancelled' if control.cancelled else 'completed'
         record = MatrixRunRecord(

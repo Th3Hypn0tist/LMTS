@@ -15,6 +15,48 @@ function lmts_upload_fail(int $status, string $message): never {
     exit;
 }
 
+function lmts_upload_bearer_token(): ?string {
+    $header = trim((string)($_SERVER['HTTP_AUTHORIZATION'] ?? ''));
+    if (preg_match('/^Bearer\s+(.+)$/i', $header, $match) !== 1) return null;
+    $token = trim($match[1]);
+    return $token === '' ? null : $token;
+}
+
+function lmts_upload_authorized(array $config): bool {
+    $bearer = lmts_upload_bearer_token();
+    if ($bearer !== null) {
+        $pdo = new PDO($config['dsn'], $config['user'], $config['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]);
+        $stmt = $pdo->prepare(
+            "SELECT 1
+             FROM IAM_sessions s
+             JOIN IAM_users u ON u.user_id = s.user_id
+             JOIN IAM_user_accounts a ON a.user_id = s.user_id
+             JOIN IAM_domain_memberships m
+               ON m.user_id = s.user_id
+              AND m.domain_id = 'lmts'
+              AND m.status = 'active'
+             WHERE s.token_hash = ?
+               AND s.revoked_at IS NULL
+               AND s.expires_at > CURRENT_TIMESTAMP(6)
+               AND u.status = 'active'
+               AND a.account_status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([hash('sha256', $bearer)]);
+        if ($stmt->fetchColumn() !== false) return true;
+    }
+
+    $configuredKey = trim((string)($config['publish_key'] ?? ''));
+    $suppliedKey = trim((string)($_SERVER['HTTP_X_LMTS_KEY'] ?? ''));
+    return $configuredKey !== ''
+        && $suppliedKey !== ''
+        && hash_equals($configuredKey, $suppliedKey);
+}
+
 try {
     $config = require __DIR__ . '/config.php';
     require_once __DIR__ . '/storage/lib/report_contract.php';
@@ -22,11 +64,8 @@ try {
     require_once __DIR__ . '/storage/lib/report_store.php';
     require_once __DIR__ . '/storage/lib/report_upload.php';
 
-    if (!hash_equals(
-        (string)$config['publish_key'],
-        (string)($_SERVER['HTTP_X_LMTS_KEY'] ?? ''),
-    )) {
-        lmts_upload_fail(403, 'invalid publish key');
+    if (!lmts_upload_authorized($config)) {
+        lmts_upload_fail(403, 'authentication required');
     }
 
     $action = trim((string)($_GET['action'] ?? ''));

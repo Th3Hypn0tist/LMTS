@@ -8,6 +8,7 @@ from lmts.core.result_export import build_matrix_bundle
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
 from lmts.reporting import project_matrix_bundle
 from lmts.services.auth import AuthenticationError
+from lmts.services.publish_auth import PublishAuthenticationError, ensure_machine_credential
 from lmts.tools.report_export import export_report_json
 from lmts.tools.report_publish import publish_report
 from lmts.tools.report_targets import ReportTarget, configured_report_targets, resolve_report_target
@@ -116,6 +117,7 @@ def _auto_publish_targets() -> tuple[ReportTarget, ...]:
 
 def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
     bearer_token = None
+    machine_key = None
     if target.transport == 'php_api':
         controller = _ACTIVE_CONTROLLER
         if controller is None or controller.auth_service is None:
@@ -124,11 +126,21 @@ def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
         if stored is None:
             raise RuntimeError('IAM authentication is required for public publishing')
         bearer_token = stored[0]
+        try:
+            credential = ensure_machine_credential(
+                report,
+                target.profile.endpoint,
+                bearer_token=bearer_token,
+            )
+        except PublishAuthenticationError as exc:
+            raise RuntimeError(f'cannot provision LMTS machine publish credential: {exc}') from exc
+        machine_key = credential.authorization_value
     return publish_report(
         report,
         target.profile,
         mysql=target.mysql,
         bearer_token=bearer_token,
+        machine_key=machine_key,
     )
 
 def _publish_many(report: dict[str, object], targets: tuple[ReportTarget, ...]) -> None:

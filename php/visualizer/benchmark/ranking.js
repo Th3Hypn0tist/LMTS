@@ -134,22 +134,32 @@ function renderModelRanking(payload, cells, hardwareControls, state, rerender) {
 }
 
 function renderHardwareRanking(payload, cells, state) {
-  const selectedTarget = state.targetKey;
-  const modelCells = cells.filter(cell => targetKey(cell) === selectedTarget);
-  const byConfiguration = groupBy(modelCells, configurationKey);
-  const allTests = new Set(modelCells.map(cell => cell.test_version_id));
+  const allTests = new Set(cells.map(cell => cell.test_version_id));
+  const grouped = groupBy(
+    cells,
+    cell => targetKey(cell) + '\u0001' + configurationKey(cell),
+  );
   const rows = [];
 
-  for (const [configKey, configurationCells] of byConfiguration) {
-    const first = configurationCells[0];
+  for (const [key, rowCells] of grouped) {
+    const first = rowCells[0];
     rows.push({
-      key: configKey,
-      label: first.configuration_label || first.system_label || configKey,
-      summary: aggregateTarget(configurationCells, allTests.size),
+      key,
+      variantKey: targetKey(first),
+      variantLabel: first.target_label || first.target_ref || 'Unknown model',
+      configurationKey: configurationKey(first),
+      configurationLabel: first.configuration_label || first.system_label || configurationKey(first),
+      summary: aggregateTarget(rowCells, allTests.size),
     });
   }
 
   rows.sort((a, b) => {
+    const variantOrder = a.variantLabel.localeCompare(
+      b.variantLabel,
+      undefined,
+      { numeric: true },
+    );
+    if (variantOrder !== 0) return variantOrder;
     const apf = a.summary.pf ?? -1;
     const bpf = b.summary.pf ?? -1;
     if (bpf !== apf) return bpf - apf;
@@ -159,6 +169,7 @@ function renderHardwareRanking(payload, cells, state) {
   const table = h('table', { className: 'ranking-table' });
   table.append(h('thead', {}, [h('tr', {}, [
     h('th', { text: '#' }),
+    h('th', { text: 'Model variant' }),
     h('th', { text: 'Hardware configuration' }),
     h('th', { text: 'P/F' }),
     h('th', { text: 'Tests' }),
@@ -171,8 +182,12 @@ function renderHardwareRanking(payload, cells, state) {
     body.append(h('tr', {}, [
       h('td', { className: 'rank', text: String(index + 1) }),
       h('td', {}, [
-        h('strong', { text: row.label }),
-        h('span', { className: 'subtle block', text: row.key }),
+        h('strong', { text: row.variantLabel }),
+        h('span', { className: 'subtle block', text: row.variantKey }),
+      ]),
+      h('td', {}, [
+        h('strong', { text: row.configurationLabel }),
+        h('span', { className: 'subtle block', text: row.configurationKey }),
       ]),
       h('td', { className: 'mono strong', text: row.summary.pf == null ? '—' : number(row.summary.pf, 0) }),
       h('td', { className: 'mono', text: row.summary.observedTests + '/' + row.summary.totalTests }),
@@ -182,18 +197,19 @@ function renderHardwareRanking(payload, cells, state) {
   });
   table.append(body);
 
-  const target = payload.filters?.options?.targets?.find(item => item.value === selectedTarget);
+  const variants = new Set(cells.map(targetKey));
+  const configurations = new Set(cells.map(configurationKey));
 
   return h('div', {}, [
     h('div', { className: 'stats-strip' }, [
       h('div', { className: 'system-summary' }, [
         h('span', { className: 'system-icon', text: '◇' }),
         h('div', {}, [
-          h('strong', { text: target?.label || 'Selected model' }),
-          h('span', { text: selectedTarget || '' }),
+          h('strong', { text: state.modelFamilyKey ? state.modelFamilyKey.split(':').slice(1).join(':') : 'Selected model family' }),
+          h('span', { text: variants.size + ' tested variant' + (variants.size === 1 ? '' : 's') }),
         ]),
       ]),
-      stat(rows.length, 'configurations tested'),
+      stat(configurations.size, 'configurations tested'),
       stat(rows.filter(row => row.summary.status === 'compatible').length, 'compatible', 'good'),
       stat(rows.filter(row => row.summary.status === 'partial').length, 'partial / fails', 'bad'),
     ]),
@@ -201,7 +217,7 @@ function renderHardwareRanking(payload, cells, state) {
       h('div', { className: 'section-head' }, [
         h('div', {}, [
           h('h2', { text: 'Hardware results' }),
-          h('p', { text: 'Compare the selected model across tested hardware configurations.' }),
+          h('p', { text: 'Compare tested variants of the selected model family across hardware configurations.' }),
         ]),
       ]),
       h('div', { className: 'table-shell' }, [table]),

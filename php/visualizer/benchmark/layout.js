@@ -1,13 +1,13 @@
 import { configurationKey, targetKey } from './aggregate.js';
 import { renderMatrix } from './matrix.js';
+import { topbarRoot } from './nav.js';
 import { renderHardwareRanking, renderModelRanking } from './ranking.js';
 import { renderRawEvidence } from './raw-evidence.js';
 import { h, replaceRoot, selectControl } from './ui.js';
 
 function modeButton(state, rerender, id, title, subtitle) {
-  const active = state.mode === id;
   return h('button', {
-    className: 'mode-card' + (active ? ' active' : ''),
+    className: 'mode-card',
     type: 'button',
     on: { click: () => {
       state.mode = id;
@@ -23,10 +23,75 @@ function modeButton(state, rerender, id, title, subtitle) {
   ]);
 }
 
+function backButton(state, rerender) {
+  return h('button', {
+    className: 'workflow-back',
+    type: 'button',
+    text: '← Benchmark',
+    on: { click: () => {
+      state.mode = null;
+      state.rawCell = null;
+      rerender();
+    } },
+  });
+}
+
+function landing(state, rerender) {
+  return h('main', { className: 'page landing-page' }, [
+    h('section', { className: 'landing-hero' }, [
+      h('span', { className: 'eyebrow', text: 'LMTS BENCHMARK' }),
+      h('h1', { text: 'Find what actually works.' }),
+      h('p', { text: 'Start from the hardware you have, or from the model you want to run.' }),
+      h('div', { className: 'mode-grid landing-modes' }, [
+        modeButton(
+          state,
+          rerender,
+          'hardware-model',
+          'Hardware → Model',
+          'Choose a tested system and compare models against its benchmark evidence.',
+        ),
+        modeButton(
+          state,
+          rerender,
+          'model-hardware',
+          'Model → Hardware',
+          'Choose a model and compare it across tested systems.',
+        ),
+      ]),
+    ]),
+  ]);
+}
+
+function workflowHero(state, rerender, primaryControl) {
+  return h('section', { className: 'workflow-head' }, [
+    h('div', { className: 'workflow-title' }, [
+      backButton(state, rerender),
+      h('span', { className: 'eyebrow', text: 'LMTS BENCHMARK' }),
+      h('h1', {
+        text: state.mode === 'hardware-model'
+          ? 'Hardware → Model'
+          : 'Model → Hardware',
+      }),
+      h('p', {
+        text: state.mode === 'hardware-model'
+          ? 'Compare models using evidence measured on the selected system.'
+          : 'Compare one model across systems that have actually tested it.',
+      }),
+    ]),
+    h('div', { className: 'workflow-control' }, [primaryControl]),
+  ]);
+}
+
 function renderBenchmark(payload, state, rerender) {
   const configurations = payload.filters?.options?.configurations || [];
   const targets = payload.filters?.options?.targets || [];
   const cells = payload.cells || [];
+  const header = topbarRoot('benchmark');
+
+  if (!state.mode) {
+    replaceRoot([header, landing(state, rerender)]);
+    return;
+  }
 
   const selectedConfiguration = configurations.find(
     item => String(item.value) === String(state.configurationKey)
@@ -34,7 +99,7 @@ function renderBenchmark(payload, state, rerender) {
 
   const primaryControl = state.mode === 'hardware-model'
     ? selectControl(
-        'Select hardware configuration',
+        'System / compute profile',
         state.configurationKey,
         configurations.map(item => ({ value: item.value, label: item.label || item.value })),
         value => {
@@ -44,7 +109,7 @@ function renderBenchmark(payload, state, rerender) {
         },
       )
     : selectControl(
-        'Select model',
+        'Model',
         state.targetKey,
         targets.map(item => ({ value: item.value, label: item.label })),
         value => {
@@ -62,39 +127,6 @@ function renderBenchmark(payload, state, rerender) {
     ? configurationCells
     : cells.filter(cell => targetKey(cell) === state.targetKey);
 
-  const header = h('header', { className: 'topbar' }, [
-    h('a', { className: 'brand', href: '/', title: 'AIGM' }, [
-      h('img', { src: '/images/AIGM-LOGO.png', alt: 'AIGM' }),
-      h('span', { className: 'brand-divider' }),
-      h('span', { text: 'LMTS' }),
-      h('span', { className: 'breadcrumb', text: '/ Benchmark' }),
-    ]),
-    h('nav', { className: 'nav' }, [
-      h('a', { className: 'active', href: '#', text: 'Benchmark' }),
-      h('a', { href: '#matrix', text: 'Tests' }),
-    ]),
-  ]);
-
-  const hero = h('section', { className: 'hero' }, [
-    h('div', { className: 'hero-copy' }, [
-      h('span', { className: 'eyebrow', text: 'LMTS BENCHMARK' }),
-      h('h1', {
-        text: state.mode === 'hardware-model'
-          ? 'Find the best model for your hardware.'
-          : 'Find the best hardware for your model.',
-      }),
-      h('p', { text: 'Compare measured benchmark evidence without exposing report plumbing in the primary interface.' }),
-    ]),
-    h('div', { className: 'hero-controls' }, [
-      h('div', { className: 'mode-grid' }, [
-        modeButton(state, rerender, 'hardware-model', 'Hardware → Model', 'Find the strongest tested model for a hardware configuration.'),
-        modeButton(state, rerender, 'model-hardware', 'Model → Hardware', 'Compare one model across tested hardware configurations.'),
-      ]),
-      primaryControl,
-      h('p', { className: 'helper', text: 'PASS/FAIL evidence only. ERROR and CANCELLED material is rejected before visualization.' }),
-    ]),
-  ]);
-
   const mainContent = state.mode === 'hardware-model'
     ? renderModelRanking(payload, configurationCells, selectedConfiguration, state, rerender)
     : renderHardwareRanking(payload, cells, state);
@@ -102,7 +134,7 @@ function renderBenchmark(payload, state, rerender) {
   replaceRoot([
     header,
     h('main', { className: 'page' }, [
-      hero,
+      workflowHero(state, rerender, primaryControl),
       mainContent,
       renderMatrix(matrixCells, state, rerender),
     ]),

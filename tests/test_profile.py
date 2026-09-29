@@ -99,6 +99,44 @@ def test_saved_profile_contains_empty_reference_contract(tmp_path: Path) -> None
     assert "cpu.single_thread_bytes_per_second" in payload["hardware_order"]["missing"]
 
 
+
+def test_saved_profile_with_gpu_and_memory_module_round_trips(tmp_path: Path) -> None:
+    profile = SystemProfile(
+        cpu={"architecture": "x86_64", "model_name": "Test CPU", "logical_cores": 8},
+        memory={
+            "total_bytes": 16 * 1024 ** 3,
+            "memory_type": "DDR5",
+            "ecc": False,
+            "speed_mt_s": 5600,
+            "form_factor": "DIMM",
+            "modules": [{
+                "capacity_bytes": 16 * 1024 ** 3,
+                "memory_type": "DDR5",
+                "ecc": False,
+                "speed_mt_s": 5600,
+                "form_factor": "DIMM",
+                "manufacturer": "Example",
+                "part_number": "EXAMPLE-16G",
+                "rank": 2,
+            }],
+        },
+        gpu=[GPUProfile(
+            vendor="NVIDIA",
+            model="Test GPU",
+            vram_bytes=8 * 1024 ** 3,
+            memory_type="GDDR6X",
+        )],
+    )
+    path = tmp_path / "profile.json"
+
+    with patch("lmts.tools.profile.scan_system_profile", return_value=profile):
+        save_system_profile(profile, path)
+        payload = load_system_profile(path)
+
+    assert payload is not None
+    assert payload["identity"]["gpu"] == [["NVIDIA", "Test GPU", 8 * 1024 ** 3, "GDDR6X"]]
+    assert isinstance(payload["identity"]["memory"]["modules"][0], list)
+
 def test_reference_suite_survives_same_hardware_rescan(tmp_path: Path) -> None:
     profile = _test_profile()
     path = tmp_path / "profile.json"

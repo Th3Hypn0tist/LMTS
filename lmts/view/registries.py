@@ -36,7 +36,6 @@ DEFAULT_SHORTCUTS = (
 
     ShortcutDefinition("stats.refresh", ("f",), "Refresh", "Stats", scope="stats", order=100),
     ShortcutDefinition("user.login", ("l",), "Login", "User", scope="user", order=90),
-    ShortcutDefinition("user.register", ("r",), "Register", "User", scope="user", order=100),
     ShortcutDefinition("user.logout", ("o",), "Logout", "User", scope="user", order=110),
     ShortcutDefinition("user.local", ("c",), "Local", "User", scope="user", order=120),
     ShortcutDefinition("user.refresh", ("f",), "Refresh", "User", scope="user", order=130),

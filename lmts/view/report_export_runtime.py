@@ -115,7 +115,21 @@ def _auto_publish_targets() -> tuple[ReportTarget, ...]:
     return tuple(resolve_report_target(settings, target_id) for target_id in settings.auto_publish_targets)
 
 def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
-    return publish_report(report, target.profile, mysql=target.mysql)
+    bearer_token = None
+    if target.transport == 'php_api':
+        controller = _ACTIVE_CONTROLLER
+        if controller is None or controller.auth_service is None:
+            raise RuntimeError('IAM authentication is required for public publishing')
+        stored = controller.auth_service.token_store.load()
+        if stored is None:
+            raise RuntimeError('IAM authentication is required for public publishing')
+        bearer_token = stored[0]
+    return publish_report(
+        report,
+        target.profile,
+        mysql=target.mysql,
+        bearer_token=bearer_token,
+    )
 
 def _publish_many(report: dict[str, object], targets: tuple[ReportTarget, ...]) -> None:
     failures: list[str] = []

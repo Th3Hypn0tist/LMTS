@@ -8,7 +8,11 @@ from lmts.core.result_export import build_matrix_bundle
 from lmts.core.settings import DEFAULT_SETTINGS_PATH, load_settings
 from lmts.reporting import project_matrix_bundle
 from lmts.services.auth import AuthenticationError
-from lmts.services.publish_auth import PublishAuthenticationError, ensure_machine_credential
+from lmts.services.publish_auth import (
+    MachinePublishCredentialStore,
+    PublishAuthenticationError,
+    ensure_machine_credential,
+)
 from lmts.tools.report_export import export_report_json
 from lmts.tools.report_publish import publish_report
 from lmts.tools.report_targets import ReportTarget, configured_report_targets, resolve_report_target
@@ -126,15 +130,49 @@ def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
         if stored is None:
             raise RuntimeError('IAM authentication is required for public publishing')
         bearer_token = stored[0]
+        store = MachinePublishCredentialStore()
         try:
             credential = ensure_machine_credential(
                 report,
                 target.profile.endpoint,
                 bearer_token=bearer_token,
+                store=store,
             )
         except PublishAuthenticationError as exc:
             raise RuntimeError(f'cannot provision LMTS machine publish credential: {exc}') from exc
         machine_key = credential.authorization_value
+        try:
+            return publish_report(
+                report,
+                target.profile,
+                mysql=target.mysql,
+                bearer_token=bearer_token,
+                machine_key=machine_key,
+            )
+        except RuntimeError as exc:
+            if 'HTTP 403:' not in str(exc):
+                raise
+            # The local key may have been revoked/rotated server-side. Retry
+            # exactly once with a freshly provisioned credential.
+            store.clear()
+            try:
+                credential = ensure_machine_credential(
+                    report,
+                    target.profile.endpoint,
+                    bearer_token=bearer_token,
+                    store=store,
+                )
+            except PublishAuthenticationError as auth_exc:
+                raise RuntimeError(
+                    f'cannot rotate LMTS machine publish credential: {auth_exc}'
+                ) from auth_exc
+            return publish_report(
+                report,
+                target.profile,
+                mysql=target.mysql,
+                bearer_token=bearer_token,
+                machine_key=credential.authorization_value,
+            )
     return publish_report(
         report,
         target.profile,

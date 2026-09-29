@@ -6,6 +6,7 @@ const state = {
   status: 'all',
   metric: 'total_time',
   aggregation: 'median',
+  matrixCategory: 'all',
   rawCell: null,
 };
 

@@ -165,7 +165,7 @@ def default_test_type_registry() -> TestTypeRegistry:
         ),
         TestTypeDefinition(
             id="performance.cold_warm",
-            version="1.0.0",
+            version="1.1.0",
             title="Cold and warm inference",
             description="Measure first-call behavior separately from repeated warm inference.",
             minimum_level=_minimum_level("performance.cold_warm"),
@@ -178,7 +178,7 @@ def default_test_type_registry() -> TestTypeRegistry:
         ),
         TestTypeDefinition(
             id="performance.repeat_variance",
-            version="1.0.0",
+            version="1.1.0",
             title="Repeat variance",
             description="Measure latency and generation-throughput variance across repeated identical calls.",
             minimum_level=_minimum_level("performance.repeat_variance"),

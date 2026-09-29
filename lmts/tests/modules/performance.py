@@ -26,7 +26,7 @@ class ColdWarmPerformanceTest:
     prompt: str = "Reply exactly PERF_OK"
     warm_repeats: int = 5
     id: str = "performance.cold_warm"
-    version: str = "1.0.0"
+    version: str = "1.1.0"
     requirements: TestRequirements = TestRequirements(text_generation=True)
 
     def run(self, context: TestContext) -> TestResult:
@@ -83,7 +83,7 @@ class RepeatVarianceTest:
     prompt: str = "Reply exactly VAR_OK"
     repeats: int = 10
     id: str = "performance.repeat_variance"
-    version: str = "1.0.0"
+    version: str = "1.1.0"
     requirements: TestRequirements = TestRequirements(text_generation=True)
 
     def run(self, context: TestContext) -> TestResult:
@@ -104,8 +104,8 @@ class RepeatVarianceTest:
         return TestResult(
             passed=valid_outputs and complete_timing,
             metrics={
-                "total_ms": _series(totals),
-                "ttft_ms": _series(ttfts),
+                "total_time_series": _series(totals),
+                "ttft_series": _series(ttfts),
                 "generation_tokens_per_second": _series(generation_rates),
                 "exact_output_variants": len({item.text for item in responses}),
             },

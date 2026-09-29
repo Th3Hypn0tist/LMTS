@@ -71,6 +71,15 @@ class EvaluationService:
         return '?'
 
     @staticmethod
+    def _publishable_runs(runs: list[dict[str, object]]) -> list[dict[str, object]]:
+        """Keep valid benchmark evidence regardless of PASS/FAIL verdict."""
+        return [
+            run for run in runs
+            if run.get('status') == 'completed'
+            and isinstance(run.get('passed'), bool)
+        ]
+
+    @staticmethod
     def _target_bundle(
         target: TestExecutor,
         *,
@@ -237,10 +246,7 @@ class EvaluationService:
             # Publish/consume one complete target report synchronously before
             # advancing to the next model. ERROR/CANCELLED-only material is not
             # eligible benchmark evidence for publication.
-            publishable_runs = [
-                run for run in target_runs
-                if run.get('status') == 'completed' and isinstance(run.get('passed'), bool)
-            ]
+            publishable_runs = self._publishable_runs(target_runs)
             publishable_run_ids = {str(run.get('run_id') or '') for run in publishable_runs}
             publishable_cells = [
                 cell for cell in target_cells

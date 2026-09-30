@@ -107,6 +107,9 @@ function renderMatrix(cells, state, rerender) {
   }, [
     ['total_time', 'Total time'],
     ['ttft', 'TTFT'],
+    ['input_tokens', 'Input tokens'],
+    ['output_tokens', 'Output tokens'],
+    ['gpu_power_w', 'GPU power'],
     ['pf', 'P/F'],
   ].map(([value, label]) => h('option', { value, text: label, selected: state.metric === value })));
 

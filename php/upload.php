@@ -6,10 +6,12 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
+const LMTS_UPLOAD_BUILD = 'machine-auth-v2';
+
 function lmts_upload_fail(int $status, string $message): never {
     http_response_code($status);
     echo json_encode(
-        ['ok' => false, 'error' => $message],
+        ['ok' => false, 'error' => $message, 'build' => LMTS_UPLOAD_BUILD],
         JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
     );
     exit;

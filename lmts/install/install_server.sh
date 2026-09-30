@@ -146,17 +146,14 @@ if [[ -f "${SECRETS_FILE}" ]]; then
     unchanged "bootstrap credentials"
 else
     DB_PASSWORD="$(openssl rand -hex 24)"
-    PUBLISH_KEY="$(openssl rand -hex 32)"
     cat > "${SECRETS_FILE}" <<EOF
 DB_PASSWORD=${DB_PASSWORD}
-PUBLISH_KEY=${PUBLISH_KEY}
 EOF
     chmod 600 "${SECRETS_FILE}"
     chown root:root "${SECRETS_FILE}"
     changed "generated bootstrap credentials"
 fi
 : "${DB_PASSWORD:?missing DB_PASSWORD in ${SECRETS_FILE}}"
-: "${PUBLISH_KEY:?missing PUBLISH_KEY in ${SECRETS_FILE}}"
 
 # ------------------------------------------------------------
 # 3. MariaDB datadir and policy.
@@ -341,7 +338,7 @@ fi
 # ------------------------------------------------------------
 echo "[7/8] Converging LMTS user settings..."
 mkdir -p "${SETTINGS_DIR}"
-SETTINGS_CHANGED="$(DB_HOST="${DB_HOST}" DB_NAME="${DB_NAME}" DB_USER="${DB_USER}" DB_PASSWORD="${DB_PASSWORD}" PUBLISH_KEY="${PUBLISH_KEY}" SETTINGS_FILE="${SETTINGS_FILE}" python3 <<'PY'
+SETTINGS_CHANGED="$(DB_HOST="${DB_HOST}" DB_NAME="${DB_NAME}" DB_USER="${DB_USER}" DB_PASSWORD="${DB_PASSWORD}" SETTINGS_FILE="${SETTINGS_FILE}" python3 <<'PY'
 import json
 import os
 from pathlib import Path
@@ -361,7 +358,6 @@ desired['mysql'] = {
     'database': os.environ['DB_NAME'],
     'username': os.environ['DB_USER'],
     'password': os.environ['DB_PASSWORD'],
-    'publish_key': os.environ['PUBLISH_KEY'],
 }
 desired.setdefault('dvs', {
     'host': '127.0.0.1',

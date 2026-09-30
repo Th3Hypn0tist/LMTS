@@ -145,6 +145,7 @@ def provision_machine_credential(
             'Accept': 'application/json',
             'Content-Type': 'application/json; charset=utf-8',
             'Authorization': f'Bearer {bearer_token}',
+            'X-LMTS-Authorization': f'Bearer {bearer_token}',
         },
     )
     try:

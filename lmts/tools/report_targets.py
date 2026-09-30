@@ -35,7 +35,7 @@ def configured_report_targets(settings: LMTSSettings) -> tuple[ReportTarget, ...
             label=f'MySQL  {mysql.label}',
             transport='mysql',
             mysql=mysql,
-            profile=ReportProfile(name=target_id, kind='mysql', endpoint='', publish_key=''),
+            profile=ReportProfile(name=target_id, kind='mysql', endpoint=''),
         ))
 
     targets.append(ReportTarget(
@@ -46,7 +46,6 @@ def configured_report_targets(settings: LMTSSettings) -> tuple[ReportTarget, ...
             name=PUBLIC_PHP_API_TARGET_ID,
             kind='php_api',
             endpoint=PUBLIC_REPORT_ENDPOINT,
-            publish_key='',
         ),
     ))
     return tuple(targets)

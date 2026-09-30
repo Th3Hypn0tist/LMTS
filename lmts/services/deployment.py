@@ -12,7 +12,6 @@ class ServerDeployConfig:
     database: str
     username: str
     password: str
-    publish_key: str
 
     def __post_init__(self) -> None:
         for label, value in (
@@ -20,7 +19,6 @@ class ServerDeployConfig:
             ('database', self.database),
             ('username', self.username),
             ('password', self.password),
-            ('publish_key', self.publish_key),
         ):
             if not str(value).strip():
                 raise ValueError(f'server database {label} must not be empty')
@@ -35,14 +33,12 @@ def render_server_db_php(config: ServerDeployConfig) -> str:
     database = _php_single_quoted(config.database)
     username = _php_single_quoted(config.username)
     password = _php_single_quoted(config.password)
-    publish_key = _php_single_quoted(config.publish_key)
     return (
         "<?php\n\n"
         "return [\n"
         f"    'dsn' => 'mysql:host={host};dbname={database};charset=utf8mb4',\n"
         f"    'user' => '{username}',\n"
         f"    'password' => '{password}',\n"
-        f"    'publish_key' => '{publish_key}',\n"
         "];\n"
     )
 

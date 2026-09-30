@@ -8,7 +8,7 @@ from pathlib import Path
 from .paths import SETTINGS_PATH
 
 
-SETTINGS_SCHEMA_VERSION = 7
+SETTINGS_SCHEMA_VERSION = 8
 DEFAULT_SETTINGS_PATH = SETTINGS_PATH
 DEFAULT_OUTPUT_FOLDER = 'exports'
 PUBLIC_PHP_API_TARGET_ID = 'php_api:public'
@@ -23,7 +23,6 @@ class MySQLSettings:
     database: str = 'lmts'
     username: str = 'lmts'
     password: str = 'lmts'
-    publish_key: str = 'lmts'
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -33,7 +32,6 @@ class MySQLSettings:
             ('database', self.database),
             ('username', self.username),
             ('password', self.password),
-            ('publish_key', self.publish_key),
         ):
             if not str(value).strip():
                 raise ValueError(f'MySQL {name} must not be empty')
@@ -46,7 +44,6 @@ class PHPAPISettings:
     id: str = 'api'
     label: str = 'PHP API'
     base_url: str = ''
-    publish_key: str = ''
 
     def __post_init__(self) -> None:
         if not self.id.strip():
@@ -56,12 +53,10 @@ class PHPAPISettings:
         base_url = self.base_url.strip()
         if base_url and not base_url.startswith(('http://', 'https://')):
             raise ValueError('PHP API base_url must use http:// or https://')
-        if base_url and not self.publish_key.strip():
-            raise ValueError('PHP API publish_key must not be empty when base_url is configured')
 
     @property
     def configured(self) -> bool:
-        return bool(self.base_url.strip() and self.publish_key.strip())
+        return bool(self.base_url.strip())
 
     @property
     def report_endpoint(self) -> str:
@@ -148,7 +143,6 @@ def _mysql_from_payload(value: object, *, default_id: str = 'local', default_lab
         database=str(value.get('database') or 'lmts').strip(),
         username=str(value.get('username') or 'lmts').strip(),
         password=str(value.get('password') if value.get('password') is not None else 'lmts'),
-        publish_key=str(value.get('publish_key') or 'lmts').strip(),
     )
 
 
@@ -161,7 +155,6 @@ def _php_api_from_payload(value: object, *, default_id: str, default_label: str)
         id=str(value.get('id') or default_id).strip(),
         label=str(value.get('label') or default_label).strip(),
         base_url=str(value.get('base_url') or '').strip(),
-        publish_key=str(value.get('publish_key') or '').strip(),
     )
 
 
@@ -231,7 +224,7 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> LMTSSettings:
         return LMTSSettings(output_folder=_normalise_output_folder(payload.get('output_folder')), mysql_connections=(_mysql_from_payload(payload.get('mysql')),))
     if schema_version == 5:
         return _migrate_v5(payload)
-    if schema_version == 6:
+    if schema_version in {6, 7}:
         return LMTSSettings(
             output_folder=_normalise_output_folder(payload.get('output_folder')),
             mysql_connections=_mysql_connections_from_payload(payload.get('mysql_connections')),

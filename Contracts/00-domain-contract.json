@@ -1,0 +1,14 @@
+{
+  "domain": "lmts",
+  "role": "LLM testing and benchmark domain",
+  "targetDomainRoot": "/app/lmts/",
+  "targetPublicProjection": "/lmts/",
+  "rules": [
+    "LMTS owns benchmark/testing domain behavior and data semantics",
+    "LMTS projectors are declarative presentation definitions",
+    "LMTS renderers are executable presentation implementations",
+    "shared shell/navigation behavior belongs to WebEngine",
+    "WebGUI is consumed from the canonical shared deployment",
+    "the existing LMTS implementation remains untouched until the parallel /app/lmts candidate is proven"
+  ]
+}

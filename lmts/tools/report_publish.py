@@ -29,7 +29,10 @@ def _read_json_response(request: Request, *, timeout: float) -> tuple[int, dict[
         except json.JSONDecodeError:
             payload = {}
         detail = payload.get('error') if isinstance(payload, dict) else None
+        build = str(payload.get('build') or '').strip() if isinstance(payload, dict) else ''
         message = str(detail or raw.strip() or exc.reason or f'HTTP {exc.code}')
+        if build:
+            message += f' [server {build}]'
         raise RuntimeError(f'LMTS report server HTTP {exc.code}: {message}') from exc
     except URLError as exc:
         raise RuntimeError(f'LMTS report server connection failed: {exc.reason}') from exc

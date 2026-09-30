@@ -120,17 +120,44 @@ def _auto_publish_targets() -> tuple[ReportTarget, ...]:
     return tuple(resolve_report_target(settings, target_id) for target_id in settings.auto_publish_targets)
 
 def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
-    bearer_token = None
-    machine_key = None
-    if target.transport == 'php_api':
-        controller = _ACTIVE_CONTROLLER
-        if controller is None or controller.auth_service is None:
-            raise RuntimeError('IAM authentication is required for public publishing')
-        stored = controller.auth_service.token_store.load()
-        if stored is None:
-            raise RuntimeError('IAM authentication is required for public publishing')
-        bearer_token = stored[0]
-        store = MachinePublishCredentialStore()
+    if target.transport != 'php_api':
+        return publish_report(report, target.profile, mysql=target.mysql)
+
+    controller = _ACTIVE_CONTROLLER
+    if controller is None or controller.auth_service is None:
+        raise RuntimeError('IAM authentication is required for public publishing')
+    stored = controller.auth_service.token_store.load()
+    if stored is None:
+        raise RuntimeError('IAM authentication is required for public publishing')
+    bearer_token = stored[0]
+
+    store = MachinePublishCredentialStore()
+    try:
+        credential = ensure_machine_credential(
+            report,
+            target.profile.endpoint,
+            bearer_token=bearer_token,
+            store=store,
+        )
+    except PublishAuthenticationError as exc:
+        raise RuntimeError(
+            f'cannot provision LMTS machine publish credential: {exc}'
+        ) from exc
+
+    try:
+        return publish_report(
+            report,
+            target.profile,
+            mysql=target.mysql,
+            machine_key=credential.authorization_value,
+        )
+    except RuntimeError as exc:
+        if 'HTTP 403:' not in str(exc):
+            raise
+
+        # One machine-local rotation attempt. Report publishing itself never
+        # falls back to IAM bearer or a shared secret.
+        store.clear()
         try:
             credential = ensure_machine_credential(
                 report,
@@ -138,60 +165,16 @@ def _publish_one(report: dict[str, object], target: ReportTarget) -> str:
                 bearer_token=bearer_token,
                 store=store,
             )
-        except PublishAuthenticationError:
-            # Migration safety: provisioning must never block report delivery.
-            # Server-side IAM bearer auth remains a temporary compatibility path.
-            return publish_report(
-                report,
-                target.profile,
-                mysql=target.mysql,
-                bearer_token=bearer_token,
-            )
-
-        machine_key = credential.authorization_value
-        try:
-            return publish_report(
-                report,
-                target.profile,
-                mysql=target.mysql,
-                bearer_token=bearer_token,
-                machine_key=machine_key,
-            )
-        except RuntimeError as exc:
-            if 'HTTP 403:' not in str(exc):
-                raise
-            # The local key may have been revoked/rotated server-side. Retry
-            # exactly once with a freshly provisioned credential. If rotation
-            # itself fails during migration, fall back to IAM bearer.
-            store.clear()
-            try:
-                credential = ensure_machine_credential(
-                    report,
-                    target.profile.endpoint,
-                    bearer_token=bearer_token,
-                    store=store,
-                )
-            except PublishAuthenticationError:
-                return publish_report(
-                    report,
-                    target.profile,
-                    mysql=target.mysql,
-                    bearer_token=bearer_token,
-                )
-            return publish_report(
-                report,
-                target.profile,
-                mysql=target.mysql,
-                bearer_token=bearer_token,
-                machine_key=credential.authorization_value,
-            )
-    return publish_report(
-        report,
-        target.profile,
-        mysql=target.mysql,
-        bearer_token=bearer_token,
-        machine_key=machine_key,
-    )
+        except PublishAuthenticationError as auth_exc:
+            raise RuntimeError(
+                f'cannot rotate LMTS machine publish credential: {auth_exc}'
+            ) from auth_exc
+        return publish_report(
+            report,
+            target.profile,
+            mysql=target.mysql,
+            machine_key=credential.authorization_value,
+        )
 
 def _publish_many(report: dict[str, object], targets: tuple[ReportTarget, ...]) -> None:
     failures: list[str] = []

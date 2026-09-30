@@ -13,12 +13,12 @@ def test_settings_round_trip_multiple_connections_and_auto_publish(tmp_path: Pat
     saved = LMTSSettings(
         output_folder='custom-exports',
         mysql_connections=(
-            MySQLSettings(id='local', label='Local', host='db.local', port=3307, database='results', username='writer', password='secret', publish_key='legacy'),
-            MySQLSettings(id='archive', label='Archive', host='archive.local', database='archive', username='reader', password='secret2', publish_key='legacy2'),
+            MySQLSettings(id='local', label='Local', host='db.local', port=3307, database='results', username='writer', password='secret'),
+            MySQLSettings(id='archive', label='Archive', host='archive.local', database='archive', username='reader', password='secret2'),
         ),
         php_api_connections=(
-            PHPAPISettings(id='studio', label='Studio', base_url='https://studio.example', publish_key='studio-publish'),
-            PHPAPISettings(id='visualizer', label='Visualizer', base_url='https://visualizer.example', publish_key='visualizer-publish'),
+            PHPAPISettings(id='studio', label='Studio', base_url='https://studio.example'),
+            PHPAPISettings(id='visualizer', label='Visualizer', base_url='https://visualizer.example'),
         ),
         auto_publish_targets=('mysql:local', 'mysql:archive', 'php_api:studio'),
     )
@@ -46,6 +46,5 @@ def test_php_api_report_endpoint_is_used_verbatim() -> None:
         id='public',
         label='Public',
         base_url='https://aigm.fi/lmts-report/report.php',
-        publish_key='secret',
     )
     assert api.report_endpoint == 'https://aigm.fi/lmts-report/report.php'

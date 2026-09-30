@@ -63,10 +63,15 @@ class SettingsActions(TUIActions):
         password = single_line(self.host, self.stdscr, 'MySQL password', initial=current.password if current else '')
         if password is None:
             return None
-        publish_key = single_line(self.host, self.stdscr, 'Publish key', initial=current.publish_key if current else 'lmts')
-        if publish_key is None:
-            return None
-        return MySQLSettings(id=connection_id, label=label, host=host, port=port, database=database, username=username, password=password, publish_key=publish_key)
+        return MySQLSettings(
+            id=connection_id,
+            label=label,
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            password=password,
+        )
 
     def manage_mysql_connections(self) -> None:
         while True:

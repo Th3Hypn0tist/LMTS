@@ -18,7 +18,6 @@ ReportTargetKind = Literal['php_api', 'mysql']
 class ReportProfile:
     name: str
     endpoint: str = ''
-    publish_key: str = 'lmts'
     kind: ReportTargetKind = 'php_api'
 
     def __post_init__(self) -> None:
@@ -27,7 +26,6 @@ class ReportProfile:
         if self.kind not in {'php_api', 'mysql'}:
             raise ValueError(f'unsupported report target kind: {self.kind}')
         endpoint = self.endpoint.strip()
-        publish_key = self.publish_key.strip()
         if self.kind == 'php_api':
             if not endpoint:
                 raise ValueError('PHP API report endpoint must not be empty')
@@ -36,8 +34,6 @@ class ReportProfile:
             return
         if endpoint:
             raise ValueError('MySQL report target uses LMTS MySQL settings and must not define an HTTP endpoint')
-        if publish_key:
-            raise ValueError('MySQL report target uses LMTS MySQL settings and must not define a publish key')
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -99,11 +95,9 @@ def load_report_profiles(path: Path = DEFAULT_REPORT_PROFILES_PATH) -> ReportPro
         if not isinstance(raw, dict):
             raise ValueError('report profile must be an object')
         kind = 'php_api' if schema_version in {1, 2} else str(raw.get('kind') or 'php_api').strip()
-        raw_publish_key = raw.get('publish_key')
         profile = ReportProfile(
             name=str(raw.get('name') or '').strip(),
             endpoint=str(raw.get('endpoint') or '').strip(),
-            publish_key=str(raw_publish_key if raw_publish_key is not None else ('lmts' if kind == 'php_api' else '')),
             kind=kind,
         )
         if profile.name in names:

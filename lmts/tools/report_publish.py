@@ -88,13 +88,13 @@ def _php_headers(
 ) -> dict[str, str]:
     headers = {'Accept': 'application/json'}
     if machine_key:
-        headers['Authorization'] = f'LMTS-Key {machine_key}'
+        value = f'LMTS-Key {machine_key}'
     elif bearer_token:
-        headers['Authorization'] = f'Bearer {bearer_token}'
-    elif profile.publish_key:
-        headers['X-LMTS-Key'] = profile.publish_key
+        value = f'Bearer {bearer_token}'
     else:
-        raise ValueError('PHP API publishing requires IAM bearer authentication')
+        raise ValueError('PHP API request requires authentication')
+    headers['Authorization'] = value
+    headers['X-LMTS-Authorization'] = value
     if content_type is not None:
         headers['Content-Type'] = content_type
     return headers

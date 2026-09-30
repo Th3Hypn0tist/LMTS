@@ -121,6 +121,18 @@ function stats_cell_key(array $row): string {
         . "\0" . (string)($row['test_version_id'] ?? '');
 }
 
+function stats_numeric_average(array $values): ?float {
+    $numbers = array_values(array_filter(
+        array_map(
+            static fn($value) => is_numeric($value) ? (float)$value : null,
+            $values
+        ),
+        static fn($value) => $value !== null
+    ));
+    if ($numbers === []) return null;
+    return array_sum($numbers) / count($numbers);
+}
+
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
         header('Allow: GET');
@@ -290,11 +302,96 @@ try {
         if ($row['ttft_ms'] !== null) $timings[$key]['ttft'][] = $row['ttft_ms'];
     }
 
+    // Aggregate token counts and GPU power at record granularity first.
+    // Tokens are summed across all responses in one run. GPU power is summed
+    // across GPUs per sampler tick, then averaged across ticks for the run.
+    // As with timing metrics, only PASS evidence contributes performance values.
+    $metricRows = stats_query(
+        $pdo,
+        "SELECT
+            rri.report_id,
+            rri.record_id,
+            rri.system_id,
+            rri.compute_profile_id,
+            rri.target_kind,
+            rri.target_ref,
+            rri.test_version_id,
+            tv.telemetry_type_id,
+            tv.sample_ordinal,
+            tv.value_number
+         FROM LMTS_report_record_index rri
+         JOIN LMTS_reports r ON r.report_id = rri.report_id
+         JOIN LMTS_telemetry_values tv
+           ON tv.report_id = rri.report_id
+          AND tv.record_id = rri.record_id
+         $where
+           AND rri.outcome = 'pass'
+           AND tv.telemetry_type_id IN ('input_tokens','output_tokens','gpu_power_w')
+           AND tv.value_number IS NOT NULL
+         ORDER BY rri.report_id, rri.record_id, tv.telemetry_type_id, tv.sample_ordinal",
+        $params,
+    )->fetchAll();
+
+    $recordMetrics = [];
+    foreach ($metricRows as $row) {
+        $recordKey = (string)$row['report_id'] . "\0" . (string)$row['record_id'];
+        if (!isset($recordMetrics[$recordKey])) {
+            $recordMetrics[$recordKey] = [
+                'cell_key' => stats_cell_key($row),
+                'input_tokens' => 0.0,
+                'output_tokens' => 0.0,
+                'power_samples' => [],
+            ];
+        }
+        $type = (string)$row['telemetry_type_id'];
+        $value = (float)$row['value_number'];
+        if ($type === 'input_tokens' || $type === 'output_tokens') {
+            $recordMetrics[$recordKey][$type] += $value;
+            continue;
+        }
+        if ($type === 'gpu_power_w') {
+            $sample = (int)$row['sample_ordinal'];
+            if (!isset($recordMetrics[$recordKey]['power_samples'][$sample])) {
+                $recordMetrics[$recordKey]['power_samples'][$sample] = 0.0;
+            }
+            $recordMetrics[$recordKey]['power_samples'][$sample] += $value;
+        }
+    }
+
+    $cellMetrics = [];
+    foreach ($recordMetrics as $record) {
+        $key = (string)$record['cell_key'];
+        if (!isset($cellMetrics[$key])) {
+            $cellMetrics[$key] = [
+                'input_tokens' => [],
+                'output_tokens' => [],
+                'gpu_power_w' => [],
+            ];
+        }
+        $cellMetrics[$key]['input_tokens'][] = (float)$record['input_tokens'];
+        $cellMetrics[$key]['output_tokens'][] = (float)$record['output_tokens'];
+        $power = stats_numeric_average(array_values($record['power_samples']));
+        if ($power !== null) $cellMetrics[$key]['gpu_power_w'][] = $power;
+    }
+
     foreach ($cells as &$cell) {
         $key = stats_cell_key($cell);
         $samples = $timings[$key] ?? ['duration' => [], 'ttft' => []];
+        $metrics = $cellMetrics[$key] ?? [
+            'input_tokens' => [],
+            'output_tokens' => [],
+            'gpu_power_w' => [],
+        ];
+
         $cell['median_total_time_ms'] = stats_median($samples['duration']);
         $cell['median_ttft_ms'] = stats_median($samples['ttft']);
+        $cell['avg_input_tokens'] = stats_numeric_average($metrics['input_tokens']);
+        $cell['median_input_tokens'] = stats_median($metrics['input_tokens']);
+        $cell['avg_output_tokens'] = stats_numeric_average($metrics['output_tokens']);
+        $cell['median_output_tokens'] = stats_median($metrics['output_tokens']);
+        $cell['avg_gpu_power_w'] = stats_numeric_average($metrics['gpu_power_w']);
+        $cell['median_gpu_power_w'] = stats_median($metrics['gpu_power_w']);
+
         $cell['pass'] = (int)$cell['pass'];
         $cell['fail'] = (int)$cell['fail'];
         $cell['runs'] = (int)$cell['runs'];

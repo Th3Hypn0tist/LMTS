@@ -1,0 +1,11 @@
+{
+  "target": "/app/lmts/",
+  "directories": {
+    "contracts": "canonical LMTS domain definitions",
+    "services": "private LMTS behavior",
+    "api": "public machine interface including external LMTS client operations",
+    "renderers": "executable LMTS presentation implementations",
+    "projectors": "declarative LMTS presentation definitions"
+  },
+  "migration": "copy and adapt in parallel; do not refactor the current /lmts production surface in place"
+}

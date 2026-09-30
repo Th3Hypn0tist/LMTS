@@ -45,6 +45,17 @@ function lmts_auth_log(string $reason, array $context = []): void {
     );
 }
 
+function lmts_auth_reject(string $reason, array $context = []): false {
+    $GLOBALS['LMTS_AUTH_FAILURE_REASON'] = $reason;
+    lmts_auth_log($reason, $context);
+    return false;
+}
+
+function lmts_auth_failure_reason(): string {
+    $reason = $GLOBALS['LMTS_AUTH_FAILURE_REASON'] ?? '';
+    return is_string($reason) ? $reason : '';
+}
+
 function lmts_auth_bearer_token(): ?string {
     $header = lmts_auth_header();
     if (preg_match('/^Bearer\s+(.+)$/i', $header, $match) !== 1) return null;
@@ -144,8 +155,7 @@ function lmts_auth_upload(array $config): array|false {
     if (preg_match('/^LMTS-Key\\s+/i', $header) === 1) {
         $machine = lmts_auth_machine_credential($pdo);
         if ($machine === null) {
-            lmts_auth_log('upload_rejected', ['mode' => 'machine_key']);
-            return false;
+            return lmts_auth_reject('machine_key_rejected', ['mode' => 'machine_key']);
         }
         return $machine;
     }
@@ -156,15 +166,13 @@ function lmts_auth_upload(array $config): array|false {
     if (preg_match('/^Bearer\\s+/i', $header) === 1) {
         $bearer = lmts_auth_bearer_token();
         if ($bearer === null) {
-            lmts_auth_log('bearer_parse_failed');
-            return false;
+            return lmts_auth_reject('bearer_parse_failed');
         }
         $userId = lmts_auth_iam_user($pdo, $bearer);
         if ($userId === null) {
-            lmts_auth_log('iam_bearer_not_resolved', [
+            return lmts_auth_reject('iam_bearer_not_resolved', [
                 'token_hash_prefix' => substr(hash('sha256', $bearer), 0, 12),
             ]);
-            return false;
         }
         return [
             'mode' => 'iam_bearer',
@@ -175,10 +183,9 @@ function lmts_auth_upload(array $config): array|false {
     }
 
     if ($header !== '') {
-        lmts_auth_log('unsupported_authorization_scheme', [
+        return lmts_auth_reject('unsupported_authorization_scheme', [
             'scheme' => strtok($header, " \t") ?: 'unknown',
         ]);
-        return false;
     }
 
     // Temporary legacy migration fallback only, and only when no Authorization
@@ -194,12 +201,11 @@ function lmts_auth_upload(array $config): array|false {
         ];
     }
 
-    lmts_auth_log('no_accepted_auth', [
+    return lmts_auth_reject('no_accepted_auth', [
         'authorization_header_present' => false,
         'legacy_header_present' => $suppliedKey !== '',
         'legacy_key_configured' => $configuredKey !== '',
     ]);
-    return false;
 }
 
 function lmts_auth_binding(array $auth): array {

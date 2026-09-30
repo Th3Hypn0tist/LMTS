@@ -47,6 +47,15 @@ function cellMetric(cell, metric, aggregation) {
   if (metric === 'ttft') {
     return aggregation === 'average' ? cell.avg_ttft_ms : cell.median_ttft_ms;
   }
+  if (metric === 'input_tokens') {
+    return aggregation === 'average' ? cell.avg_input_tokens : cell.median_input_tokens;
+  }
+  if (metric === 'output_tokens') {
+    return aggregation === 'average' ? cell.avg_output_tokens : cell.median_output_tokens;
+  }
+  if (metric === 'gpu_power_w') {
+    return aggregation === 'average' ? cell.avg_gpu_power_w : cell.median_gpu_power_w;
+  }
   return aggregation === 'average' ? cell.avg_total_time_ms : cell.median_total_time_ms;
 }
 
@@ -58,7 +67,15 @@ function metricLabel(cell, metric, aggregation) {
     const value = pfScore(cell.pass, cell.fail);
     return value == null ? '—' : number(value, 0);
   }
-  return milliseconds(cellMetric(cell, metric, aggregation));
+  const value = cellMetric(cell, metric, aggregation);
+  if (value == null) return '—';
+  if (metric === 'input_tokens' || metric === 'output_tokens') {
+    return number(value, 0);
+  }
+  if (metric === 'gpu_power_w') {
+    return number(value, 1) + ' W';
+  }
+  return milliseconds(value);
 }
 
 function testGroup(cell) {

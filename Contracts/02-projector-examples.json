@@ -1,0 +1,10 @@
+{
+  "examples": {
+    "LMTS:ranking": "/app/lmts/projectors/ranking.json",
+    "LMTS:ranking:top3": "/app/lmts/projectors/ranking/top3.json"
+  },
+  "defaultRenderer": {
+    "LMTS:ranking": "/app/lmts/renderers/ranking.js"
+  },
+  "rule": "variant definitions contain only the declarative delta from the base projector"
+}

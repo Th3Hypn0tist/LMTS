@@ -27,7 +27,11 @@ try {
 
     $auth = lmts_auth_upload($config);
     if ($auth === false) {
-        lmts_upload_fail(403, 'authentication required');
+        $reason = lmts_auth_failure_reason();
+        lmts_upload_fail(
+            403,
+            'authentication required' . ($reason !== '' ? ' [' . $reason . ']' : '')
+        );
     }
     $authBinding = lmts_auth_binding($auth);
 

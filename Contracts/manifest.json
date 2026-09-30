@@ -1,0 +1,11 @@
+{
+  "package": "lmts-domain-contracts",
+  "version": "0.1.0",
+  "files": [
+    "00-domain-contract.json",
+    "01-target-layout.json",
+    "02-projector-examples.json",
+    "manifest.json"
+  ],
+  "status": "migration-target"
+}

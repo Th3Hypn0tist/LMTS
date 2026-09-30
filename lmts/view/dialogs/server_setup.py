@@ -26,7 +26,6 @@ def _collect_server_database(host, stdscr) -> ServerDeployConfig | None:
         'Server DB database',
         'Server DB username',
         'Server DB password',
-        'Server publish key',
     ):
         value = _required_line(host, stdscr, title)
         if value is None:
@@ -37,7 +36,6 @@ def _collect_server_database(host, stdscr) -> ServerDeployConfig | None:
         database=values[1],
         username=values[2],
         password=values[3],
-        publish_key=values[4],
     )
 
 

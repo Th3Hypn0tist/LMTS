@@ -11,7 +11,11 @@ function lmts_auth_pdo(array $config): PDO {
 }
 
 function lmts_auth_header(): string {
-    foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'] as $key) {
+    foreach ([
+        'HTTP_X_LMTS_AUTHORIZATION',
+        'HTTP_AUTHORIZATION',
+        'REDIRECT_HTTP_AUTHORIZATION',
+    ] as $key) {
         $value = trim((string)($_SERVER[$key] ?? ''));
         if ($value !== '') return $value;
     }
@@ -19,7 +23,10 @@ function lmts_auth_header(): string {
         $headers = getallheaders();
         if (is_array($headers)) {
             foreach ($headers as $name => $value) {
-                if (strcasecmp((string)$name, 'Authorization') === 0) {
+                if (
+                    strcasecmp((string)$name, 'X-LMTS-Authorization') === 0
+                    || strcasecmp((string)$name, 'Authorization') === 0
+                ) {
                     $resolved = trim((string)$value);
                     if ($resolved !== '') return $resolved;
                 }
@@ -152,60 +159,18 @@ function lmts_auth_upload(array $config): array|false {
     $pdo = lmts_auth_pdo($config);
     $header = lmts_auth_header();
 
-    if (preg_match('/^LMTS-Key\\s+/i', $header) === 1) {
-        $machine = lmts_auth_machine_credential($pdo);
-        if ($machine === null) {
-            return lmts_auth_reject('machine_key_rejected', ['mode' => 'machine_key']);
-        }
-        return $machine;
+    if (preg_match('/^LMTS-Key\\s+/i', $header) !== 1) {
+        return lmts_auth_reject(
+            $header === '' ? 'machine_key_required' : 'unsupported_authorization_scheme',
+            $header === '' ? [] : ['scheme' => strtok($header, " \t") ?: 'unknown'],
+        );
     }
 
-    // Migration fallback: IAM bearer may still publish while clients acquire
-    // machine-scoped credentials. An invalid bearer must not fall through to
-    // the legacy shared-key path.
-    if (preg_match('/^Bearer\\s+/i', $header) === 1) {
-        $bearer = lmts_auth_bearer_token();
-        if ($bearer === null) {
-            return lmts_auth_reject('bearer_parse_failed');
-        }
-        $userId = lmts_auth_iam_user($pdo, $bearer);
-        if ($userId === null) {
-            return lmts_auth_reject('iam_bearer_not_resolved', [
-                'token_hash_prefix' => substr(hash('sha256', $bearer), 0, 12),
-            ]);
-        }
-        return [
-            'mode' => 'iam_bearer',
-            'user_id' => $userId,
-            'system_id' => null,
-            'key_id' => null,
-        ];
+    $machine = lmts_auth_machine_credential($pdo);
+    if ($machine === null) {
+        return lmts_auth_reject('machine_key_rejected');
     }
-
-    if ($header !== '') {
-        return lmts_auth_reject('unsupported_authorization_scheme', [
-            'scheme' => strtok($header, " \t") ?: 'unknown',
-        ]);
-    }
-
-    // Temporary legacy migration fallback only, and only when no Authorization
-    // header was supplied.
-    $configuredKey = trim((string)($config['publish_key'] ?? ''));
-    $suppliedKey = trim((string)($_SERVER['HTTP_X_LMTS_KEY'] ?? ''));
-    if ($configuredKey !== '' && $suppliedKey !== '' && hash_equals($configuredKey, $suppliedKey)) {
-        return [
-            'mode' => 'shared_key',
-            'user_id' => null,
-            'system_id' => null,
-            'key_id' => null,
-        ];
-    }
-
-    return lmts_auth_reject('no_accepted_auth', [
-        'authorization_header_present' => false,
-        'legacy_header_present' => $suppliedKey !== '',
-        'legacy_key_configured' => $configuredKey !== '',
-    ]);
+    return $machine;
 }
 
 function lmts_auth_binding(array $auth): array {

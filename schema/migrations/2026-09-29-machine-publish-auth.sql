@@ -1,7 +1,7 @@
 -- LMTS-only migration: per-user/per-machine publish credentials
 -- Date: 2026-09-29
--- Run once against the LMTS database. This migration intentionally does not
--- create, alter, reset or otherwise own IAM tables.
+-- Safe to re-run. This migration intentionally does not create, alter, reset
+-- or otherwise own IAM tables.
 
 CREATE TABLE IF NOT EXISTS LMTS_publish_keys (
     key_id          VARCHAR(128) NOT NULL,
@@ -23,17 +23,100 @@ CREATE TABLE IF NOT EXISTS LMTS_publish_keys (
         ON UPDATE RESTRICT ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE LMTS_report_submissions
-    ADD COLUMN submitter_system_id VARCHAR(128) NULL AFTER submitter_user_id,
-    ADD COLUMN publish_key_id VARCHAR(128) NULL AFTER submitter_system_id,
-    ADD KEY idx_report_submissions_system (submitter_system_id),
-    ADD KEY idx_report_submissions_publish_key (publish_key_id),
-    ADD CONSTRAINT fk_report_submissions_system
-        FOREIGN KEY (submitter_system_id) REFERENCES LMTS_systems(system_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT,
-    ADD CONSTRAINT fk_report_submissions_publish_key
-        FOREIGN KEY (publish_key_id) REFERENCES LMTS_publish_keys(key_id)
-        ON UPDATE RESTRICT ON DELETE RESTRICT;
+-- Columns.
+SET @sql = IF(
+    EXISTS(
+        SELECT 1
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'LMTS_report_submissions'
+          AND COLUMN_NAME = 'submitter_system_id'
+    ),
+    'SELECT 1',
+    'ALTER TABLE LMTS_report_submissions ADD COLUMN submitter_system_id VARCHAR(128) NULL AFTER submitter_user_id'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    EXISTS(
+        SELECT 1
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'LMTS_report_submissions'
+          AND COLUMN_NAME = 'publish_key_id'
+    ),
+    'SELECT 1',
+    'ALTER TABLE LMTS_report_submissions ADD COLUMN publish_key_id VARCHAR(128) NULL AFTER submitter_system_id'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Indexes.
+SET @sql = IF(
+    EXISTS(
+        SELECT 1
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'LMTS_report_submissions'
+          AND INDEX_NAME = 'idx_report_submissions_system'
+    ),
+    'SELECT 1',
+    'ALTER TABLE LMTS_report_submissions ADD KEY idx_report_submissions_system (submitter_system_id)'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    EXISTS(
+        SELECT 1
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'LMTS_report_submissions'
+          AND INDEX_NAME = 'idx_report_submissions_publish_key'
+    ),
+    'SELECT 1',
+    'ALTER TABLE LMTS_report_submissions ADD KEY idx_report_submissions_publish_key (publish_key_id)'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Foreign keys.
+SET @sql = IF(
+    EXISTS(
+        SELECT 1
+        FROM information_schema.TABLE_CONSTRAINTS
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'LMTS_report_submissions'
+          AND CONSTRAINT_NAME = 'fk_report_submissions_system'
+          AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+    ),
+    'SELECT 1',
+    'ALTER TABLE LMTS_report_submissions ADD CONSTRAINT fk_report_submissions_system FOREIGN KEY (submitter_system_id) REFERENCES LMTS_systems(system_id) ON UPDATE RESTRICT ON DELETE RESTRICT'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    EXISTS(
+        SELECT 1
+        FROM information_schema.TABLE_CONSTRAINTS
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'LMTS_report_submissions'
+          AND CONSTRAINT_NAME = 'fk_report_submissions_publish_key'
+          AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+    ),
+    'SELECT 1',
+    'ALTER TABLE LMTS_report_submissions ADD CONSTRAINT fk_report_submissions_publish_key FOREIGN KEY (publish_key_id) REFERENCES LMTS_publish_keys(key_id) ON UPDATE RESTRICT ON DELETE RESTRICT'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 INSERT INTO LMTS_schema_version (component, schema_version)
 VALUES ('database_ssot', 2)
